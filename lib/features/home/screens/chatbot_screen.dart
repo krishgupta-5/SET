@@ -1,12 +1,11 @@
-import 'dart:convert';
-import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:startup_expense_tracker/theme/app_theme.dart';
+import 'package:startup_expense_tracker/services/chat_service.dart';
+import 'package:startup_expense_tracker/services/ai_context_manager.dart';
+
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
@@ -15,166 +14,90 @@ class ChatbotScreen extends StatefulWidget {
   State<ChatbotScreen> createState() => _ChatbotScreenState();
 }
 
-final List<Map<String, String>> _globalChatMessages = [];
-Map<String, dynamic>? _globalCachedPayload;
-
 class _ChatbotScreenState extends State<ChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
   bool _isTyping = false;
-  bool _isDataLoaded = _globalCachedPayload != null;
+
+  // Static so chat persists across navigation, but resets on app restart
+  static final List<Map<String, dynamic>> _chatMessages = [];
 
   @override
   void initState() {
     super.initState();
-    if (_globalChatMessages.isEmpty) {
-      _globalChatMessages.add({
+    if (_chatMessages.isEmpty) {
+      _chatMessages.add({
         'role': 'ai',
-        'text': 'Hello! I am your AI Startup Assistant. Ask me anything about your runway, burn rate, or expenses.',
+        'text': 'Hello! I am your AI Startup CFO. Ask me anything about your runway, burn rate, expenses, or team efficiency.',
       });
     }
-    
-    // Auto-scroll to bottom after rendering
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-
-    if (_globalCachedPayload == null) {
-      _fetchUserData();
-    }
   }
 
-  Map<String, dynamic> _cleanTimestamps(Map<String, dynamic> data) {
-    final cleaned = <String, dynamic>{};
-    for (final entry in data.entries) {
-      final value = entry.value;
-      if (value is Timestamp) {
-        cleaned[entry.key] = value.toDate().toIso8601String();
-      } else if (value is Map<String, dynamic>) {
-        cleaned[entry.key] = _cleanTimestamps(value);
-      } else if (value is List) {
-        cleaned[entry.key] = value.map((item) {
-          if (item is Timestamp) return item.toDate().toIso8601String();
-          if (item is Map<String, dynamic>) return _cleanTimestamps(item);
-          return item;
-        }).toList();
-      } else {
-        cleaned[entry.key] = value;
-      }
-    }
-    return cleaned;
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
-  Future<void> _fetchUserData() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-      final String uid = user.uid;
-
-      final expensesSnapshot = await FirebaseFirestore.instance
-          .collection('expenses')
-          .where('uid', isEqualTo: uid)
-          .orderBy('Date', descending: true)
-          .limit(50)
-          .get();
-
-      final companySnapshot = await FirebaseFirestore.instance
-          .collection('companies')
-          .where('uid', isEqualTo: uid)
-          .limit(1)
-          .get();
-
-      final teamsSnapshot = await FirebaseFirestore.instance
-          .collection('teams')
-          .where('uid', isEqualTo: uid)
-          .get();
-
-      final membersSnapshot = await FirebaseFirestore.instance
-          .collection('members')
-          .where('uid', isEqualTo: uid)
-          .get();
-
-      if (!mounted) return;
-
-      final expenses = expensesSnapshot.docs.map((doc) => doc.data()).toList();
-      final cleanExpenses = expenses.map((e) {
-        return {
-          "Amount": (e["Amount"] ?? 0).toDouble(),
-          "Category": (e["Category"] ?? "unknown").toString(),
-          "Type": (e["Type"] ?? "unknown").toString(),
-          "Description": (e["Description"] ?? e["Title"] ?? "").toString(),
-          "ExpenseType": (e["ExpenseType"] ?? "unknown").toString(),
-        };
-      }).toList();
-
-      final companyData = companySnapshot.docs.isNotEmpty
-          ? _cleanTimestamps(companySnapshot.docs.first.data())
-          : {};
-      final teamsData = teamsSnapshot.docs.map((doc) => _cleanTimestamps(doc.data())).toList();
-      final membersData = membersSnapshot.docs.map((doc) => _cleanTimestamps(doc.data())).toList();
-
-      _globalCachedPayload = {
-        "expenses": cleanExpenses,
-        "revenue": [], 
-        "company": companyData,
-        "members": membersData,
-        "teams": teamsData,
-      };
-
-      setState(() {
-        _isDataLoaded = true;
-      });
-    } catch (e) {
-      debugPrint("Error fetching data: $e");
-    }
-  }
-
-  Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
+  Future<void> _sendMessage({String? retryText}) async {
+    final text = retryText ?? _messageController.text.trim();
     if (text.isEmpty) return;
 
-    _messageController.clear();
+    if (retryText == null) {
+      _messageController.clear();
+    }
+    
+    // Remove previous error message if retrying
+    if (retryText != null && _chatMessages.isNotEmpty && _chatMessages.last['role'] == 'error') {
+      setState(() {
+        _chatMessages.removeLast();
+      });
+    } else if (retryText == null) {
+      setState(() {
+        _chatMessages.add({'role': 'user', 'text': text});
+      });
+    }
+
     setState(() {
-      _globalChatMessages.add({'role': 'user', 'text': text});
       _isTyping = true;
     });
 
     _scrollToBottom();
 
     try {
-      String baseUrl = Platform.isIOS ? "http://127.0.0.1:8000" : "http://10.0.2.2:8000";
+      // Pass history (excluding errors AND excluding the newly added current user message)
+      final history = _chatMessages
+          .where((m) => m['role'] != 'error')
+          .toList();
+      if (history.isNotEmpty && history.last['role'] == 'user') {
+        history.removeLast(); // The backend appends the current question manually
+      }
+          
+      setState(() {
+        _chatMessages.add({'role': 'ai', 'text': ''});
+      });
+
+      final stream = ChatService.streamMessage(text, history);
       
-      final requestBody = {
-        "question": text,
-        "sectionData": _globalCachedPayload ?? {},
-        "history": _globalChatMessages.where((m) => m['role'] != 'error').toList(),
-      };
-
-      final res = await http.post(
-        Uri.parse("$baseUrl/chat"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(requestBody),
-      );
-
-      if (!mounted) return;
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final responseText = data["response"] ?? "I couldn't process that.";
-        
+      await for (final chunk in stream) {
+        if (!mounted) return;
         setState(() {
-          _globalChatMessages.add({'role': 'ai', 'text': responseText});
+          _chatMessages.last['text'] = (_chatMessages.last['text'] as String) + chunk;
         });
-      } else {
-        setState(() {
-          _globalChatMessages.add({'role': 'error', 'text': 'Server error: ${res.statusCode}'});
-        });
+        _scrollToBottom();
       }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _globalChatMessages.add({'role': 'error', 'text': 'Connection failed.'});
+      if (!mounted) return;
+      setState(() {
+        _chatMessages.add({
+          'role': 'error', 
+          'text': 'Oops! Something went wrong. \n\n${e.toString()}',
+          'originalText': text, // Store to allow retry
         });
-      }
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -228,7 +151,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
               const SizedBox(width: 12),
               Text(
-                "AI Assistant",
+                "AI CFO",
                 style: GoogleFonts.inter(
                   color: context.textPrimary,
                   fontSize: 16,
@@ -237,48 +160,40 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
             ],
           ),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.refresh, color: context.textSecondary),
+              tooltip: "Clear Context Cache",
+              onPressed: () async {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Clearing cache...')),
+                );
+                await AiContextManager().invalidate();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Cache cleared.')),
+                  );
+                }
+              },
+            )
+          ],
         ),
         body: SafeArea(
           child: Column(
             children: [
-              if (!_isDataLoaded)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 16,
-                  ),
-                  color: context.cardBackground,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: context.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        "Syncing your financial data...",
-                        style: GoogleFonts.inter(
-                          color: context.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
               Expanded(
                 child: ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(24),
-                  itemCount: _globalChatMessages.length,
+                  itemCount: _chatMessages.length,
                   itemBuilder: (context, index) {
-                    final msg = _globalChatMessages[index];
+                    final msg = _chatMessages[index];
                     final isUser = msg['role'] == 'user';
                     final isError = msg['role'] == 'error';
+
+                    if (!isUser && !isError && (msg['text'] == null || (msg['text'] as String).isEmpty)) {
+                      return const SizedBox.shrink();
+                    }
 
                     return Align(
                       alignment:
@@ -294,9 +209,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                               isUser
                                   ? const Color(0xFF0A84FF)
                                   : isError
-                                  ? const Color(
-                                    0xFFFF453A,
-                                  ).withValues(alpha: 0.1)
+                                  ? const Color(0xFFFF453A).withValues(alpha: 0.1)
                                   : context.cardBackground,
                           borderRadius: BorderRadius.circular(16).copyWith(
                             bottomRight:
@@ -314,34 +227,74 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                                   : Border.all(
                                     color:
                                         isError
-                                            ? const Color(
-                                              0xFFFF453A,
-                                            ).withValues(alpha: 0.3)
+                                            ? const Color(0xFFFF453A).withValues(alpha: 0.3)
                                             : context.borderColor,
                                   ),
                         ),
                         constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.75,
+                          maxWidth: MediaQuery.of(context).size.width * 0.85,
                         ),
-                        child: Text(
-                          msg['text'] ?? "",
-                          style: GoogleFonts.inter(
-                            color:
-                                isUser
-                                    ? Colors.white
-                                    : isError
-                                    ? const Color(0xFFFF453A)
-                                    : context.textPrimary,
-                            fontSize: 14,
-                            height: 1.5,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isUser || isError)
+                              Text(
+                                msg['text'] ?? "",
+                                style: GoogleFonts.inter(
+                                  color:
+                                      isUser
+                                          ? Colors.white
+                                          : const Color(0xFFFF453A),
+                                  fontSize: 14,
+                                  height: 1.5,
+                                ),
+                              )
+                            else
+                              MarkdownBody(
+                                data: msg['text'] ?? "",
+                                selectable: true,
+                                styleSheet: MarkdownStyleSheet(
+                                  p: GoogleFonts.inter(
+                                    color: context.textPrimary,
+                                    fontSize: 14,
+                                    height: 1.5,
+                                  ),
+                                  strong: GoogleFonts.inter(
+                                    color: context.textPrimary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  listBullet: GoogleFonts.inter(
+                                    color: context.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            if (isError && msg['originalText'] != null) ...[
+                              const SizedBox(height: 12),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  if (!_isTyping) {
+                                    _sendMessage(retryText: msg['originalText']);
+                                  }
+                                },
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('Retry'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFF453A),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              )
+                            ],
+                          ],
                         ),
                       ),
                     );
                   },
                 ),
               ),
-              if (_isTyping)
+              if (_isTyping && (_chatMessages.isEmpty || _chatMessages.last['role'] != 'ai' || (_chatMessages.last['text'] as String).isEmpty))
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
@@ -403,6 +356,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                         ),
                         child: TextField(
                           controller: _messageController,
+                          enabled: !_isTyping,
                           style: GoogleFonts.inter(
                             color: context.textPrimary,
                             fontSize: 14,
@@ -419,18 +373,22 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                               vertical: 16,
                             ),
                           ),
-                          onSubmitted: (_) => _sendMessage(),
+                          onSubmitted: (_) {
+                            if (!_isTyping) _sendMessage();
+                          },
                         ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     GestureDetector(
-                      onTap: _sendMessage,
+                      onTap: () {
+                        if (!_isTyping) _sendMessage();
+                      },
                       child: Container(
                         width: 52,
                         height: 52,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF0A84FF),
+                        decoration: BoxDecoration(
+                          color: _isTyping ? context.textSecondary : const Color(0xFF0A84FF),
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(

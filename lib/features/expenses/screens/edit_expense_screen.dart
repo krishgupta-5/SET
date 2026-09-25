@@ -15,6 +15,9 @@ import '../../../services/currency_preference_service.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/bank_account_service.dart';
 import '../../../services/team_member_service.dart';
+import '../../../services/expense_service.dart';
+
+
 import '../../../widgets/avatar_widget.dart';
 import '../../../theme/app_theme.dart';
 
@@ -589,66 +592,27 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         }
       }
 
-      final batch = FirebaseFirestore.instance.batch();
-
-      final expenseRef = FirebaseFirestore.instance
-          .collection('expenses')
-          .doc(widget.expenseId);
-          
-      batch.update(expenseRef, {
-        "Amount": newAmount,
-        "Title": _titleController.text.trim(),
-        "Description": _notesController.text.trim(),
-        "Date": _selectedDate,
-        "Category": _selectedCategory,
-        "Type": _selectedType,
-        "Time": FieldValue.serverTimestamp(),
-        "AttachmentFileId": _attachmentFileId ?? '',
-        "BankAccount": _selectedBankAccount,
-        "ExpenseType": _expenseType,
-        "TeamId": _selectedTeam?.id,
-        "TeamName": _selectedTeam?.teamName,
-        "TeamMemberId": _selectedTeamMember?.id,
-        "TeamMemberName": _selectedTeamMember?.fullName,
-        if (isRecurringOrSub) ...{
-          'recurrenceFrequency': _recurrenceFrequency,
-          'recurringTenureMonths': recurringTenure,
-        } else ...{
-          'recurrenceFrequency': FieldValue.delete(),
-          'recurringTenureMonths': FieldValue.delete(),
-        }
-      });
-
-      if (diff != 0) {
-        final companyDoc = await FirebaseFirestore.instance
-            .collection('companies')
-            .doc(companyId)
-            .get();
-        double currentTotal = 0.0;
-        if (companyDoc.exists) {
-          currentTotal = DataHelpers.safeParseDouble(companyDoc.data()?['totalExpenses']);
-        }
-        double newTotal = currentTotal + diff;
-        if (newTotal < 0) newTotal = 0.0;
-
-        final companyRef = FirebaseFirestore.instance
-            .collection('companies')
-            .doc(companyId);
-        batch.update(companyRef, {"totalExpenses": newTotal});
-
-        if (expenseType == 'team' && teamId != null) {
-          final teamRef = FirebaseFirestore.instance.collection('teams').doc(teamId);
-          batch.update(teamRef, {"usedBudget": FieldValue.increment(diff)});
-        } else if (expenseType == 'member' && teamMemberId != null) {
-          final memberRef = FirebaseFirestore.instance.collection('members').doc(teamMemberId);
-          batch.update(memberRef, {
-            "totalExpenses": FieldValue.increment(diff),
-            "remainingSalary": FieldValue.increment(-diff),
-          });
-        }
-      }
-
-      await batch.commit();
+      await ExpenseService().updateExpense(
+        expenseId: widget.expenseId,
+        companyId: companyId,
+        diff: diff,
+        newAmount: newAmount,
+        title: _titleController.text.trim(),
+        description: _notesController.text.trim(),
+        date: _selectedDate,
+        category: _selectedCategory,
+        type: _selectedType,
+        bankAccount: _selectedBankAccount,
+        attachmentFileId: _attachmentFileId,
+        expenseType: _expenseType,
+        teamId: _selectedTeam?.id,
+        teamName: _selectedTeam?.teamName,
+        teamMemberId: _selectedTeamMember?.id,
+        teamMemberName: _selectedTeamMember?.fullName,
+        isRecurringOrSub: isRecurringOrSub,
+        recurrenceFrequency: _recurrenceFrequency,
+        recurringTenure: recurringTenure,
+      );
 
       if (mounted) {
         _showMinimalToast("Expense updated successfully");

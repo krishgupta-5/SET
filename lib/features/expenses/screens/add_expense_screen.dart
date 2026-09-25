@@ -6,6 +6,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:startup_expense_tracker/services/expense_service.dart';
+
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -534,63 +536,26 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         }
       }
 
-      final id = const Uuid().v4();
-      final batch = FirebaseFirestore.instance.batch();
-
-      // 1. Write expense document (with companyId)
-      final expenseRef = FirebaseFirestore.instance
-          .collection('expenses')
-          .doc(id);
-      batch.set(expenseRef, {
-        'uid': user.uid,
-        'companyId': companyId,
-        'Amount': amount,
-        'Title': _titleController.text.trim(),
-        'Description': _descriptionController.text.trim(),
-        'Date': _selectedDate,
-        'Category': _expenseType == 'member' ? 'salary' : _selectedCategory,
-        'Type': _selectedType,
-        'BankAccount': _selectedBankAccount,
-        'AttachmentFileId': _attachmentFileId ?? '',
-        'ExpenseType': _expenseType,
-        'TeamId': _expenseType == 'member'
-            ? _selectedTeamMember?.teamId
-            : _selectedTeam?.id,
-        'TeamName': _selectedTeam?.teamName,
-        'TeamMemberId': _selectedTeamMember?.id,
-        'TeamMemberName': _selectedTeamMember?.fullName,
-        if (_expenseType == 'member' && _selectedTeamMember != null)
-          'memberId': _selectedTeamMember!.id,
-        'Time': FieldValue.serverTimestamp(),
-        if (isRecurring) ...{
-          'recurrenceFrequency': _recurrenceFrequency,
-          'recurringTenureMonths': recurringTenure,
-        },
-      });
-
-      // 2. Increment company totalExpenses atomically
-      final companyRef = FirebaseFirestore.instance
-          .collection('companies')
-          .doc(companyId);
-      batch.update(companyRef, {'totalExpenses': FieldValue.increment(amount)});
-
-      // 3. If team expense, add to team's tracked expenses
-      if (_expenseType == 'team' && _selectedTeam != null) {
-        final teamRef = FirebaseFirestore.instance
-            .collection('teams')
-            .doc(_selectedTeam!.id);
-        batch.update(teamRef, {'usedBudget': FieldValue.increment(amount)});
-      } else if (_expenseType == 'member' && _selectedTeamMember != null) {
-        final memberRef = FirebaseFirestore.instance
-            .collection('members')
-            .doc(_selectedTeamMember!.id);
-        batch.update(memberRef, {
-          'totalExpenses': FieldValue.increment(amount),
-          'remainingSalary': FieldValue.increment(-amount),
-        });
-      }
-
-      await batch.commit();
+      await ExpenseService().addExpense(
+        uid: user.uid,
+        companyId: companyId,
+        amount: amount,
+        title: _titleController.text.trim(),
+        description: _descriptionController.text.trim(),
+        date: _selectedDate,
+        category: _expenseType == 'member' ? 'salary' : _selectedCategory,
+        type: _selectedType,
+        bankAccount: _selectedBankAccount,
+        attachmentFileId: _attachmentFileId,
+        expenseType: _expenseType,
+        teamId: _expenseType == 'member' ? _selectedTeamMember?.teamId : _selectedTeam?.id,
+        teamName: _selectedTeam?.teamName,
+        teamMemberId: _selectedTeamMember?.id,
+        teamMemberName: _selectedTeamMember?.fullName,
+        isRecurring: isRecurring,
+        recurrenceFrequency: _recurrenceFrequency,
+        recurringTenure: recurringTenure,
+      );
 
       if (mounted) Navigator.pop(context);
     } on FirebaseException catch (e) {

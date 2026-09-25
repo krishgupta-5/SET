@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:startup_expense_tracker/theme/app_theme.dart';
+import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 
 extension HexColor on Color {
   static Color fromHex(String hexString, [BuildContext? context]) {
@@ -43,6 +44,7 @@ class _AiScreenState extends State<AiScreen>
   bool _isFetchingMore = false;
   final List<String> _pendingSections = [];
   Map<String, dynamic>? _cachedPayload;
+  String _currencySymbol = '\$';
 
   Map<String, dynamic>? _mainData;
   Map<String, dynamic>? _keyPointsData;
@@ -59,7 +61,24 @@ class _AiScreenState extends State<AiScreen>
   void initState() {
     super.initState();
     _initializeLoadStates();
-    _fetchAIInsight();
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    await _loadUserCurrency();
+    await _fetchAIInsight();
+  }
+
+  Future<void> _loadUserCurrency() async {
+    _currencySymbol = CurrencyPreferenceService.getCurrencySymbol(
+      CurrencyPreferenceService.getCurrencyPreferenceSync(),
+    );
+    final asyncCode = await CurrencyPreferenceService.getCurrencyPreference();
+    if (mounted) {
+      setState(() {
+        _currencySymbol = CurrencyPreferenceService.getCurrencySymbol(asyncCode);
+      });
+    }
   }
 
   Map<String, dynamic> _cleanTimestamps(Map<String, dynamic> data) {
@@ -146,8 +165,16 @@ class _AiScreenState extends State<AiScreen>
         "teams": teamsData,
       };
 
-      _pendingSections.add("main");
-      _pendingSections.add("keyPoints");
+      _pendingSections.clear();
+      _pendingSections.addAll([
+        "main",
+        "keyPoints",
+        "runway",
+        "burn",
+        "staffing",
+        "expense",
+        "subscription"
+      ]);
       _processQueue();
 
     } catch (e) {
@@ -170,6 +197,7 @@ class _AiScreenState extends State<AiScreen>
         final requestBody = {
           "sectionName": sectionKey,
           "sectionData": _cachedPayload,
+          "currencySymbol": _currencySymbol,
         };
 
         final res = await http.post(
@@ -223,11 +251,8 @@ class _AiScreenState extends State<AiScreen>
       'subscription',
     ];
     for (final section in sections) {
-      _sectionLoadStates[section] = false;
+      _sectionLoadStates[section] = true;
     }
-    // Load main sections immediately
-    _sectionLoadStates['main'] = true;
-    _sectionLoadStates['keyPoints'] = true;
   }
 
   void _loadSection(String sectionKey) {
@@ -269,17 +294,6 @@ class _AiScreenState extends State<AiScreen>
                 },
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (scrollInfo) {
-                    if (scrollInfo.metrics.pixels > 200) {
-                      _loadSection('runway');
-                    }
-                    if (scrollInfo.metrics.pixels > 600) {
-                      _loadSection('burn');
-                      _loadSection('staffing');
-                    }
-                    if (scrollInfo.metrics.pixels > 1000) {
-                      _loadSection('expense');
-                      _loadSection('subscription');
-                    }
                     return false;
                   },
                   child: SingleChildScrollView(
