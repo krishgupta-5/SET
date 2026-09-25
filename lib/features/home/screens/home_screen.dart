@@ -162,7 +162,43 @@ class _HomeScreenState extends State<HomeScreen> {
     _realtimeDebounceTimer = Timer(const Duration(milliseconds: 100), () {
       FinancialDataService.clearAllCache();
       _loadFinancialDataForPieChart();
+      _syncCalculatedDataToFirestore();
     });
+  }
+
+  Future<void> _syncCalculatedDataToFirestore() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    try {
+      final docRef = FirebaseFirestore.instance.collection("companies").doc(user.uid);
+      final snapshot = await docRef.get();
+      if (snapshot.exists) {
+        final data = snapshot.data()!;
+        final currentRunway = (data['Runway'] ?? '').toString();
+        final currentTotalExpenses = _toDouble(data['totalExpenses'] ?? 0);
+        
+        final runwayString = "$runwayValue months";
+        bool needsUpdate = false;
+        Map<String, dynamic> updates = {};
+        
+        if (currentRunway != runwayString) {
+          updates['Runway'] = runwayString;
+          needsUpdate = true;
+        }
+        
+        if ((currentTotalExpenses - _absoluteTotalExpenses).abs() > 0.01) {
+          updates['totalExpenses'] = _absoluteTotalExpenses;
+          needsUpdate = true;
+        }
+        
+        if (needsUpdate) {
+          await docRef.update(updates);
+        }
+      }
+    } catch (e) {
+      log("Error syncing calculated data to Firestore: $e");
+    }
   }
 
   void _setupRealtimeListeners() {

@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:startup_expense_tracker/features/auth/auth_wrapper.dart';
 import 'package:startup_expense_tracker/firebase_options.dart';
+import 'package:startup_expense_tracker/services/ai_context_manager.dart';
 import 'package:startup_expense_tracker/services/user_country_service.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 import 'package:startup_expense_tracker/services/theme_service.dart';
@@ -14,6 +15,9 @@ void main() async {
   await dotenv.load(fileName: ".env.local");
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Initialize decoupled domain event listeners
+  AiContextManager().initListeners();
 
   // Initialize country code cache early for instant currency display
   await UserCountryService.initializeCache();

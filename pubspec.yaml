@@ -38,6 +38,7 @@ dependencies:
   shimmer: ^3.0.0
   shared_preferences: ^2.5.5
   hugeicons: ^1.1.7
+  flutter_markdown: ^0.7.3
 
 dev_dependencies:
   flutter_test:
