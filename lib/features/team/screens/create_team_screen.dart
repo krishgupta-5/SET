@@ -5,7 +5,41 @@ import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
-import '../../../theme/app_theme.dart';
+
+// --- CUSTOM DOTTED DIVIDER WIDGET ---
+class DottedDivider extends StatelessWidget {
+  final Color color;
+  final double height;
+  final double dashWidth;
+
+  const DottedDivider({
+    super.key,
+    required this.color,
+    this.height = 1.0,
+    this.dashWidth = 4.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final boxWidth = constraints.constrainWidth();
+        final dashCount = (boxWidth / (2 * dashWidth)).floor();
+        return Flex(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          direction: Axis.horizontal,
+          children: List.generate(dashCount, (_) {
+            return SizedBox(
+              width: dashWidth,
+              height: height,
+              child: DecoratedBox(decoration: BoxDecoration(color: color)),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
 
 class CreateTeamScreen extends StatefulWidget {
   const CreateTeamScreen({super.key});
@@ -24,7 +58,7 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
   bool _isLoading = false;
 
   String _selectedColor = "Blue";
-  IconData _selectedIcon = Icons.code;
+  IconData _selectedIcon = Icons.rocket_launch_rounded;
   String _userCountryCode = '+1'; // Default
 
   // 2. DATA OPTIONS
@@ -37,12 +71,12 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
   ];
 
   final List<IconData> _icons = [
-    Icons.code,
-    Icons.campaign_outlined,
-    Icons.brush_outlined,
-    Icons.attach_money,
-    Icons.security,
-    Icons.support_agent,
+    Icons.rocket_launch_rounded,
+    Icons.code_rounded,
+    Icons.palette_rounded,
+    Icons.insights_rounded,
+    Icons.campaign_rounded,
+    Icons.support_agent_rounded,
   ];
 
   Color get _currentTeamColor {
@@ -56,10 +90,7 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
   @override
   void initState() {
     super.initState();
-
-    // Get currency preference synchronously for instant display
     _userCountryCode = CurrencyPreferenceService.getCurrencyPreferenceSync();
-    // Listen for currency changes
     CurrencyPreferenceService.currencyNotifier.addListener(_onCurrencyChanged);
 
     _nameController = TextEditingController();
@@ -87,33 +118,97 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
     }
   }
 
+  void _showMinimalToast(String message, {bool isError = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark
+        ? const Color(0xFF141416)
+        : const Color(0xFFFFFFFF);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+    final textPrimary = isDark ? Colors.white : const Color(0xFF09090B);
+    final statusColor = isError
+        ? const Color(0xFFFF375F)
+        : const Color(0xFF10B981);
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline_rounded,
+              color: statusColor,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(
+                  fontFamily: 'Satoshi',
+                  color: textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: cardColor,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: borderColor),
+        ),
+        duration: const Duration(seconds: 3),
+        elevation: 16,
+      ),
+    );
+  }
+
   // 3. FIREBASE UPLOAD LOGIC
   Future<void> _createTeam() async {
+    FocusScope.of(context).unfocus();
+
     if (_nameController.text.trim().isEmpty) {
-      _showErrorSnackBar("Please enter a team name.");
+      _showMinimalToast("Please enter a team name.", isError: true);
       return;
     }
 
     if (_nameController.text.trim().length < 2) {
-      _showErrorSnackBar("Team name must be at least 2 characters long.");
+      _showMinimalToast(
+        "Team name must be at least 2 characters long.",
+        isError: true,
+      );
       return;
     }
 
     if (_nameController.text.trim().length > 30) {
-      _showErrorSnackBar("Team name must not exceed 30 characters.");
+      _showMinimalToast(
+        "Team name must not exceed 30 characters.",
+        isError: true,
+      );
       return;
     }
 
     if (_descController.text.trim().isNotEmpty &&
         _descController.text.trim().length > 200) {
-      _showErrorSnackBar("Description must not exceed 200 characters.");
+      _showMinimalToast(
+        "Description must not exceed 200 characters.",
+        isError: true,
+      );
       return;
     }
 
-    // T-19: Budget is now required. Without it, team_detail_screen compares
-    // totalCost against 0 and always shows "Over Budget" for a fresh team.
     if (_budgetController.text.trim().isEmpty) {
-      _showErrorSnackBar("Please enter a monthly budget for this team.");
+      _showMinimalToast(
+        "Please enter a monthly budget for this team.",
+        isError: true,
+      );
       return;
     }
 
@@ -121,12 +216,15 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
       _budgetController.text.trim(),
     );
     if (budget == null || budget <= 0) {
-      _showErrorSnackBar("Please enter a valid budget amount greater than 0.");
+      _showMinimalToast(
+        "Please enter a valid budget amount greater than 0.",
+        isError: true,
+      );
       return;
     }
 
     if (budget > 999999.99) {
-      _showErrorSnackBar("Budget amount is too high.");
+      _showMinimalToast("Budget amount is too high.", isError: true);
       return;
     }
 
@@ -134,19 +232,16 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
 
     try {
       final id = const Uuid().v4();
-      // budget is guaranteed non-null and > 0 by the validation above
       final double validBudget = CurrencyFormatter.parse(
         _budgetController.text.trim(),
       )!;
 
-      // Storing to a new 'teams' collection
       await FirebaseFirestore.instance.collection('teams').doc(id).set({
         "uid": FirebaseAuth.instance.currentUser!.uid,
         "teamName": _nameController.text.trim(),
         "description": _descController.text.trim(),
         "monthlyBudget": validBudget,
         "color": _selectedColor,
-        // Save icon data safely so we can rebuild it later
         "iconCodePoint": _selectedIcon.codePoint,
         "iconFontFamily": _selectedIcon.fontFamily,
         "createdAt": FieldValue.serverTimestamp(),
@@ -154,27 +249,11 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Team created successfully!",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: const Color(0xFF30D158),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
+        _showMinimalToast("Team created successfully!");
       }
     } on FirebaseException catch (e) {
       if (mounted) {
-        _showErrorSnackBar(e.message ?? 'Failed to create team');
+        _showMinimalToast(e.message ?? 'Failed to create team', isError: true);
       }
     } finally {
       if (mounted) {
@@ -183,145 +262,163 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
     }
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: Colors.white,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        backgroundColor: const Color(0xFFFF453A), // System Red for consistency
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final bgColor = isDark ? const Color(0xFF09090B) : const Color(0xFFF1F3F5);
+    final cardColor = isDark
+        ? const Color(0xFF141416)
+        : const Color(0xFFFFFFFF);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : const Color(0xFFE5E7EB);
+
+    final textPrimary = isDark ? Colors.white : const Color(0xFF09090B);
+    final textSecondary = isDark ? Colors.white54 : const Color(0xFF71717A);
+    final textTertiary = isDark ? Colors.white38 : const Color(0xFFA1A1AA);
+
     return Scaffold(
-      backgroundColor: context.appBackground,
+      backgroundColor: bgColor,
       resizeToAvoidBottomInset: true,
       body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         child: SafeArea(
           child: Column(
             children: [
-              // 1. Header
-              _buildHeader(context),
+              _buildHeader(textPrimary, textSecondary),
 
-              // 2. Scrollable Form
               Expanded(
-                child: SingleChildScrollView(
+                child: CustomScrollView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 24),
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      sliver: SliverList(
+                        delegate: SliverChildListDelegate([
+                          _buildCompactHeroSection(textPrimary),
+                          const SizedBox(height: 24),
 
-                      // --- TEAM NAME INPUT ---
-                      _buildSectionLabel("Team Name"),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _nameController,
-                        textInputAction: TextInputAction.next,
-                        onTapOutside: (event) =>
-                            FocusScope.of(context).unfocus(),
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 32,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -1,
-                        ),
-                        cursorColor: context.primaryColor,
-                        decoration: InputDecoration(
-                          hintText: "e.g. Engineering",
-                          hintStyle: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textTertiary,
-                            fontSize: 32,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -1,
+                          // Single Unified Form Card
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: cardColor,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: borderColor),
+                              boxShadow: isDark
+                                  ? []
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.03,
+                                        ),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildTextInput(
+                                  label: "Team Name",
+                                  placeholder: "e.g. Engineering",
+                                  controller: _nameController,
+                                  icon: Icons.workspaces_outline,
+                                  textInputAction: TextInputAction.next,
+                                  textPrimary: textPrimary,
+                                  textSecondary: textSecondary,
+                                  textTertiary: textTertiary,
+                                  borderColor: borderColor,
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(height: 24),
+                                DottedDivider(color: borderColor),
+                                const SizedBox(height: 24),
+
+                                _buildTextInput(
+                                  label: "Description",
+                                  placeholder: "What does this team do?",
+                                  controller: _descController,
+                                  icon: Icons.subject_rounded,
+                                  maxLines: 3,
+                                  textInputAction: TextInputAction.next,
+                                  textPrimary: textPrimary,
+                                  textSecondary: textSecondary,
+                                  textTertiary: textTertiary,
+                                  borderColor: borderColor,
+                                  isDark: isDark,
+                                ),
+                                const SizedBox(height: 24),
+                                DottedDivider(color: borderColor),
+                                const SizedBox(height: 24),
+
+                                // Visual Identity Section
+                                Text(
+                                  "Visual Identity",
+                                  style: TextStyle(
+                                    fontFamily: 'Satoshi',
+                                    color: textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: _colors
+                                      .map((c) => _buildColorOption(c))
+                                      .toList(),
+                                ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: _icons
+                                      .map(
+                                        (i) => _buildIconOption(
+                                          i,
+                                          borderColor,
+                                          textSecondary,
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+
+                                const SizedBox(height: 24),
+                                DottedDivider(color: borderColor),
+                                const SizedBox(height: 24),
+
+                                _buildTextInput(
+                                  label: "Monthly Budget",
+                                  placeholder: "e.g. 5000",
+                                  controller: _budgetController,
+                                  icon: Icons.attach_money_rounded,
+                                  isNumber: true,
+                                  textInputAction: TextInputAction.done,
+                                  textPrimary: textPrimary,
+                                  textSecondary: textSecondary,
+                                  textTertiary: textTertiary,
+                                  borderColor: borderColor,
+                                  isDark: isDark,
+                                ),
+                              ],
+                            ),
                           ),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                        ),
+                          const SizedBox(height: 48),
+                        ]),
                       ),
-
-                      const SizedBox(height: 40),
-
-                      // --- VISUAL IDENTITY ---
-                      _buildSectionLabel("TEAM IDENTITY"),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: context.cardBackground,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: context.borderColor),
-                        ),
-                        child: Column(
-                          children: [
-                            // Color Picker
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: _colors
-                                  .map((c) => _buildColorOption(c))
-                                  .toList(),
-                            ),
-                            const SizedBox(height: 24),
-                            Divider(color: context.borderColor, height: 1),
-                            const SizedBox(height: 24),
-                            // Icon Picker
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: _icons
-                                  .map((i) => _buildIconOption(i))
-                                  .toList(),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      // Description
-                      _buildTextInput(
-                        "DESCRIPTION",
-                        "What does this team do?",
-                        _descController,
-                        maxLines: 3,
-                        textInputAction: TextInputAction.next,
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      // Budget (required — T-19)
-                      _buildTextInput(
-                        "MONTHLY BUDGET *",
-                        "e.g. 5000",
-                        _budgetController,
-                        maxLines: 1,
-                        isNumber: true,
-                        textInputAction: TextInputAction.done,
-                      ),
-
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
 
-              // 3. Create Button
-              _buildCreateButton(),
+              _buildSubmitButton(textPrimary, bgColor, borderColor),
             ],
           ),
         ),
@@ -331,31 +428,31 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
 
   // --- WIDGET BUILDERS ---
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(Color textPrimary, Color textSecondary) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.arrow_back, color: textSecondary, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Back",
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(Icons.close, color: context.textPrimary, size: 20),
-            ),
-          ),
-          Text(
-            "New Team",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 44), // Balances the header alignment
@@ -364,10 +461,29 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
     );
   }
 
-  Widget _buildTextInput(
-    String label,
-    String placeholder,
-    TextEditingController controller, {
+  Widget _buildCompactHeroSection(Color textPrimary) {
+    return Text(
+      "Create Team",
+      style: TextStyle(
+        fontFamily: 'Satoshi',
+        color: textPrimary,
+        fontSize: 28, // Compact Hero
+        fontWeight: FontWeight.w700,
+        letterSpacing: -1.0,
+      ),
+    );
+  }
+
+  Widget _buildTextInput({
+    required String label,
+    required String placeholder,
+    required TextEditingController controller,
+    required IconData icon,
+    required Color textPrimary,
+    required Color textSecondary,
+    required Color textTertiary,
+    required Color borderColor,
+    required bool isDark,
     int maxLines = 1,
     bool isNumber = false,
     TextInputAction textInputAction = TextInputAction.done,
@@ -375,32 +491,50 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionLabel(label),
-        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Satoshi',
+            color: textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
-            color: context.cardBackground,
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.03)
+                : Colors.black.withValues(alpha: 0.02),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
+            border: Border.all(color: borderColor),
           ),
           child: TextField(
             controller: controller,
             textInputAction: textInputAction,
             onTapOutside: (event) => FocusScope.of(context).unfocus(),
-            keyboardType: isNumber ? TextInputType.text : TextInputType.text,
+            keyboardType: isNumber
+                ? const TextInputType.numberWithOptions(decimal: true)
+                : TextInputType.text,
             style: TextStyle(
               fontFamily: 'Satoshi',
-              color: context.textPrimary,
+              color: textPrimary,
               fontSize: 15,
+              fontWeight: FontWeight.w600,
             ),
+            cursorColor: textPrimary,
             maxLines: maxLines,
             minLines: maxLines > 1 ? 3 : 1,
             decoration: InputDecoration(
+              icon: (maxLines == 1 && !isNumber)
+                  ? Icon(icon, color: textSecondary, size: 18)
+                  : null,
               hintText: placeholder,
               hintStyle: TextStyle(
                 fontFamily: 'Satoshi',
-                color: context.textTertiary,
+                color: textTertiary,
+                fontWeight: FontWeight.w500,
               ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(vertical: 14),
@@ -416,9 +550,9 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
                             ),
                             style: TextStyle(
                               fontFamily: 'Satoshi',
-                              color: context.textSecondary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
+                              color: textSecondary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -441,16 +575,16 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
 
     return GestureDetector(
       onTap: () {
-        FocusScope.of(context).unfocus(); // Dismiss keyboard on tap
+        FocusScope.of(context).unfocus();
         setState(() => _selectedColor = colorData['name']);
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
-        width: 40,
-        height: 40,
+        width: 44,
+        height: 44,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: isSelected ? 0.3 : 0.1),
+          color: color.withValues(alpha: isSelected ? 0.2 : 0.05),
           shape: BoxShape.circle,
           border: isSelected
               ? Border.all(color: color, width: 2)
@@ -458,8 +592,8 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
         ),
         child: Center(
           child: Container(
-            width: 16,
-            height: 16,
+            width: 18,
+            height: 18,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
         ),
@@ -467,13 +601,17 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
     );
   }
 
-  Widget _buildIconOption(IconData icon) {
+  Widget _buildIconOption(
+    IconData icon,
+    Color borderColor,
+    Color textSecondary,
+  ) {
     final bool isSelected = _selectedIcon == icon;
     final activeColor = _currentTeamColor;
 
     return GestureDetector(
       onTap: () {
-        FocusScope.of(context).unfocus(); // Dismiss keyboard on tap
+        FocusScope.of(context).unfocus();
         setState(() => _selectedIcon = icon);
       },
       child: AnimatedContainer(
@@ -486,36 +624,27 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
           borderRadius: BorderRadius.circular(12),
           border: isSelected
               ? Border.all(color: activeColor)
-              : Border.all(color: context.borderColor),
+              : Border.all(color: borderColor),
         ),
         child: Icon(
           icon,
-          color: isSelected ? Colors.white : context.textSecondary,
+          color: isSelected ? Colors.white : textSecondary,
           size: 20,
         ),
       ),
     );
   }
 
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(), // Forcing uppercase just in case
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11, // Bumped from 10 to 11 for better readability
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2, // Slightly tightened so it doesn't spread too much
-      ),
-    );
-  }
-
-  Widget _buildCreateButton() {
+  Widget _buildSubmitButton(
+    Color textPrimary,
+    Color bgColor,
+    Color borderColor,
+  ) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
       decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
+        color: bgColor,
+        border: Border(top: BorderSide(color: borderColor)),
       ),
       child: SizedBox(
         width: double.infinity,
@@ -523,9 +652,9 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
         child: ElevatedButton(
           onPressed: _isLoading ? null : _createTeam,
           style: ElevatedButton.styleFrom(
-            backgroundColor: context.textPrimary,
-            foregroundColor: context.appBackground,
-            disabledBackgroundColor: context.textTertiary,
+            backgroundColor: textPrimary,
+            foregroundColor: bgColor,
+            disabledBackgroundColor: textPrimary.withValues(alpha: 0.5),
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -536,16 +665,17 @@ class _CreateTeamScreenState extends State<CreateTeamScreen>
                   height: 24,
                   width: 24,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: context.appBackground,
+                    strokeWidth: 2.5,
+                    color: bgColor,
                   ),
                 )
-              : Text(
+              : const Text(
                   "Create Team",
                   style: TextStyle(
                     fontFamily: 'Satoshi',
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
                   ),
                 ),
         ),

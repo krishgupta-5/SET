@@ -105,6 +105,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                     color: context.cardBackground,
                     shape: BoxShape.circle,
                     border: Border.all(color: context.borderColor),
+                    boxShadow: context.cardShadow,
                   ),
                   child: Icon(
                     Icons.email_outlined,

@@ -66,41 +66,65 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     }
   }
 
+  Color _getColorFromName(String colorName) {
+    switch (colorName.toLowerCase()) {
+      case 'blue':
+        return const Color(0xFF0A84FF);
+      case 'orange':
+        return const Color(0xFFFF9F0A);
+      case 'purple':
+        return const Color(0xFFA259FF);
+      case 'green':
+        return const Color(0xFF30D158);
+      case 'red':
+        return const Color(0xFFFF453A);
+      default:
+        return const Color(0xFF0A84FF);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.appBackground,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-      // --- THEMED FAB ---
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AddMemberScreen(teamId: widget.teamId),
+    final bgColor = isDark ? const Color(0xFF09090B) : const Color(0xFFF9FAFB);
+    final cardColor = isDark
+        ? const Color(0xFF141416)
+        : const Color(0xFFFFFFFF);
+    final borderColor = isDark
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.05);
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: bgColor,
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AddMemberScreen(teamId: widget.teamId),
+              ),
+            );
+          },
+          backgroundColor: context.textPrimary,
+          foregroundColor: context.appBackground,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          icon: const Icon(Icons.add, size: 20),
+          label: const Text(
+            "Add Member",
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
-          );
-        },
-        backgroundColor: context.textPrimary,
-        foregroundColor: context.appBackground,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        icon: const Icon(Icons.add, size: 20),
-        label: Text(
-          "Add Member",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            fontSize: 15,
-            fontWeight: FontWeight.bold,
           ),
         ),
-      ),
-
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
-        child: SafeArea(
+        body: SafeArea(
           bottom: false,
           child: StreamBuilder<DocumentSnapshot>(
             stream: FirebaseFirestore.instance
@@ -120,21 +144,28 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                 );
               }
 
-              // Use latest team data, fallback to initial if loading
               final teamData =
                   teamSnapshot.hasData && teamSnapshot.data!.data() != null
                   ? teamSnapshot.data!.data() as Map<String, dynamic>
                   : widget.initialTeamData;
 
               final String teamName = teamData['teamName'] ?? "Team";
+              final String description = teamData['description'] ?? "";
               final double teamBudget = (teamData['monthlyBudget'] ?? 0.0)
                   .toDouble();
+              final Color teamColor = _getColorFromName(
+                teamData['color'] ?? 'blue',
+              );
 
               return Column(
                 children: [
-                  // --- UNIFIED HEADER ---
-                  _buildHeader(context, teamName, teamData),
-
+                  _buildHeader(
+                    context,
+                    teamName,
+                    teamData,
+                    cardColor,
+                    borderColor,
+                  ),
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
@@ -157,7 +188,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                         final String memberCount =
                             "${membersDocs.length} Members";
 
-                        // Sort members by cost (Highest to lowest)
                         final sortedMembers = membersDocs.toList();
                         sortedMembers.sort((a, b) {
                           final costA =
@@ -181,9 +211,33 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                             children: [
                               const SizedBox(height: 16),
 
-                              // --- HERO STATS (Actual Expenses This Month + Member Salaries) ---
-                              // Uses the already-fetched membersDocs from the outer StreamBuilder
-                              // to include salaries, so no extra Firestore read is needed.
+                              // Clean Title & Description
+                              Text(
+                                teamName,
+                                style: TextStyle(
+                                  fontFamily: 'Satoshi',
+                                  color: context.textPrimary,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -1.0,
+                                ),
+                              ),
+                              if (description.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  description,
+                                  style: TextStyle(
+                                    fontFamily: 'Satoshi',
+                                    color: context.textSecondary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 32),
+
+                              // Budget Block
                               StreamBuilder<QuerySnapshot>(
                                 stream: FirebaseFirestore.instance
                                     .collection('expenses')
@@ -200,8 +254,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                                   double totalSpentThisMonth = 0.0;
                                   if (expenseSnapshot.hasData) {
                                     final now = DateTime.now();
-
-                                    // Build raw list from Firestore docs
                                     final rawList = expenseSnapshot.data!.docs
                                         .map((doc) {
                                           final data =
@@ -211,7 +263,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                                         })
                                         .toList();
 
-                                    // Expand recurring expenses into individual occurrences for the entire month
                                     final endOfMonth = DateTime(
                                       now.year,
                                       now.month + 1,
@@ -227,9 +278,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                                           allowFuture: true,
                                         );
 
-                                    // Sum only non-salary expense occurrences in the current month.
-                                    // Salary expenses are counted below from the members collection
-                                    // to avoid double-counting if a salary doc also exists.
                                     for (final data in expanded) {
                                       if (data['isFunding'] == true) continue;
                                       final category = (data['Category'] ?? '')
@@ -255,7 +303,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                                       }
                                     }
 
-                                    // Add member salaries from already-fetched membersDocs
                                     for (var memberDoc in membersDocs) {
                                       final md =
                                           memberDoc.data()
@@ -273,48 +320,55 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                                       totalSpentThisMonth += salary;
                                     }
                                   }
-                                  final bool isWithinBudget =
-                                      totalSpentThisMonth <= teamBudget;
-                                  return _buildHeroStats(
+                                  return _buildBudgetBlock(
                                     totalSpentThisMonth,
-                                    isWithinBudget,
+                                    teamBudget,
                                     teamName,
-                                    teamData,
+                                    teamColor,
+                                    cardColor,
+                                    borderColor,
                                   );
                                 },
                               ),
 
-                              const SizedBox(height: 48),
+                              const SizedBox(height: 32),
 
-                              // --- MEMBERS LIST HEADER ---
+                              // Members Block
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
                                 children: [
-                                  _buildSectionTitle(
-                                    "TEAM MEMBERS ($memberCount)",
+                                  Text(
+                                    "MEMBERS",
+                                    style: TextStyle(
+                                      fontFamily: 'Satoshi',
+                                      color: context.textSecondary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.5,
+                                    ),
                                   ),
-                                  _buildSectionTitle("SORT BY COST"),
+                                  Text(
+                                    memberCount.toUpperCase(),
+                                    style: TextStyle(
+                                      fontFamily: 'Satoshi',
+                                      color: context.textTertiary,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.0,
+                                    ),
+                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
 
-                              // --- MEMBERS LIST ---
-                              if (sortedMembers.isEmpty)
-                                _buildEmptyState("No members in this team yet.")
-                              else
-                                ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: sortedMembers.length,
-                                  itemBuilder: (context, index) {
-                                    return _buildMemberRow(
-                                      sortedMembers[index],
-                                    );
-                                  },
-                                ),
+                              _buildMembersBlock(
+                                sortedMembers,
+                                cardColor,
+                                borderColor,
+                              ),
 
-                              const SizedBox(height: 100), // Padding for FAB
+                              const SizedBox(height: 100),
                             ],
                           ),
                         );
@@ -336,43 +390,39 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     BuildContext context,
     String teamName,
     Map<String, dynamic> teamData,
+    Color cardColor,
+    Color borderColor,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Icon(
-                Icons.arrow_back,
-                color: context.textPrimary,
-                size: 20,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back,
+                    color: context.textSecondary,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Back",
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textSecondary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          Expanded(
-            child: Text(
-              teamName,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // Settings / Edit Team is now balanced cleanly on the right
           GestureDetector(
             onTap: () {
               Navigator.push(
@@ -384,16 +434,19 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
               );
             },
             child: Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Icon(
-                Icons.settings_outlined,
                 color: context.textPrimary,
-                size: 20,
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: Text(
+                "Edit Team",
+                style: TextStyle(
+                  fontFamily: 'Satoshi',
+                  color: context.appBackground,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -402,96 +455,126 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
-
-  Widget _buildHeroStats(
+  Widget _buildBudgetBlock(
     double totalCost,
-    bool isWithinBudget,
+    double budget,
     String teamName,
-    Map<String, dynamic> teamData,
+    Color teamColor,
+    Color cardColor,
+    Color borderColor,
   ) {
-    final budget = (teamData['monthlyBudget'] as num?)?.toDouble();
+    final bool isOverBudget = totalCost > budget && budget > 0;
+    final Color progressColor = isOverBudget
+        ? const Color(0xFFFF453A)
+        : teamColor;
+
+    double progress = budget > 0 ? (totalCost / budget) : 0.0;
+    if (progress > 1.0) progress = 1.0;
 
     return Container(
-      width: double.infinity,
       decoration: BoxDecoration(
-        color: context.cardBackground,
+        color: cardColor,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(24),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  "TOTAL MONTHLY COST",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    CurrencyFormatter.formatByCountryCompact(
-                      totalCost,
-                      _userCountryCode,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      "MONTHLY SPEND",
+                      style: TextStyle(
+                        fontFamily: 'Satoshi',
+                        color: context.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0,
+                      ),
                     ),
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 48,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -1.5,
-                    ),
-                  ),
+                    if (isOverBudget)
+                      Text(
+                        "OVER BUDGET",
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          color: const Color(0xFFFF453A),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isWithinBudget
-                        ? const Color(0xFF30D158).withValues(alpha: 0.1)
-                        : const Color(0xFFFF453A).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isWithinBudget ? "Within Budget" : "Over Budget",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: isWithinBudget
-                          ? const Color(0xFF30D158)
-                          : const Color(0xFFFF453A),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      CurrencyFormatter.formatByCountryCompact(
+                        totalCost,
+                        _userCountryCode,
+                      ),
+                      style: TextStyle(
+                        fontFamily: 'Satoshi',
+                        color: context.textPrimary,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -1.0,
+                        height: 1.1,
+                      ),
                     ),
-                  ),
+                    if (budget > 0) ...[
+                      const SizedBox(width: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          "of ${CurrencyFormatter.formatByCountryCompact(budget, _userCountryCode)}",
+                          style: TextStyle(
+                            fontFamily: 'Satoshi',
+                            color: context.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+                if (budget > 0) ...[
+                  const SizedBox(height: 20),
+                  Stack(
+                    children: [
+                      Container(
+                        height: 6,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: context.textSecondary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: progress > 0 ? progress : 0.02,
+                        child: Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: progressColor,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
-
-          // --- SEAMLESS EXPENSES BUTTON ---
+          Divider(height: 1, color: borderColor),
           GestureDetector(
             onTap: () {
               Navigator.push(
@@ -505,31 +588,25 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                 ),
               );
             },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: context.isDarkMode
-                    ? Colors.white.withValues(alpha: 0.02)
-                    : Colors.black.withValues(alpha: 0.02),
-                border: Border(top: BorderSide(color: context.borderColor)),
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(24),
-                ),
-              ),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(Icons.history, color: context.textSecondary, size: 16),
-                  const SizedBox(width: 8),
                   Text(
                     "View Expense History",
                     style: TextStyle(
                       fontFamily: 'Satoshi',
                       color: context.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: context.textSecondary,
+                    size: 20,
                   ),
                 ],
               ),
@@ -540,22 +617,75 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
     );
   }
 
-  Widget _buildMemberRow(QueryDocumentSnapshot doc) {
+  Widget _buildMembersBlock(
+    List<QueryDocumentSnapshot> sortedMembers,
+    Color cardColor,
+    Color borderColor,
+  ) {
+    if (sortedMembers.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(32),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: borderColor),
+        ),
+        child: Center(
+          child: Text(
+            "No members assigned to this team.",
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: context.textSecondary,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        children: sortedMembers.asMap().entries.map((entry) {
+          final isLast = entry.key == sortedMembers.length - 1;
+          return Column(
+            children: [
+              _buildCleanMemberRow(entry.value),
+              if (!isLast)
+                Padding(
+                  padding: const EdgeInsets.only(left: 72), // Indented divider
+                  child: Divider(height: 1, color: borderColor),
+                ),
+            ],
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildCleanMemberRow(QueryDocumentSnapshot doc) {
     final member = doc.data() as Map<String, dynamic>;
     final memberId = doc.id;
 
     final String name = member['fullName'] ?? 'Unnamed Member';
     final String role = member['jobTitle'] ?? 'No Role';
     final double rawCost = (member['monthlyCost'] ?? 0.0).toDouble();
-    final String salary =
-        "${CurrencyFormatter.formatByCountryCompact(rawCost, _userCountryCode)}/mo";
+    final String salary = CurrencyFormatter.formatByCountryCompact(
+      rawCost,
+      _userCountryCode,
+    );
 
     final String status = member['status'] ?? 'Active';
     final bool isPaused = status == 'Paused';
 
     final String? telegramFileId = member['telegramFileId'];
     final String? avatarUrl = member['avatarUrl'];
-
     final String? telegramFileIdFromAvatar =
         (avatarUrl != null &&
             avatarUrl.isNotEmpty &&
@@ -573,135 +703,99 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
           ),
         );
       },
+      behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: context.borderColor),
-          ),
-          child: Row(
-            children: [
-              // Avatar
-              Stack(
-                children: [
-                  _buildMemberAvatar(
-                    name,
-                    48,
-                    avatarUrl ?? "",
-                    telegramFileId ?? telegramFileIdFromAvatar,
-                  ),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                _buildMemberAvatar(
+                  name,
+                  40,
+                  avatarUrl ?? "",
+                  telegramFileId ?? telegramFileIdFromAvatar,
+                ),
+                if (isPaused)
                   Positioned(
-                    bottom: 0,
-                    right: 0,
+                    bottom: -2,
+                    right: -2,
                     child: Container(
                       width: 14,
                       height: 14,
                       decoration: BoxDecoration(
-                        color: isPaused
-                            ? const Color(0xFFFF9F0A)
-                            : const Color(0xFF30D158),
+                        color: const Color(0xFFFF9F0A),
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: context.cardBackground,
-                          width: 2.5,
+                          width: 2,
                         ),
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(width: 16),
-
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        decoration: isPaused
-                            ? TextDecoration.lineThrough
-                            : null,
-                        decorationColor: context.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      role,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-
-              // Cost & Menu
-              Row(
+              ],
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    salary,
+                    name,
                     style: TextStyle(
                       fontFamily: 'Satoshi',
                       color: isPaused
                           ? context.textSecondary
                           : context.textPrimary,
-                      fontSize: 14,
+                      fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      fontFeatures: [const FontFeature.tabularFigures()],
+                      decoration: isPaused ? TextDecoration.lineThrough : null,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () =>
-                        _showMemberOptions(context, memberId, name, isPaused),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      color: Colors.transparent,
-                      child: Icon(
-                        Icons.more_vert,
-                        color: context.textSecondary,
-                        size: 20,
-                      ),
+                  const SizedBox(height: 2),
+                  Text(
+                    role,
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(String message) {
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.4,
-      child: Center(
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
+            ),
+            Row(
+              children: [
+                Text(
+                  salary,
+                  style: TextStyle(
+                    fontFamily: 'Satoshi',
+                    color: isPaused
+                        ? context.textTertiary
+                        : context.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () =>
+                      _showMemberOptions(context, memberId, name, isPaused),
+                  child: Icon(
+                    Icons.more_horiz_rounded,
+                    color: context.textTertiary,
+                    size: 20,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -751,7 +845,6 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 24),
-
                 _buildActionOption(
                   isCurrentlyPaused
                       ? Icons.play_circle_outline
@@ -771,9 +864,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                     }
                   },
                 ),
-
-                const SizedBox(height: 16),
-
+                const SizedBox(height: 8),
                 _buildActionOption(
                   Icons.person_remove_outlined,
                   "Remove from Team",
@@ -851,9 +942,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
               width: size,
               height: size,
               decoration: BoxDecoration(
-                color: context.cardBackground,
+                color: context.cardSecondaryBackground,
                 shape: BoxShape.circle,
-                border: Border.all(color: context.borderColor),
               ),
               child: Center(
                 child: SizedBox(
@@ -861,7 +951,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> {
                   height: size * 0.3,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: context.textSecondary,
+                    color: context.iconSecondary,
                   ),
                 ),
               ),

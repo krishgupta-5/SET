@@ -99,45 +99,65 @@ class AppTheme {
 /// Adaptive theme colors extension on BuildContext
 /// Provides instant access to vibrant, high-contrast colors depending on current theme mode
 extension AppThemeColors on BuildContext {
+  // --- CORE THEME CHECK ---
   bool get isDarkMode => Theme.of(this).brightness == Brightness.dark;
 
-  // Backgrounds
-  Color get appBackground => isDarkMode
-      ? const Color(0xFF09090B)
-      : const Color(0xFFF9FAFB); // Crisp ultra-light gray
-  Color get cardBackground =>
-      isDarkMode ? const Color(0xFF141416) : Colors.white;
-  Color get cardSecondaryBackground => isDarkMode
-      ? const Color(0xFF1C1C1E)
-      : const Color(0xFFF4F4F5); // Zinc-100
+  // --- BACKGROUNDS ---
+  // The light mode background is now a deeper cool-grey, making pure white cards POP.
+  Color get appBackground =>
+      isDarkMode ? const Color(0xFF09090B) : const Color(0xFFF1F3F5);
 
-  // Borders
+  // Cards remain pure white in light mode for maximum contrast.
+  Color get cardBackground =>
+      isDarkMode ? const Color(0xFF141416) : const Color(0xFFFFFFFF);
+  Color get cardSecondaryBackground =>
+      isDarkMode ? const Color(0xFF1E1E20) : const Color(0xFFFAFAFA);
+
+  // --- BORDERS ---
+  // Sharper borders in light mode define the edges of the floating components.
   Color get borderColor => isDarkMode
       ? Colors.white.withValues(alpha: 0.08)
-      : Colors.black.withValues(alpha: 0.06);
-  Color get borderColorStrong => isDarkMode
-      ? Colors.white.withValues(alpha: 0.15)
-      : Colors.black.withValues(alpha: 0.12);
+      : const Color(0xFFE5E7EB);
   Color get borderSubtle => isDarkMode
       ? Colors.white.withValues(alpha: 0.04)
-      : Colors.black.withValues(alpha: 0.03);
+      : const Color(0xFFF3F4F6);
+  Color get borderColorStrong => isDarkMode
+      ? Colors.white.withValues(alpha: 0.15)
+      : const Color(0xFFD1D5DB);
 
-  // Typography & Icons
-  Color get textPrimary => isDarkMode
-      ? Colors.white
-      : const Color(0xFF09090B); // True Charcoal Black
+  // --- TYPOGRAPHY ---
+  Color get textPrimary => isDarkMode ? Colors.white : const Color(0xFF09090B);
   Color get textSecondary =>
-      isDarkMode ? Colors.white54 : const Color(0xFF71717A); // Zinc-500
+      isDarkMode ? Colors.white54 : const Color(0xFF71717A);
   Color get textTertiary =>
-      isDarkMode ? Colors.white38 : const Color(0xFFA1A1AA); // Zinc-400
-  Color get textSubtle =>
-      isDarkMode ? Colors.white24 : const Color(0xFFE4E4E7); // Zinc-200
+      isDarkMode ? Colors.white38 : const Color(0xFFA1A1AA);
+  Color get textSubtle => isDarkMode ? Colors.white24 : const Color(0xFFE4E4E7);
 
+  // --- ICONS ---
   Color get iconPrimary => isDarkMode ? Colors.white : const Color(0xFF09090B);
   Color get iconSecondary =>
       isDarkMode ? Colors.white54 : const Color(0xFF71717A);
 
-  // Glass & subtle fills
+  // --- THE "POP" SHADOWS ---
+  // Apply this to the boxShadow property of your Bottom Nav, FAB, and Cards!
+  List<BoxShadow> get cardShadow => isDarkMode
+      ? [] // No shadows in dark mode (relies on borders)
+      : [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 24,
+            spreadRadius: 0,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            spreadRadius: 0,
+            offset: const Offset(0, 2),
+          ),
+        ];
+
+  // --- Glass & subtle fills ---
   Color get glassBackground => isDarkMode
       ? Colors.white.withValues(alpha: 0.05)
       : Colors.black.withValues(alpha: 0.04);
@@ -145,15 +165,14 @@ extension AppThemeColors on BuildContext {
       ? Colors.white.withValues(alpha: 0.1)
       : Colors.black.withValues(alpha: 0.08);
 
-  // Inputs & Nav
+  // --- Inputs & Nav ---
   Color get inputBackground =>
       isDarkMode ? const Color(0xFF1C1C1E) : Colors.white;
   Color get navBackground =>
       isDarkMode ? const Color(0xFF141416) : Colors.white;
   Color get navActiveTab => isDarkMode ? Colors.white : const Color(0xFF09090B);
 
-  // Accents & Brand
+  // --- Accents & Brand ---
   Color get primaryColor => isDarkMode ? Colors.white : const Color(0xFF09090B);
-  Color get accentColor =>
-      const Color(0xFF3B82F6); // Punchy blue that works on both
+  Color get accentColor => const Color(0xFF3B82F6);
 }

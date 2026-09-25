@@ -7,7 +7,6 @@ import '../../../services/financial_data_service.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 
-
 // --- CUSTOM DOTTED DIVIDER WIDGET ---
 class DottedDivider extends StatelessWidget {
   final Color color;
@@ -1287,8 +1286,7 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
                     textPrimary: textPrimary,
                     textSecondary: textSecondary,
                   ),
-                  if (!isLast)
-                    const SizedBox(height: 16),
+                  if (!isLast) const SizedBox(height: 16),
                 ],
               );
             }),
@@ -1537,5 +1535,4 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
       ),
     );
   }
-
 }

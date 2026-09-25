@@ -407,6 +407,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Icon(Icons.arrow_back, color: context.textPrimary, size: 20),
           ),
@@ -461,6 +462,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: TextField(
         controller: controller,
@@ -491,6 +493,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: TextField(
         controller: _confirmPasswordController,
@@ -540,6 +543,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: TextField(
         controller: _passwordController,
@@ -736,6 +740,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: context.borderColor),
+          boxShadow: context.cardShadow,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
@@ -392,6 +391,7 @@ class _AiScreenState extends State<AiScreen>
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Icon(
               Icons.auto_awesome,
@@ -413,6 +413,7 @@ class _AiScreenState extends State<AiScreen>
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: context.borderColor),
+          boxShadow: context.cardShadow,
         ),
         child: Center(
           child: CircularProgressIndicator(
@@ -436,6 +437,7 @@ class _AiScreenState extends State<AiScreen>
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -559,6 +561,7 @@ class _AiScreenState extends State<AiScreen>
             color: context.cardBackground,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: context.borderColor),
+            boxShadow: context.cardShadow,
           ),
           child: Column(
             children: items.map((item) {
@@ -681,6 +684,7 @@ class _AiScreenState extends State<AiScreen>
             color: context.cardBackground,
             border: Border.all(color: context.borderColor),
             borderRadius: BorderRadius.circular(20),
+            boxShadow: context.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -754,6 +758,7 @@ class _AiScreenState extends State<AiScreen>
             color: context.cardBackground,
             border: Border.all(color: context.borderColor),
             borderRadius: BorderRadius.circular(20),
+            boxShadow: context.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -897,6 +902,7 @@ class _AiScreenState extends State<AiScreen>
             color: context.cardBackground,
             border: Border.all(color: context.borderColor),
             borderRadius: BorderRadius.circular(20),
+            boxShadow: context.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -970,6 +976,7 @@ class _AiScreenState extends State<AiScreen>
             color: context.cardBackground,
             border: Border.all(color: context.borderColor),
             borderRadius: BorderRadius.circular(20),
+            boxShadow: context.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1043,6 +1050,7 @@ class _AiScreenState extends State<AiScreen>
             color: context.cardBackground,
             border: Border.all(color: context.borderColor),
             borderRadius: BorderRadius.circular(20),
+            boxShadow: context.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

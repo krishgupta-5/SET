@@ -29,16 +29,26 @@ class PrivacyAssurancesScreen extends StatelessWidget {
                     children: [
                       const SizedBox(height: 16),
                       Text(
+                        "Privacy Assurances",
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          color: context.textPrimary,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -1.0,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
                         "Your data belongs to you.",
                         style: TextStyle(
                           fontFamily: 'Satoshi',
                           color: context.textPrimary,
-                          fontSize: 32,
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
-                          letterSpacing: -1.5,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
                         "We believe financial privacy is a fundamental right. Here is exactly how we handle your information.",
                         style: TextStyle(
@@ -136,33 +146,33 @@ class PrivacyAssurancesScreen extends StatelessWidget {
 
   Widget _buildHeader(BuildContext context, String title) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back,
+                    color: context.textSecondary,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Back",
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(
-                Icons.arrow_back,
-                color: context.textPrimary,
-                size: 20,
-              ),
-            ),
-          ),
-          Text(
-            title,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 44),
@@ -200,6 +210,7 @@ class PrivacyAssurancesScreen extends StatelessWidget {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

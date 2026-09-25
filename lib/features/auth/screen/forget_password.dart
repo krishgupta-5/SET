@@ -357,6 +357,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Icon(Icons.arrow_back, color: context.textPrimary, size: 20),
           ),

@@ -857,6 +857,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shape: BoxShape.circle,
         border: Border.all(color: context.borderColor, width: 1),
         color: context.cardSecondaryBackground,
+        boxShadow: context.cardShadow,
       ),
       child: Icon(Icons.person, size: 40, color: context.iconSecondary),
     );

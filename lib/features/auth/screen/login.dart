@@ -338,6 +338,7 @@ class _LoginScreenState extends State<LoginScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: TextField(
         controller: controller,
@@ -371,6 +372,7 @@ class _LoginScreenState extends State<LoginScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: TextField(
         controller: _passwordController,
@@ -551,6 +553,7 @@ class _LoginScreenState extends State<LoginScreen> {
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: context.borderColor),
+          boxShadow: context.cardShadow,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,

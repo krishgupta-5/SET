@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:startup_expense_tracker/features/auth/auth_wrapper.dart';
@@ -23,6 +24,18 @@ void main() async {
   // Initialize theme preference from local disk cache BEFORE runApp
   // This ensures the app boots instantly in the exact cached theme (zero flash!)
   await ThemeService.initializeCache();
+
+  // Make status bar transparent globally so it blends with backgrounds
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark, // Default fallback
+    ),
+  );
+
+  // Enable edge-to-edge mode (standard for modern apps like Zomato, Google Apps, etc.)
+  // This keeps the status bar visible but fully transparent so the app draws underneath it.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   runApp(const FinancialDashboardApp());
 }

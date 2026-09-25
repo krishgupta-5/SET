@@ -176,6 +176,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Icon(Icons.arrow_back, color: context.textPrimary, size: 20),
           ),

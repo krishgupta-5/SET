@@ -818,6 +818,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                         color: context.cardBackground,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: context.borderColor),
+                        boxShadow: context.cardShadow,
                       ),
                       child: Text(
                         'Cancel',
@@ -904,6 +905,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: Row(
         children: [
@@ -999,7 +1001,18 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Add Expense",
+                          style: TextStyle(
+                            fontFamily: 'Satoshi',
+                            color: context.textPrimary,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
 
                         // ✅ Show "Pre-filled from scan" banner if data came from scan
                         if (widget.prefillData != null &&
@@ -1165,29 +1178,33 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back,
+                    color: context.textSecondary,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Back",
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(Icons.close, color: context.textPrimary, size: 20),
-            ),
-          ),
-          Text(
-            "Add Expense",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 44),
@@ -1257,6 +1274,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: TextField(
         controller: _titleController,
@@ -1348,6 +1366,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             color: context.cardBackground,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: context.borderColor),
+            boxShadow: context.cardShadow,
           ),
           child: TextField(
             readOnly: true,
@@ -1483,6 +1502,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             color: context.cardBackground,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: context.borderColor),
+            boxShadow: context.cardShadow,
           ),
           child: TextField(
             controller: _descriptionController,
@@ -1521,6 +1541,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: context.borderColor),
+          boxShadow: context.cardShadow,
         ),
         child: Center(
           child: Text(
@@ -1858,6 +1879,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   color: context.cardBackground,
                   shape: BoxShape.circle,
                   border: Border.all(color: context.borderColor),
+                  boxShadow: context.cardShadow,
                 ),
                 child: Center(
                   child: SizedBox(
@@ -1916,6 +1938,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                 ? const Color(0xFF0A84FF).withValues(alpha: 0.3)
                 : context.borderColor,
           ),
+          boxShadow: context.cardShadow,
         ),
         child: Row(
           children: [
@@ -2324,6 +2347,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         color: context.cardBackground, // Glassy background
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2472,6 +2496,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             color: context.cardBackground,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: context.borderColor),
+            boxShadow: context.cardShadow,
           ),
           child: TextField(
             controller: controller,

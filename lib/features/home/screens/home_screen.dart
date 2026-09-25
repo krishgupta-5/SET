@@ -638,7 +638,11 @@ class _HomeScreenState extends State<HomeScreen> {
         floatingActionButton: FloatingActionButton(
           backgroundColor: textPrimary,
           elevation: 2,
-          child: HugeIcon(icon: HugeIcons.strokeRoundedMessage02, color: bgColor, size: 24),
+          child: HugeIcon(
+            icon: HugeIcons.strokeRoundedMessage02,
+            color: bgColor,
+            size: 24,
+          ),
           onPressed: () {
             Navigator.push(
               context,

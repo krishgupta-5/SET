@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
 import 'add_expense_screen.dart';
 import 'search_expense_screen.dart';
 import 'expense_details_screen.dart';
@@ -239,10 +238,12 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Header (Minimal Text Only)
+              const SizedBox(height: 16),
+
+              // 1. Hero Section (Matches Team Screen)
               _buildMinimalHeader(),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
 
               // 2. Metrics (Flat Cards)
               SizedBox(
@@ -254,9 +255,9 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                         clipBehavior: Clip.none,
                         children: [
                           _buildSkeletonMetricCard(),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           _buildSkeletonMetricCard(),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           _buildSkeletonMetricCard(),
                         ],
                       )
@@ -275,14 +276,14 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                             "${_totalFunding > 0 ? ((_totalFunding - _totalExpenses) / _totalFunding * 100).toStringAsFixed(0) : '0'}%",
                             const Color(0xFF30D158),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           _buildFlatMetric(
                             "Spent",
                             _formatCurrency(_totalExpenses),
                             "${_totalFunding > 0 ? (_totalExpenses / _totalFunding * 100).toStringAsFixed(1) : '0'}% used",
                             context.textPrimary,
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           _buildFlatMetric(
                             "Avg. Daily",
                             _formatCurrency(_avgDaily),
@@ -293,20 +294,19 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                       ),
               ),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
 
-              // 3. Actions (Outline Style)
-              _buildSectionLabel("QUICK ACTIONS"),
-              const SizedBox(height: 16),
-              _buildFlatActionGrid(context),
+              // 3. Quick Actions Card
+              _buildQuickActionsCard(context),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
 
-              // 4. Transactions (Clean List)
+              // 4. Transactions Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  _buildSectionLabel("TRANSACTIONS"),
+                  _buildSectionLabel("RECENT TRANSACTIONS"),
                   GestureDetector(
                     onTap: () {
                       Navigator.push(
@@ -318,30 +318,28 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
+                        horizontal: 12,
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: context.glassBackgroundStrong,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.borderColor),
+                        color: context.textPrimary,
+                        borderRadius: BorderRadius.circular(100),
                       ),
                       child: Row(
                         children: [
                           Text(
-                            "VIEW ALL",
+                            "View All",
                             style: TextStyle(
                               fontFamily: 'Satoshi',
-                              color: context.textPrimary,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 1.0,
+                              color: context.appBackground,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                           const SizedBox(width: 4),
                           Icon(
                             Icons.arrow_forward,
-                            color: context.textPrimary,
+                            color: context.appBackground,
                             size: 12,
                           ),
                         ],
@@ -350,12 +348,12 @@ class _ExpensesScreenState extends State<ExpensesScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Firebase Transactions Stream
               _buildFlatTransactionList(),
 
-              const SizedBox(height: 80), // Bottom padding for navbar
+              const SizedBox(height: 100), // Bottom padding for navbar
             ],
           ),
         ),
@@ -364,28 +362,34 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   }
 
   Widget _buildMinimalHeader() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          DataHelpers.formatDate(DateTime.now(), format: 'MMMM yyyy'),
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          "Expenses",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 32,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -1,
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              DataHelpers.formatDate(DateTime.now(), format: 'MMMM yyyy'),
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                color: context.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              "Expenses",
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                color: context.textPrimary,
+                fontSize: 32,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -1.0,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -483,83 +487,116 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     );
   }
 
-  Widget _buildFlatActionGrid(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const AddExpenseScreen()),
-            ).then((_) => _loadMetricsData());
-          },
-          child: _buildFlatActionButton("Add", Icons.add_rounded),
-        ),
-        GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const SearchExpenseScreen(),
-              ),
-            );
-          },
-          child: _buildFlatActionButton("Search", Icons.search_rounded),
-        ),
-        GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ScanExpenseScreen(),
-              ),
-            ).then((_) => _loadMetricsData());
-          },
-          child: _buildFlatActionButton("Scan", Icons.qr_code_rounded),
-        ),
-        GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ReportExpenseScreen(),
-              ),
-            );
-          },
-          child: _buildFlatActionButton(
-            "Report",
-            Icons.insert_chart_outlined_rounded,
+  Widget _buildQuickActionsCard(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: context.cardBackground,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: context.borderColor),
+        boxShadow: context.isDarkMode
+            ? []
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "QUICK ACTIONS",
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: context.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildFlatActionButton("Add", Icons.add_rounded, () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AddExpenseScreen(),
+                  ),
+                ).then((_) => _loadMetricsData());
+              }),
+              _buildFlatActionButton("Search", Icons.search_rounded, () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SearchExpenseScreen(),
+                  ),
+                );
+              }),
+              _buildFlatActionButton("Scan", Icons.qr_code_rounded, () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ScanExpenseScreen(),
+                  ),
+                ).then((_) => _loadMetricsData());
+              }),
+              _buildFlatActionButton(
+                "Report",
+                Icons.insert_chart_outlined_rounded,
+                () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ReportExpenseScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildFlatActionButton(String label, IconData icon) {
-    return Column(
-      children: [
-        Container(
-          height: 60,
-          width: 60,
-          decoration: BoxDecoration(
-            color: context.glassBackgroundStrong,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
+  Widget _buildFlatActionButton(
+    String label,
+    IconData icon,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Container(
+            height: 52,
+            width: 52,
+            decoration: BoxDecoration(
+              color: context.isDarkMode
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: context.textPrimary, size: 22),
           ),
-          child: Icon(icon, color: context.textPrimary, size: 24),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: context.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -605,20 +642,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 40),
-            child: Center(
-              child: Text(
-                "No recent transactions found.",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textTertiary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          );
+          return _buildEmptyTransactionsState();
         }
 
         final mappedExpenses = snapshot.data!.docs.map((doc) {
@@ -656,20 +680,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
         final top5Expenses = expandedExpenses.take(5).toList();
 
         if (top5Expenses.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 40),
-            child: Center(
-              child: Text(
-                "No recent transactions found.",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textTertiary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          );
+          return _buildEmptyTransactionsState();
         }
 
         return Column(
@@ -702,101 +713,115 @@ class _ExpensesScreenState extends State<ExpensesScreen>
       dateStr = '${d.day}/${d.month}/${d.year}';
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  ExpenseDetailsScreen(expenseId: expenseId, expenseData: tx),
-            ),
-          ).then((_) => _loadMetricsData());
-        },
-        child: Material(
-          color: Colors.transparent,
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: context.glassBackgroundStrong,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.borderColor),
-                ),
-                child: Icon(
-                  _getCategoryIcon(rawCategory),
-                  color: context.iconSecondary,
-                  size: 20,
-                ),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                ExpenseDetailsScreen(expenseId: expenseId, expenseData: tx),
+          ),
+        ).then((_) => _loadMetricsData());
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: context.cardBackground,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: context.borderColor),
+          boxShadow: context.isDarkMode
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: context.isDarkMode
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(width: 16),
+              child: Icon(
+                _getCategoryIcon(rawCategory),
+                color: context.textSecondary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
 
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
                     ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Text(
+                        category,
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          color: context.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (dateStr.isNotEmpty) ...[
                         Text(
-                          category,
+                          ' · $dateStr',
                           style: TextStyle(
                             fontFamily: 'Satoshi',
-                            color: context.textSecondary,
+                            color: context.textTertiary,
                             fontSize: 12,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w400,
                           ),
                         ),
-                        if (dateStr.isNotEmpty) ...[
-                          Text(
-                            ' · $dateStr',
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textTertiary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
                       ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerRight,
-                child: Text(
-                  formattedAmount,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isFunding
-                        ? const Color(0xFF30D158)
-                        : context.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: [const FontFeature.tabularFigures()],
+                    ],
                   ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                formattedAmount,
+                style: TextStyle(
+                  fontFamily: 'Satoshi',
+                  color: isFunding
+                      ? const Color(0xFF30D158)
+                      : context.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: [const FontFeature.tabularFigures()],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -845,6 +870,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -888,6 +914,57 @@ class _ExpensesScreenState extends State<ExpensesScreen>
             ),
           ),
           _buildShimmerEffect(60, 16, borderRadius: 4),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyTransactionsState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+      decoration: BoxDecoration(
+        color: context.cardBackground,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: context.borderColor),
+        boxShadow: context.isDarkMode
+            ? []
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.receipt_long_outlined,
+            color: context.textTertiary,
+            size: 40,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "No transactions yet",
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: context.textSecondary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "Add your first expense to get started",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: context.textTertiary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

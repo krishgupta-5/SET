@@ -4,11 +4,7 @@ class CustomBackButton extends StatelessWidget {
   final VoidCallback? onTap;
   final Color? color;
 
-  const CustomBackButton({
-    super.key,
-    this.onTap,
-    this.color,
-  });
+  const CustomBackButton({super.key, this.onTap, this.color});
 
   @override
   Widget build(BuildContext context) {

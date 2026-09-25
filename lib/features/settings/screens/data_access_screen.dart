@@ -30,7 +30,18 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(context, "Data Access Control"),
+                _buildHeader(context),
+                const SizedBox(height: 16),
+                Text(
+                  "Data Access Control",
+                  style: TextStyle(
+                    fontFamily: 'Satoshi',
+                    color: context.textPrimary,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -1.0,
+                  ),
+                ),
                 const SizedBox(height: 32),
 
                 _buildSectionLabel("TEMPORARY ACCESS"),
@@ -40,6 +51,7 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
                     color: context.cardBackground,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: context.borderColor),
+                    boxShadow: context.cardShadow,
                   ),
                   child: Row(
                     children: [
@@ -110,6 +122,7 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
                           color: context.cardBackground,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.borderColor),
+                          boxShadow: context.cardShadow,
                         ),
                         child: Center(
                           child: CircularProgressIndicator(
@@ -127,6 +140,7 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
                           color: context.cardBackground,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.borderColor),
+                          boxShadow: context.cardShadow,
                         ),
                         child: Text(
                           "Failed to load team members.",
@@ -147,6 +161,7 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
                           color: context.cardBackground,
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: context.borderColor),
+                          boxShadow: context.cardShadow,
                         ),
                         child: Center(
                           child: Text(
@@ -166,6 +181,7 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
                         color: context.cardBackground,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: context.borderColor),
+                        boxShadow: context.cardShadow,
                       ),
                       child: Column(
                         children: docs.asMap().entries.map((entry) {
@@ -283,31 +299,32 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, String title) {
+  Widget _buildHeader(BuildContext context) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: context.borderColor),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Row(
+              children: [
+                Icon(Icons.arrow_back, color: context.textSecondary, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  "Back",
+                  style: TextStyle(
+                    fontFamily: 'Satoshi',
+                    color: context.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-            child: Icon(Icons.arrow_back, color: context.textPrimary, size: 20),
           ),
         ),
-        const SizedBox(width: 16),
-        Text(
-          title,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        const SizedBox(width: 44),
       ],
     );
   }

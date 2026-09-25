@@ -118,21 +118,22 @@ class ThemeService {
         // Ensure local disk cache is up to date for next launch
         await prefs.setString(_prefsKey, preferredTheme);
       } else {
-        // For the first time after login or if preferredTheme is not set yet,
-        // ALWAYS open dark mode only!
-        if (_themeModeNotifier.value != ThemeMode.dark) {
-          _themeModeNotifier.value = ThemeMode.dark;
+        // If preferredTheme is not set, use local cache, or default to dark
+        final cachedStr = prefs.getString(_prefsKey) ?? 'dark';
+        final mode = _parseThemeMode(cachedStr);
+        if (_themeModeNotifier.value != mode) {
+          _themeModeNotifier.value = mode;
           if (kDebugMode) {
             print(
-              'ThemeService: First login after auth -> opening dark mode only',
+              'ThemeService: Using locally cached theme since Firestore is empty: $mode',
             );
           }
         }
-        await prefs.setString(_prefsKey, 'dark');
+        await prefs.setString(_prefsKey, cachedStr);
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
           FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'preferredTheme': 'dark',
+            'preferredTheme': cachedStr,
           }, SetOptions(merge: true));
         }
       }
@@ -194,29 +195,30 @@ class ThemeService {
           }
           return mode;
         } else {
-          // For the first time after login or if preferredTheme is not set yet,
-          // ALWAYS open dark mode only!
-          const mode = ThemeMode.dark;
+          // If preferredTheme is not set, use local cache, or default to dark
+          final modeStr = cachedStr ?? 'dark';
+          final mode = _parseThemeMode(modeStr);
           if (_themeModeNotifier.value != mode) {
             _themeModeNotifier.value = mode;
           }
-          await prefs.setString(_prefsKey, 'dark');
+          await prefs.setString(_prefsKey, modeStr);
           FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'preferredTheme': 'dark',
+            'preferredTheme': modeStr,
           }, SetOptions(merge: true));
           return mode;
         }
       }
 
-      // If user doc not found or during first setup, open dark mode only!
-      const mode = ThemeMode.dark;
+      // If user doc not found or during first setup, use cached or default to dark
+      final modeStr = cachedStr ?? 'dark';
+      final mode = _parseThemeMode(modeStr);
       if (_themeModeNotifier.value != mode) {
         _themeModeNotifier.value = mode;
       }
-      await prefs.setString(_prefsKey, 'dark');
+      await prefs.setString(_prefsKey, modeStr);
       try {
         FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'preferredTheme': 'dark',
+          'preferredTheme': modeStr,
         }, SetOptions(merge: true));
       } catch (_) {}
       return mode;

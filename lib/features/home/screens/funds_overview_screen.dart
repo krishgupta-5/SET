@@ -12,6 +12,7 @@ import '../../../services/bank_account_service.dart';
 import '../../../utils/expense_expansion_helper.dart';
 import '../../../shared/widgets/custom_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
+
 // --- CUSTOM DOTTED DIVIDER WIDGET ---
 class DottedDivider extends StatelessWidget {
   final Color color;
@@ -116,11 +117,7 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
     });
 
     try {
-      await Future.wait([
-        _fetchFundsData(),
-        _fetchAllExpenses(),
-
-      ]);
+      await Future.wait([_fetchFundsData(), _fetchAllExpenses()]);
 
       if (fundingAmount != null) {
         final now = DateTime.now();
@@ -187,7 +184,6 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
       log("Error fetching funds data: $e");
     }
   }
-
 
   Future<void> _fetchBankAccounts() async {
     try {
@@ -708,7 +704,11 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
                               color: textSecondary,
                             ),
                           )
-                        : HugeIcon(icon: HugeIcons.strokeRoundedRefresh, color: textSecondary, size: 14),
+                        : HugeIcon(
+                            icon: HugeIcons.strokeRoundedRefresh,
+                            color: textSecondary,
+                            size: 14,
+                          ),
                   ),
                 ],
               ),
@@ -1414,7 +1414,11 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            HugeIcon(icon: HugeIcons.strokeRoundedAdd01, color: textPrimary, size: 18),
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedAdd01,
+              color: textPrimary,
+              size: 18,
+            ),
             const SizedBox(width: 8),
             Text(
               "Add Bank Account",
@@ -1472,7 +1476,9 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
             border: Border.all(color: accentColor.withValues(alpha: 0.2)),
           ),
           child: HugeIcon(
-            icon: isCash ? HugeIcons.strokeRoundedCoins01 : HugeIcons.strokeRoundedBank,
+            icon: isCash
+                ? HugeIcons.strokeRoundedCoins01
+                : HugeIcons.strokeRoundedBank,
             color: accentColor,
             size: 20,
           ),
@@ -1534,6 +1540,7 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
       ],
     );
   }
+
   void _navigateToExpenseDetails(Map<String, dynamic> transaction) {
     if (transaction['id'] != null) {
       Navigator.push(

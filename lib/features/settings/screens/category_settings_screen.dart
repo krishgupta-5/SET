@@ -209,6 +209,18 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            const SizedBox(height: 16),
+                            Text(
+                              "Expense Categories",
+                              style: TextStyle(
+                                fontFamily: 'Satoshi',
+                                color: context.textPrimary,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -1.0,
+                              ),
+                            ),
+                            const SizedBox(height: 32),
                             Text(
                               "Manage the categories available when adding expenses.",
                               style: TextStyle(
@@ -234,6 +246,7 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
                                       border: Border.all(
                                         color: context.borderColor,
                                       ),
+                                      boxShadow: context.cardShadow,
                                     ),
                                     child: TextField(
                                       controller: _categoryController,
@@ -323,6 +336,7 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
                                             border: Border.all(
                                               color: context.borderColor,
                                             ),
+                                            boxShadow: context.cardShadow,
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -378,6 +392,7 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
                                     border: Border.all(
                                       color: context.borderColor,
                                     ),
+                                    boxShadow: context.cardShadow,
                                   ),
                                   child: Row(
                                     mainAxisAlignment:
@@ -427,33 +442,33 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back,
+                    color: context.textSecondary,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Back",
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(
-                Icons.arrow_back,
-                color: context.textPrimary,
-                size: 20,
-              ),
-            ),
-          ),
-          Text(
-            "Expense Categories",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(width: 44),

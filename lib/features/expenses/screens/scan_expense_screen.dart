@@ -536,18 +536,25 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(
-                  alpha: 0.05,
-                ), // White Glass Style
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: const Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-                size: 20,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Back",
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -742,6 +749,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
       decoration: BoxDecoration(
         color: context.cardBackground.withValues(alpha: 0.95),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: context.cardShadow,
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -871,6 +879,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Text(
               _scanStatus,
@@ -914,6 +923,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
         color: context.cardBackground, // Match settings container color
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         border: Border(top: BorderSide(color: context.borderColor)),
+        boxShadow: context.cardShadow,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

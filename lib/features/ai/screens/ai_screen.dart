@@ -118,10 +118,10 @@ class _AiScreenState extends State<AiScreen>
 
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
-          final String rawInsight = data["insight"] ?? "";
-          if (rawInsight.isNotEmpty) {
+          final insight = data["insight"];
+          if (insight != null) {
             setState(() {
-              _parseMarkdownToSections(rawInsight, append: true);
+              _addStructuredInsight(insight, sectionKey, append: true);
             });
           }
         }
@@ -237,10 +237,10 @@ class _AiScreenState extends State<AiScreen>
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        final String rawInsight = data["insight"] ?? "No insight generated.";
+        final insight = data["insight"];
 
         setState(() {
-          _parseMarkdownToSections(rawInsight, append: false);
+          _addStructuredInsight(insight, "main", append: false);
           aiMetrics = data["metrics"] as Map<String, dynamic>?;
         });
       } else {
@@ -335,6 +335,114 @@ class _AiScreenState extends State<AiScreen>
 
     if (_parsedInsights.isEmpty) {
       _parsedInsights.add({"title": "Analysis", "content": rawText});
+    }
+  }
+
+  /// Handles structured JSON insight responses from the backend.
+  /// The backend returns different JSON shapes per section:
+  ///   main     -> {primary_insight, high_impact_summary, description}
+  ///   keyPoints/burn/subscription -> {items: [{title, description, savings, color}]}
+  ///   runway   -> {bullet_points: [...]}
+  ///   staffing/expense/others -> {insight: "..."}
+  void _addStructuredInsight(
+    dynamic insight,
+    String sectionKey, {
+    bool append = false,
+  }) {
+    if (!append) {
+      _parsedInsights.clear();
+    }
+
+    // If the backend returned a plain string (fallback), parse as markdown
+    if (insight is String) {
+      _parseMarkdownToSections(insight, append: append);
+      return;
+    }
+
+    // If it's not a Map, convert to string fallback
+    if (insight is! Map) {
+      _parsedInsights.add({
+        "title": "Analysis",
+        "content": insight?.toString() ?? "No insight available.",
+      });
+      return;
+    }
+
+    final Map<String, dynamic> insightMap = Map<String, dynamic>.from(insight);
+
+    // Check for error from LLM
+    if (insightMap.containsKey("error")) {
+      _parsedInsights.add({
+        "title": "Error",
+        "content": insightMap["error"].toString(),
+      });
+      return;
+    }
+
+    switch (sectionKey) {
+      case "main":
+        final primaryInsight =
+            insightMap["primary_insight"]?.toString() ?? "Financial Insight";
+        final description = insightMap["description"]?.toString() ?? "";
+        final impact = insightMap["high_impact_summary"]?.toString() ?? "";
+        _parsedInsights.add({
+          "title": primaryInsight,
+          "content": impact.isNotEmpty ? "$impact — $description" : description,
+        });
+        break;
+
+      case "keyPoints":
+      case "burn":
+      case "subscription":
+        final items = insightMap["items"];
+        if (items is List && items.isNotEmpty) {
+          for (final item in items) {
+            if (item is Map) {
+              final title = item["title"]?.toString() ?? "Recommendation";
+              final desc = item["description"]?.toString() ?? "";
+              final savings = item["savings"]?.toString() ?? "";
+              _parsedInsights.add({
+                "title": title,
+                "content": savings.isNotEmpty
+                    ? "$desc\nPotential savings: $savings"
+                    : desc,
+              });
+            }
+          }
+        }
+        break;
+
+      case "runway":
+        final bullets = insightMap["bullet_points"];
+        if (bullets is List && bullets.isNotEmpty) {
+          final content = bullets.map((b) => "• ${b.toString()}").join("\n");
+          _parsedInsights.add({
+            "title": "Runway Optimization",
+            "content": content,
+          });
+        }
+        break;
+
+      default:
+        // staffing, expense, performance, team, investment, etc.
+        final insightText = insightMap["insight"]?.toString() ?? "";
+        if (insightText.isNotEmpty) {
+          // Capitalize sectionKey for title
+          final title = sectionKey[0].toUpperCase() + sectionKey.substring(1);
+          _parsedInsights.add({
+            "title": "$title Analysis",
+            "content": insightText,
+          });
+        }
+        break;
+    }
+
+    // If nothing was added (e.g. empty items), add a fallback
+    if (_parsedInsights.isEmpty) {
+      _parsedInsights.add({
+        "title": "No insight available.",
+        "content": "We couldn't generate an insight at this time.",
+      });
     }
   }
 
@@ -683,6 +791,7 @@ class _AiScreenState extends State<AiScreen>
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: _isLoading || _isFetchingMore
                 ? Padding(
@@ -739,6 +848,7 @@ class _AiScreenState extends State<AiScreen>
         decoration: BoxDecoration(
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(24),
+          boxShadow: context.cardShadow,
         ),
       ),
     );

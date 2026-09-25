@@ -3,9 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:startup_expense_tracker/features/team/screens/create_team_screen.dart';
-import 'package:startup_expense_tracker/features/team/screens/member_detail_screen.dart';
 import 'team_detail_screen.dart';
-import '../../../widgets/avatar_widget.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/telegram_service.dart';
@@ -36,8 +34,6 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>>? _lastTeamsData;
   String _lastTeamsFingerprint = '';
 
-  /// Lightweight content fingerprint so sort cache invalidation detects
-  /// field-level changes in addition to list-length changes.
   String _teamsFingerprint(List<Map<String, dynamic>> teams) => teams
       .map((t) => '${t['id']}:${t['teamName']}:${t['monthlyBudget']}')
       .join('|');
@@ -98,8 +94,10 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
   }
 
   IconData _getIconFromData(Map<String, dynamic> data) {
-    if (data['iconCodePoint'] != null && data['iconFontFamily'] != null) {
-      switch (data['iconCodePoint']) {
+    final dynamic cp = data['iconCodePoint'];
+    if (cp != null) {
+      final int codePoint = cp is int ? cp : int.tryParse(cp.toString()) ?? 0;
+      switch (codePoint) {
         case 0xe3af:
           return Icons.work;
         case 0xe0af:
@@ -121,10 +119,10 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
         case 0xe8b6:
           return Icons.people;
         default:
-          return Icons.group;
+          return Icons.rocket_launch_rounded;
       }
     }
-    return Icons.group;
+    return Icons.rocket_launch_rounded;
   }
 
   Color _getColorFromName(String colorName) {
@@ -154,12 +152,10 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
         .snapshots()
         .map((snapshot) {
           List<Map<String, dynamic>> allTeams = [];
-
           for (var doc in snapshot.docs) {
             final data = doc.data();
             allTeams.add({...data, 'id': doc.id, 'source': 'teams_collection'});
           }
-
           return allTeams;
         });
   }
@@ -185,7 +181,6 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
             .collection('members')
             .where('uid', isEqualTo: user.uid)
             .get();
-
         for (final doc in allMembersSnap.docs) {
           final tId = doc.data()['teamId'] as String?;
           if (tId != null) teamSizes[tId] = (teamSizes[tId] ?? 0) + 1;
@@ -208,14 +203,12 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
             return _selectedOrder == "A-Z"
                 ? nameA.compareTo(nameB)
                 : nameB.compareTo(nameA);
-
           case "Monthly Amount":
             final costA = (a['monthlyBudget'] ?? 0).toDouble();
             final costB = (b['monthlyBudget'] ?? 0).toDouble();
             return _selectedOrder == "Low-High"
                 ? costA.compareTo(costB)
                 : costB.compareTo(costA);
-
           default:
             return 0;
         }
@@ -251,86 +244,343 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: context.isDarkMode
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: context.appBackground,
-        floatingActionButton: _isSearching
-            ? null
-            : FloatingActionButton.extended(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CreateTeamScreen(),
-                    ),
-                  ).then((_) {
-                    _refreshData();
-                  });
-                },
-                backgroundColor: context.isDarkMode
-                    ? Colors.white
-                    : Colors.black,
-                foregroundColor: context.isDarkMode
-                    ? Colors.black
-                    : Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                icon: const Icon(Icons.add, size: 20),
-                label: Text(
-                  "New Team",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: () async {
+              _refreshData();
+            },
+            color: context.textPrimary,
+            backgroundColor: context.cardBackground,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      const SizedBox(
+                        height: 16,
+                      ), // Replaced header with some top padding
+
+                      _buildHeroSection(isDark),
+
+                      // Fluid Animated Search Reveal
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        child: _isSearching
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: 16),
+                                child: _buildSearchBar(isDark),
+                              )
+                            : const SizedBox(width: double.infinity, height: 0),
+                      ),
+                      const SizedBox(height: 24),
+
+                      _buildCreateTeamButton(isDark),
+                      const SizedBox(height: 32),
+
+                      if (!_isSearching) _buildFilterChips(isDark),
+                      if (!_isSearching) const SizedBox(height: 24),
+
+                      _buildFirebaseTeamsStream(isDark),
+                      const SizedBox(height: 100),
+                    ]),
                   ),
                 ),
-              ),
-
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-                child: _buildHeader(),
-              ),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _buildSectionTitle(
-                      _isSearching ? "SEARCH RESULTS" : "YOUR TEAMS",
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              if (!_isSearching)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildFilterChips(),
-                ),
-
-              if (!_isSearching) const SizedBox(height: 24),
-
-              Expanded(child: _buildFirebaseTeamsStream()),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFirebaseTeamsStream() {
+  // Removed _buildHeader
+
+  Widget _buildHeroSection(bool isDark) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          "Teams",
+          style: TextStyle(
+            fontFamily: 'Satoshi',
+            color: context.textPrimary,
+            fontSize: 32,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -1.0,
+          ),
+        ),
+        GestureDetector(
+          onTap: () => setState(() {
+            _isSearching = !_isSearching;
+            if (!_isSearching) {
+              _searchQuery = "";
+              _searchController.clear();
+              if (_lastTeamsData != null) {
+                _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
+              }
+            }
+          }),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 44,
+            width: 44,
+            decoration: BoxDecoration(
+              color: _isSearching
+                  ? context.textPrimary
+                  : context.cardBackground,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: _isSearching ? Colors.transparent : context.borderColor,
+              ),
+              boxShadow: (isDark || _isSearching)
+                  ? []
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Icon(
+                _isSearching ? Icons.close_rounded : Icons.search_rounded,
+                key: ValueKey(_isSearching),
+                color: _isSearching
+                    ? context.appBackground
+                    : context.textPrimary,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // UPDATED PREMIUM SEARCH BAR
+  Widget _buildSearchBar(bool isDark) {
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.black.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search_rounded, color: context.textSecondary, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                color: context.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+              cursorColor: context.textPrimary,
+              decoration: InputDecoration(
+                hintText: "Search team name...",
+                hintStyle: TextStyle(
+                  fontFamily: 'Satoshi',
+                  color: context.textTertiary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+              onChanged: (val) {
+                setState(() {
+                  _searchQuery = val;
+                  if (_lastTeamsData != null) {
+                    _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
+                  }
+                });
+              },
+            ),
+          ),
+          if (_searchQuery.isNotEmpty)
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _searchQuery = "";
+                  _searchController.clear();
+                  if (_lastTeamsData != null) {
+                    _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
+                  }
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: context.textSecondary.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.close_rounded,
+                  color: context.textPrimary,
+                  size: 12,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreateTeamButton(bool isDark) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const CreateTeamScreen()),
+        ).then((_) => _refreshData());
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: context.textPrimary,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: isDark
+              ? []
+              : [
+                  BoxShadow(
+                    color: context.textPrimary.withValues(alpha: 0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.add_rounded, color: context.appBackground, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              "Create New Team",
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                color: context.appBackground,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChips(bool isDark) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      clipBehavior: Clip.none,
+      child: Row(
+        children: [
+          _buildFilterChip(
+            label: "Name",
+            icon: Icons.sort_by_alpha,
+            isSelected: _selectedSortOption == "Name",
+          ),
+          const SizedBox(width: 8),
+          _buildFilterChip(
+            label: "Monthly Amount",
+            icon: Icons.attach_money,
+            isSelected: _selectedSortOption == "Monthly Amount",
+          ),
+          const SizedBox(width: 8),
+          _buildFilterChip(
+            label: "Team Size",
+            icon: Icons.group_outlined,
+            isSelected: _selectedSortOption == "Team Size",
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+  }) {
+    IconData arrowIcon = Icons.arrow_downward;
+    if (isSelected) {
+      arrowIcon =
+          (label == "Name"
+              ? _selectedOrder == "A-Z"
+              : _selectedOrder == "High-Low")
+          ? Icons.arrow_downward
+          : Icons.arrow_upward;
+    }
+
+    return GestureDetector(
+      onTap: () => _toggleOrder(label),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? context.textPrimary : Colors.transparent,
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(
+            color: isSelected ? context.textPrimary : context.borderColor,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? context.appBackground : context.textSecondary,
+              size: 14,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Satoshi',
+                color: isSelected
+                    ? context.appBackground
+                    : context.textSecondary,
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+            if (isSelected) ...[
+              const SizedBox(width: 4),
+              Icon(arrowIcon, color: context.appBackground, size: 12),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFirebaseTeamsStream(bool isDark) {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return _buildEmptyState("Please log in.");
 
@@ -339,18 +589,17 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: context.iconSecondary,
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: context.textSecondary,
+              ),
             ),
           );
         }
 
-        if (snapshot.hasError) {
-          debugPrint("Firebase Error: ${snapshot.error}");
-          return _buildEmptyState("Error loading teams.");
-        }
-
+        if (snapshot.hasError) return _buildEmptyState("Error loading teams.");
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return _buildEmptyState("You don't have any teams yet.");
         }
@@ -367,31 +616,31 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
           builder: (context, futureSnapshot) {
             if (futureSnapshot.connectionState == ConnectionState.waiting) {
               return Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: context.iconSecondary,
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: context.textSecondary,
+                  ),
                 ),
               );
             }
-
             if (futureSnapshot.hasError) {
-              debugPrint("Sorting Error: ${futureSnapshot.error}");
               return _buildEmptyState("Error sorting teams.");
             }
 
             final teams = futureSnapshot.data ?? [];
-
             if (teams.isEmpty) {
               return _buildEmptyState("No teams match your search.");
             }
 
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 100),
-              physics: const BouncingScrollPhysics(),
-              itemCount: teams.length,
-              itemBuilder: (context, index) {
-                return _buildTeamCard(context, teams[index]);
-              },
+            return Column(
+              children: teams
+                  .map(
+                    (teamData) =>
+                        _buildCompactTeamCard(context, teamData, isDark),
+                  )
+                  .toList(),
             );
           },
         );
@@ -399,243 +648,43 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildFilterChips() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      clipBehavior: Clip.none,
-      child: Row(
-        children: [
-          _buildFilterChip(
-            label: "Name",
-            icon: Icons.sort_by_alpha,
-            isSelected: _selectedSortOption == "Name",
-          ),
-          const SizedBox(width: 12),
-          _buildFilterChip(
-            label: "Monthly Amount",
-            icon: Icons.attach_money,
-            isSelected: _selectedSortOption == "Monthly Amount",
-          ),
-          const SizedBox(width: 12),
-          _buildFilterChip(
-            label: "Team Size",
-            icon: Icons.group_outlined,
-            isSelected: _selectedSortOption == "Team Size",
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip({
-    required String label,
-    required IconData icon,
-    required bool isSelected,
-  }) {
-    IconData arrowIcon;
-    if (isSelected) {
-      if (label == "Name") {
-        arrowIcon = _selectedOrder == "A-Z"
-            ? Icons.arrow_downward
-            : Icons.arrow_upward;
-      } else {
-        arrowIcon = _selectedOrder == "High-Low"
-            ? Icons.arrow_downward
-            : Icons.arrow_upward;
-      }
-    } else {
-      arrowIcon = Icons.arrow_downward;
-    }
-
-    final selectedBg = context.isDarkMode ? Colors.white : Colors.black;
-    final selectedText = context.isDarkMode ? Colors.black : Colors.white;
-
-    return GestureDetector(
-      onTap: () => _toggleOrder(label),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? selectedBg : context.cardBackground,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: isSelected ? selectedBg : context.borderColor,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? selectedText : context.textSecondary,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: isSelected ? selectedText : context.textSecondary,
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-            if (isSelected) ...[
-              const SizedBox(width: 6),
-              Icon(arrowIcon, color: selectedText, size: 14),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: _isSearching
-              ? _buildActiveSearchBar()
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Organization",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textSecondary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      "Teams Overview",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                  ],
-                ),
-        ),
-        if (!_isSearching) ...[
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _isSearching = true;
-              });
-            },
-            child: Container(
-              height: 44,
-              width: 44,
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Icon(Icons.search, color: context.iconPrimary, size: 20),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildActiveSearchBar() {
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.search, color: context.iconSecondary, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              autofocus: true,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 15,
-              ),
-              cursorColor: context.textPrimary,
-              decoration: InputDecoration(
-                hintText: "Search teams...",
-                hintStyle: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textTertiary,
-                  fontSize: 15,
-                ),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val;
-                  if (_lastTeamsData != null) {
-                    _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
-                  }
-                });
-              },
-            ),
-          ),
-          GestureDetector(
-            onTap: () {
-              setState(() {
-                _isSearching = false;
-                _searchQuery = "";
-                _searchController.clear();
-              });
-            },
-            child: Icon(Icons.close, color: context.iconSecondary, size: 20),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textTertiary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
-
-  Widget _buildTeamCard(BuildContext context, Map<String, dynamic> teamData) {
+  Widget _buildCompactTeamCard(
+    BuildContext context,
+    Map<String, dynamic> teamData,
+    bool isDark,
+  ) {
     final String name = teamData['teamName'] ?? 'Unnamed Team';
     final Color color = _getColorFromName(teamData['color'] ?? 'blue');
-    final IconData icon = _getIconFromData(teamData);
     final String teamId = teamData['id'] as String;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  TeamDetailScreen(teamId: teamId, initialTeamData: teamData),
-            ),
-          ).then((_) => _refreshData());
-        },
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                TeamDetailScreen(teamId: teamId, initialTeamData: teamData),
+          ),
+        ).then((_) => _refreshData());
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: context.cardBackground,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: context.borderColor),
+          boxShadow: isDark
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+        ),
         child: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('members')
@@ -646,7 +695,7 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
             final int memberCount = membersDocs.length;
             final String memberCountStr =
                 membersSnapshot.connectionState == ConnectionState.waiting
-                ? 'Loading...'
+                ? '...'
                 : (memberCount == 1 ? '1 Member' : '$memberCount Members');
 
             final List<Map<String, dynamic>> avatarInfos = membersDocs
@@ -673,39 +722,62 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
                 })
                 .toList();
 
-            return Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: context.borderColor),
-                boxShadow: context.isDarkMode
-                    ? []
-                    : [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: color.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(icon, color: color, size: 20),
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('expenses')
+                  .where('TeamId', isEqualTo: teamId)
+                  .snapshots(),
+              builder: (context, expenseSnap) {
+                double actualSpent = 0.0;
+                if (expenseSnap.hasData) {
+                  final now = DateTime.now();
+                  for (var doc in expenseSnap.data!.docs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final date = (data['Date'] as Timestamp?)?.toDate();
+                    if (date != null &&
+                        date.month == now.month &&
+                        date.year == now.year) {
+                      actualSpent +=
+                          (data['Amount'] as num?)?.toDouble() ?? 0.0;
+                    }
+                  }
+                }
+
+                final budget = (teamData['monthlyBudget'] ?? 0).toDouble();
+                final isOverBudget = actualSpent > budget && budget > 0;
+                final spentStr = CurrencyFormatter.formatByCountryCompact(
+                  actualSpent,
+                  _userCountryCode,
+                );
+                final budgetStr = CurrencyFormatter.formatByCountryCompact(
+                  budget,
+                  _userCountryCode,
+                );
+
+                double progress = budget > 0 ? (actualSpent / budget) : 0.0;
+                if (progress > 1.0) progress = 1.0;
+
+                return Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          const SizedBox(width: 16),
-                          Column(
+                          child: Icon(
+                            _getIconFromData(teamData),
+                            color: color,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
@@ -714,99 +786,16 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
                                   fontFamily: 'Satoshi',
                                   color: context.textPrimary,
                                   fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                                  fontWeight: FontWeight.w700,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                memberCountStr,
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textSecondary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      Icon(
-                        Icons.chevron_right,
-                        color: context.iconSecondary,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Divider(color: context.borderColor, height: 1),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildAvatarRow(avatarInfos),
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('expenses')
-                            .where('TeamId', isEqualTo: teamId)
-                            .snapshots(),
-                        builder: (context, expenseSnap) {
-                          double actualSpent = 0.0;
-                          if (expenseSnap.hasData) {
-                            final now = DateTime.now();
-                            for (var doc in expenseSnap.data!.docs) {
-                              final data = doc.data() as Map<String, dynamic>;
-                              final date = (data['Date'] as Timestamp?)
-                                  ?.toDate();
-                              if (date != null &&
-                                  date.month == now.month &&
-                                  date.year == now.year) {
-                                actualSpent +=
-                                    (data['Amount'] as num?)?.toDouble() ?? 0.0;
-                              }
-                            }
-                          }
-
-                          final budget = (teamData['monthlyBudget'] ?? 0)
-                              .toDouble();
-                          final isOverBudget =
-                              actualSpent > budget && budget > 0;
-
-                          final spentStr =
-                              CurrencyFormatter.formatByCountryCompact(
-                                actualSpent,
-                                _userCountryCode,
-                              );
-                          final budgetStr =
-                              CurrencyFormatter.formatByCountryCompact(
-                                budget,
-                                _userCountryCode,
-                              );
-
-                          double progress = budget > 0
-                              ? (actualSpent / budget)
-                              : 0.0;
-                          if (progress > 1.0) progress = 1.0;
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
+                              const SizedBox(height: 2),
                               Row(
-                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    spentStr,
-                                    style: TextStyle(
-                                      fontFamily: 'Satoshi',
-                                      color: isOverBudget
-                                          ? const Color(0xFFFF453A)
-                                          : context.textPrimary,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  Text(
-                                    " / $budgetStr",
+                                    memberCountStr,
                                     style: TextStyle(
                                       fontFamily: 'Satoshi',
                                       color: context.textSecondary,
@@ -814,41 +803,51 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
+                                  if (avatarInfos.isNotEmpty) ...[
+                                    const SizedBox(width: 8),
+                                    _buildAvatarRow(avatarInfos),
+                                  ],
                                 ],
                               ),
-                              const SizedBox(height: 6),
-                              Container(
-                                width: 80,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: context.isDarkMode
-                                      ? Colors.white.withValues(alpha: 0.1)
-                                      : Colors.black.withValues(alpha: 0.06),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: FractionallySizedBox(
-                                    widthFactor: progress,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: isOverBudget
-                                            ? const Color(0xFFFF453A)
-                                            : const Color(0xFF30D158),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                  ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              spentStr,
+                              style: TextStyle(
+                                fontFamily: 'Satoshi',
+                                color: isOverBudget
+                                    ? const Color(0xFFFF453A)
+                                    : context.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                            if (budget > 0) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                "Budget: $budgetStr",
+                                style: TextStyle(
+                                  fontFamily: 'Satoshi',
+                                  color: context.textSecondary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
             );
           },
         ),
@@ -857,33 +856,19 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildAvatarRow(List<Map<String, dynamic>> avatarInfos) {
-    if (avatarInfos.isEmpty) {
-      return Text(
-        "No members yet",
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textSecondary,
-          fontSize: 12,
-        ),
-      );
-    }
-
     return SizedBox(
-      height: 28,
-      width: 100,
+      height: 16,
+      width: (avatarInfos.length * 12.0) + 4.0,
       child: Stack(
         children: List.generate(avatarInfos.length, (index) {
           final info = avatarInfos[index];
           return Positioned(
-            left: index * 20.0,
-            child: GestureDetector(
-              onTap: () => _showMemberProfile(info['memberId'] as String),
-              child: _buildMemberAvatarWithTelegram(
-                info['name'] as String,
-                28,
-                info['avatarUrl'] as String,
-                info['telegramFileId'] as String?,
-              ),
+            left: index * 12.0,
+            child: _buildMemberAvatarWithTelegram(
+              info['name'] as String,
+              16,
+              info['avatarUrl'] as String,
+              info['telegramFileId'] as String?,
             ),
           );
         }),
@@ -906,80 +891,83 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
               width: size,
               height: size,
               decoration: BoxDecoration(
-                color: context.cardBackground,
+                color: context.cardSecondaryBackground,
                 shape: BoxShape.circle,
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: size * 0.3,
-                  height: size * 0.3,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: context.iconSecondary,
-                  ),
-                ),
+                border: Border.all(color: context.cardBackground, width: 1.5),
               ),
             );
           } else if (snapshot.hasError || !snapshot.hasData) {
-            return AvatarWidget(
-              name: name,
-              size: size,
-              imageUrl: null,
-              fontSize: size * 0.4,
-            );
+            return _buildFallbackAvatar(name, size);
           } else {
-            return AvatarWidget(
-              name: name,
-              size: size,
-              imageUrl: snapshot.data!,
-              fontSize: size * 0.4,
+            return Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: context.cardBackground, width: 1.5),
+                image: DecorationImage(
+                  image: NetworkImage(snapshot.data!),
+                  fit: BoxFit.cover,
+                ),
+              ),
             );
           }
         },
       );
-    } else {
-      return AvatarWidget(
-        name: name,
-        size: size,
-        imageUrl: avatarUrl.isNotEmpty && !avatarUrl.contains('ui-avatars.com')
-            ? avatarUrl
-            : null,
-        fontSize: size * 0.4,
+    } else if (avatarUrl.isNotEmpty && !avatarUrl.contains('ui-avatars.com')) {
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: context.cardBackground, width: 1.5),
+          image: DecorationImage(
+            image: NetworkImage(avatarUrl),
+            fit: BoxFit.cover,
+          ),
+        ),
       );
+    } else {
+      return _buildFallbackAvatar(name, size);
     }
   }
 
-  void _showMemberProfile(String memberId) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MemberDetailScreen(memberId: memberId),
+  Widget _buildFallbackAvatar(String name, double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: context.textTertiary,
+        shape: BoxShape.circle,
+        border: Border.all(color: context.cardBackground, width: 1.5),
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: TextStyle(
+            fontFamily: 'Satoshi',
+            color: context.appBackground,
+            fontSize: size * 0.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildEmptyState(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.only(top: 40),
-        child: Column(
-          children: [
-            Icon(
-              Icons.group_off_outlined,
-              color: context.isDarkMode ? Colors.white12 : Colors.black12,
-              size: 48,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 14,
-              ),
-            ),
-          ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Center(
+        child: Text(
+          message,
+          style: TextStyle(
+            fontFamily: 'Satoshi',
+            color: context.textTertiary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+          textAlign: TextAlign.center,
         ),
       ),
     );

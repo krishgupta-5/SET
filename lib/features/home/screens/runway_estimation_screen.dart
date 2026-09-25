@@ -808,6 +808,7 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
                   color: context.cardSecondaryBackground,
                   borderRadius: BorderRadius.circular(100),
                   border: Border.all(color: context.borderColor),
+                  boxShadow: context.cardShadow,
                 ),
                 child: Row(
                   children: [

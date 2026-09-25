@@ -106,7 +106,6 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
             children: [
               // --- HEADER & SEARCH ---
               _buildHeader(),
-
               const SizedBox(height: 24),
 
               // --- FILTERS ---
@@ -510,87 +509,121 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Filter Expenses",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.5, // Premium tracking
-                ),
-              ),
               GestureDetector(
                 onTap: () => Navigator.pop(context),
                 child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: context.cardBackground,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: context.borderColor),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
                   ),
-                  child: Icon(
-                    Icons.close,
-                    color: context.textPrimary,
-                    size: 20,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.arrow_back,
+                        color: context.textSecondary,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Back",
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          color: context.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
+              const SizedBox(width: 44),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          Text(
+            "Search Expenses",
+            style: TextStyle(
+              fontFamily: 'Satoshi',
+              color: context.textPrimary,
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -1.0,
+            ),
+          ),
+          const SizedBox(height: 16),
           Container(
+            height: 52,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: context.cardBackground,
+              color: context.isDarkMode
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : Colors.black.withValues(alpha: 0.03),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: context.borderColor),
             ),
-            child: TextField(
-              controller: _searchController,
-              onTapOutside: (event) => FocusScope.of(context).unfocus(),
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 15,
-              ),
-              cursorColor: context.textPrimary,
-              decoration: InputDecoration(
-                hintText: "Search title...",
-                hintStyle: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textTertiary,
-                ),
-                border: InputBorder.none,
-                prefixIcon: Icon(
-                  Icons.search,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.search_rounded,
                   color: context.textSecondary,
                   size: 20,
                 ),
-                prefixIconConstraints: const BoxConstraints(
-                  minWidth: 40,
-                  minHeight: 40,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onTapOutside: (event) => FocusScope.of(context).unfocus(),
+                    style: TextStyle(
+                      fontFamily: 'Satoshi',
+                      color: context.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    cursorColor: context.textPrimary,
+                    decoration: InputDecoration(
+                      hintText: "Search title...",
+                      hintStyle: TextStyle(
+                        fontFamily: 'Satoshi',
+                        color: context.textTertiary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        _searchQuery = val;
+                        _lastDocument =
+                            null; // Reset pagination when search changes
+                      });
+                    },
+                  ),
                 ),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? GestureDetector(
-                        onTap: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = "");
-                        },
-                        child: Icon(
-                          Icons.cancel,
-                          color: context.textSecondary,
-                          size: 16,
-                        ),
-                      )
-                    : null,
-              ),
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val;
-                  _lastDocument = null; // Reset pagination when search changes
-                });
-              },
+                if (_searchQuery.isNotEmpty)
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _searchQuery = "";
+                        _searchController.clear();
+                        _lastDocument = null;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: context.textSecondary.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: context.textPrimary,
+                        size: 12,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -611,6 +644,7 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: context.borderColor),
+          boxShadow: context.cardShadow,
         ),
         child: Row(
           children: [
@@ -677,6 +711,7 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
                 color: context.cardBackground,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: context.borderColor),
+                boxShadow: context.cardShadow,
               ),
               child: Icon(
                 Icons.receipt_long_outlined,

@@ -263,6 +263,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                               color: context.cardBackground,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(color: context.borderColor),
+                              boxShadow: context.cardShadow,
                             ),
                             child: Column(
                               children: [
@@ -327,6 +328,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                                     border: Border.all(
                                       color: context.borderColor,
                                     ),
+                                    boxShadow: context.cardShadow,
                                   ),
                                   child: Text(
                                     "VIEW ALL",
@@ -381,6 +383,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 color: context.cardBackground,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: context.borderColor),
+                boxShadow: context.cardShadow,
               ),
               child: Icon(
                 Icons.arrow_back,
@@ -417,6 +420,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 color: context.cardBackground,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: context.borderColor),
+                boxShadow: context.cardShadow,
               ),
               child: Icon(
                 Icons.more_horiz,
@@ -515,6 +519,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         color: context.cardBackground,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.borderColor),
+        boxShadow: context.cardShadow,
       ),
       child: Column(
         children: [
@@ -693,6 +698,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   color: context.cardBackground,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: context.borderColor),
+                  boxShadow: context.cardShadow,
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -866,6 +872,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Center(
               child: CircularProgressIndicator(color: context.textSecondary),
@@ -881,6 +888,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Center(
               child: Text(
@@ -951,6 +959,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: context.borderColor),
+              boxShadow: context.cardShadow,
             ),
             child: Center(
               child: Text(
@@ -997,6 +1006,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                     color: context.cardBackground,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: context.borderColor),
+                    boxShadow: context.cardShadow,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1548,6 +1558,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                 color: context.cardBackground,
                 shape: BoxShape.circle,
                 border: Border.all(color: context.borderColor),
+                boxShadow: context.cardShadow,
               ),
               child: Center(
                 child: SizedBox(

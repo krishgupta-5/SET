@@ -22,6 +22,7 @@ class _SingleDatePickerState extends State<SingleDatePicker> {
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: context.borderColor),
+          boxShadow: context.cardShadow,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
