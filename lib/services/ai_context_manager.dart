@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:startup_expense_tracker/models/domain_events.dart';
 import 'package:startup_expense_tracker/services/event_dispatcher.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Manages the lifecycle of the AI Context for the user.
 /// Keeps the AI decoupled from raw data operations.
@@ -14,7 +15,7 @@ class AiContextManager {
 
   static String get baseUrl {
     if (kReleaseMode) {
-      return "https://your-production-url.com";
+      return dotenv.env['PROD_API_URL'] ?? "https://your-production-url.com";
     }
     return Platform.isIOS ? "http://127.0.0.1:8000" : "http://10.0.2.2:8000";
   }

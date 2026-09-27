@@ -6,6 +6,8 @@ import 'package:startup_expense_tracker/services/chat_service.dart';
 import 'package:startup_expense_tracker/services/ai_context_manager.dart';
 
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
@@ -20,19 +22,39 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   
   bool _isTyping = false;
 
-  // Static so chat persists across navigation, but resets on app restart
-  static final List<Map<String, dynamic>> _chatMessages = [];
+  List<Map<String, dynamic>> _chatMessages = [];
+  late SharedPreferences _prefs;
+  static const String _chatHistoryKey = 'ai_cfo_chat_history';
 
   @override
   void initState() {
     super.initState();
-    if (_chatMessages.isEmpty) {
-      _chatMessages.add({
-        'role': 'ai',
-        'text': 'Hello! I am your AI Startup CFO. Ask me anything about your runway, burn rate, expenses, or team efficiency.',
+    _loadChatHistory();
+  }
+
+  Future<void> _loadChatHistory() async {
+    _prefs = await SharedPreferences.getInstance();
+    final String? storedHistory = _prefs.getString(_chatHistoryKey);
+    
+    if (storedHistory != null) {
+      final List<dynamic> decoded = jsonDecode(storedHistory);
+      setState(() {
+        _chatMessages = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
       });
+    } else {
+      setState(() {
+        _chatMessages.add({
+          'role': 'ai',
+          'text': 'Hello! I am your AI Startup CFO. Ask me anything about your runway, burn rate, expenses, or team efficiency.',
+        });
+      });
+      _saveChatHistory();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  Future<void> _saveChatHistory() async {
+    await _prefs.setString(_chatHistoryKey, jsonEncode(_chatMessages));
   }
 
   @override
@@ -59,6 +81,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       setState(() {
         _chatMessages.add({'role': 'user', 'text': text});
       });
+      _saveChatHistory();
     }
 
     setState(() {
@@ -89,6 +112,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         });
         _scrollToBottom();
       }
+      _saveChatHistory();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -98,6 +122,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           'originalText': text, // Store to allow retry
         });
       });
+      _saveChatHistory();
     } finally {
       if (mounted) {
         setState(() {
@@ -161,6 +186,25 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
             ],
           ),
           actions: [
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: context.textSecondary),
+              tooltip: "Clear Chat",
+              onPressed: () async {
+                setState(() {
+                  _chatMessages = [{
+                    'role': 'ai',
+                    'text': 'Hello! I am your AI Startup CFO. Ask me anything about your runway, burn rate, expenses, or team efficiency.',
+                  }];
+                });
+                await _saveChatHistory();
+                await AiContextManager().invalidate();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Chat and context cleared.')),
+                  );
+                }
+              },
+            ),
             IconButton(
               icon: Icon(Icons.refresh, color: context.textSecondary),
               tooltip: "Clear Context Cache",

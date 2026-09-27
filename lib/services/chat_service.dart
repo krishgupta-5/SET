@@ -2,14 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 
 class ChatService {
   static String get baseUrl {
     if (kReleaseMode) {
-      return "https://your-production-url.com"; // TODO: replace with env var
+      return dotenv.env['PROD_API_URL'] ?? "https://your-production-url.com";
     }
     return Platform.isIOS ? "http://127.0.0.1:8000" : "http://10.0.2.2:8000";
   }
@@ -27,15 +27,14 @@ class ChatService {
       throw Exception('Failed to get auth token.');
     }
 
-    // Fetch financial context from Firestore (client-side)
-    final sectionData = await _fetchFinancialContext(user.uid);
+    // Backend fetches the context itself; we send empty dictionary
     final currencyCode = await CurrencyPreferenceService.getCurrencyPreference();
     final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(currencyCode);
 
     final requestBody = {
       "question": question,
       "history": history,
-      "sectionData": sectionData,
+      "sectionData": {},
       "currencySymbol": currencySymbol,
     };
 
@@ -72,14 +71,13 @@ class ChatService {
       throw Exception('Failed to get auth token.');
     }
 
-    final sectionData = await _fetchFinancialContext(user.uid);
     final currencyCode = await CurrencyPreferenceService.getCurrencyPreference();
     final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(currencyCode);
 
     final requestBody = {
       "question": question,
       "history": history,
-      "sectionData": sectionData,
+      "sectionData": {},
       "currencySymbol": currencySymbol,
     };
 
@@ -117,8 +115,12 @@ class ChatService {
                   yield content as String;
                 }
               }
-            } catch (_) {
-              // Ignore parse errors for broken chunks
+            } catch (e) {
+              if (e is FormatException) {
+                debugPrint("ChatService stream parse error (ignored): $e data: $data");
+              } else {
+                rethrow; // Rethrow explicit API errors
+              }
             }
           }
         }
@@ -128,87 +130,4 @@ class ChatService {
     }
   }
 
-  /// Gathers the user's expenses, company, teams, members from Firestore.
-  static Future<Map<String, dynamic>> _fetchFinancialContext(String uid) async {
-    try {
-      final expensesSnapshot = await FirebaseFirestore.instance
-          .collection('expenses')
-          .where('uid', isEqualTo: uid)
-          .orderBy('Date', descending: true)
-          .limit(100)
-          .get();
-
-      final companySnapshot = await FirebaseFirestore.instance
-          .collection('companies')
-          .where('uid', isEqualTo: uid)
-          .limit(1)
-          .get();
-
-      final teamsSnapshot = await FirebaseFirestore.instance
-          .collection('teams')
-          .where('uid', isEqualTo: uid)
-          .get();
-
-      final membersSnapshot = await FirebaseFirestore.instance
-          .collection('members')
-          .where('uid', isEqualTo: uid)
-          .get();
-
-      final cleanExpenses = expensesSnapshot.docs.map((doc) {
-        final e = doc.data();
-        return {
-          "Amount": (e["Amount"] ?? 0).toDouble(),
-          "Category": (e["Category"] ?? "unknown").toString(),
-          "Type": (e["Type"] ?? "unknown").toString(),
-          "Description": (e["Description"] ?? e["Title"] ?? "").toString(),
-          "ExpenseType": (e["ExpenseType"] ?? "unknown").toString(),
-          "TeamName": (e["TeamName"] ?? e["linkedTeamName"] ?? "general").toString(),
-          "TeamMemberName": (e["TeamMemberName"] ?? "none").toString(),
-          "PaymentMethod": (e["BankAccount"] ?? e["PaymentMethod"] ?? "unknown").toString(),
-          "Date": (e["Date"] is Timestamp)
-              ? (e["Date"] as Timestamp).toDate().toIso8601String()
-              : e["Date"]?.toString() ?? "",
-        };
-      }).toList();
-
-      final companyData = companySnapshot.docs.isNotEmpty
-          ? _cleanTimestamps(companySnapshot.docs.first.data())
-          : {};
-
-      final teamsData = teamsSnapshot.docs
-          .map((doc) => _cleanTimestamps(doc.data()))
-          .toList();
-
-      final membersData = membersSnapshot.docs
-          .map((doc) => _cleanTimestamps(doc.data()))
-          .toList();
-
-      return {
-        "expenses": cleanExpenses,
-        "revenue": [],
-        "company": companyData,
-        "members": membersData,
-        "teams": teamsData,
-      };
-    } catch (e) {
-      debugPrint("ChatService: Failed to fetch financial context: $e");
-      return {
-        "expenses": [],
-        "revenue": [],
-        "company": {},
-        "members": [],
-        "teams": [],
-      };
-    }
-  }
-
-  /// Converts Firestore Timestamps to ISO strings for JSON serialization.
-  static Map<String, dynamic> _cleanTimestamps(Map<String, dynamic> data) {
-    return data.map((key, value) {
-      if (value is Timestamp) {
-        return MapEntry(key, value.toDate().toIso8601String());
-      }
-      return MapEntry(key, value);
-    });
-  }
 }
