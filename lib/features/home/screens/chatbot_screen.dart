@@ -45,7 +45,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       setState(() {
         _chatMessages.add({
           'role': 'ai',
-          'text': 'Hello! I am your AI Startup CFO. Ask me anything about your runway, burn rate, expenses, or team efficiency.',
+          'text': 'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!',
         });
       });
       _saveChatHistory();
@@ -193,7 +193,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 setState(() {
                   _chatMessages = [{
                     'role': 'ai',
-                    'text': 'Hello! I am your AI Startup CFO. Ask me anything about your runway, burn rate, expenses, or team efficiency.',
+                    'text': 'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!',
                   }];
                 });
                 await _saveChatHistory();
