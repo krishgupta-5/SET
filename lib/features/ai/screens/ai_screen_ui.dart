@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shimmer/shimmer.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
 extension HexColor on Color {
@@ -153,6 +154,11 @@ class _AiScreenState extends State<AiScreen>
 
       _pendingSections.add("main");
       _pendingSections.add("keyPoints");
+      _pendingSections.add("runway");
+      _pendingSections.add("burn");
+      _pendingSections.add("staffing");
+      _pendingSections.add("expense");
+      _pendingSections.add("subscription");
       _processQueue();
     } catch (e) {
       debugPrint("Error fetching data: $e");
@@ -168,13 +174,15 @@ class _AiScreenState extends State<AiScreen>
 
     setState(() => _isFetchingMore = true);
 
-    while (_pendingSections.isNotEmpty) {
-      final sectionKey = _pendingSections.removeAt(0);
-      try {
-        String baseUrl = Platform.isIOS
-            ? "http://127.0.0.1:8000"
-            : "http://10.0.2.2:8000";
+    final sectionsToProcess = List<String>.from(_pendingSections);
+    _pendingSections.clear();
 
+    String baseUrl = Platform.isIOS
+        ? "http://127.0.0.1:8000"
+        : "http://10.0.2.2:8000";
+
+    await Future.wait(sectionsToProcess.map((sectionKey) async {
+      try {
         final requestBody = {
           "sectionName": sectionKey,
           "sectionData": _cachedPayload,
@@ -213,7 +221,7 @@ class _AiScreenState extends State<AiScreen>
       } catch (e) {
         debugPrint("Failed to load AI section $sectionKey: $e");
       }
-    }
+    }));
 
     if (mounted) {
       setState(() => _isFetchingMore = false);
@@ -231,11 +239,8 @@ class _AiScreenState extends State<AiScreen>
       'subscription',
     ];
     for (final section in sections) {
-      _sectionLoadStates[section] = false;
+      _sectionLoadStates[section] = true;
     }
-    // Load main sections immediately
-    _sectionLoadStates['main'] = true;
-    _sectionLoadStates['keyPoints'] = true;
   }
 
   void _loadSection(String sectionKey) {
@@ -263,10 +268,11 @@ class _AiScreenState extends State<AiScreen>
             // Content
             Expanded(
               child: _isLoading
-                  ? Center(
-                      child: CircularProgressIndicator(
-                        color: context.textPrimary.withValues(alpha: 0.3),
-                      ),
+                  ? ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      itemCount: 5,
+                      separatorBuilder: (_, __) => const SizedBox(height: 32),
+                      itemBuilder: (_, __) => _buildShimmerPlaceholder(height: 140),
                     )
                   : RefreshIndicator(
                       color: context.textPrimary,
@@ -292,9 +298,11 @@ class _AiScreenState extends State<AiScreen>
                         },
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 16,
+                          padding: const EdgeInsets.only(
+                            left: 24,
+                            right: 24,
+                            top: 16,
+                            bottom: 120, // Padding for the bottom nav bar
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,6 +352,21 @@ class _AiScreenState extends State<AiScreen>
                     ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShimmerPlaceholder({double height = 140}) {
+    return Shimmer.fromColors(
+      baseColor: context.isDarkMode ? Colors.grey[800]! : Colors.grey[300]!,
+      highlightColor: context.isDarkMode ? Colors.grey[700]! : Colors.grey[100]!,
+      child: Container(
+        width: double.infinity,
+        height: height,
+        decoration: BoxDecoration(
+          color: context.isDarkMode ? Colors.grey[800] : Colors.white,
+          borderRadius: BorderRadius.circular(20),
         ),
       ),
     );
@@ -406,19 +429,22 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildMainInsightCard() {
     if (_mainData == null) {
+      return _buildShimmerPlaceholder(height: 180);
+    }
+    
+    if (_mainData!.containsKey('error')) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: context.borderColor),
+          border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
           boxShadow: context.cardShadow,
         ),
-        child: Center(
-          child: CircularProgressIndicator(
-            color: context.textPrimary.withValues(alpha: 0.3),
-          ),
+        child: Text(
+          "API Error: ${_mainData!['error']}",
+          style: TextStyle(color: Colors.red, fontFamily: 'Satoshi'),
         ),
       );
     }
@@ -532,13 +558,13 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildKeyPointsSection() {
     if (_keyPointsData == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.textPrimary.withValues(alpha: 0.3),
-        ),
-      );
+      return _buildShimmerPlaceholder(height: 160);
     }
     final items = _keyPointsData?['items'] as List<dynamic>? ?? [];
+
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -654,13 +680,14 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildRunwayRecommendationsSection() {
     if (_runwayData == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.textPrimary.withValues(alpha: 0.3),
-        ),
-      );
+      return _buildShimmerPlaceholder(height: 140);
     }
     final bulletPoints = _runwayData?['bullet_points'] as List<dynamic>? ?? [];
+    
+    if (bulletPoints.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
     final textContent = bulletPoints.map((b) => "• $b").join('\n');
 
     return Column(
@@ -729,13 +756,13 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildBurnOptimizationSection() {
     if (_burnData == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.textPrimary.withValues(alpha: 0.3),
-        ),
-      );
+      return _buildShimmerPlaceholder(height: 140);
     }
     final items = _burnData?['items'] as List<dynamic>? ?? [];
+
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,13 +900,13 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildStaffingInsightsSection() {
     if (_staffingData == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.textPrimary.withValues(alpha: 0.3),
-        ),
-      );
+      return _buildShimmerPlaceholder(height: 140);
     }
     final insight = _staffingData?['insight'] ?? "";
+
+    if (insight.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -947,13 +974,13 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildExpenseAnalysisSection() {
     if (_expenseData == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.textPrimary.withValues(alpha: 0.3),
-        ),
-      );
+      return _buildShimmerPlaceholder(height: 140);
     }
     final insight = _expenseData?['insight'] ?? "";
+
+    if (insight.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1021,13 +1048,13 @@ class _AiScreenState extends State<AiScreen>
 
   Widget _buildSubscriptionInsightsSection() {
     if (_subscriptionData == null) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.textPrimary.withValues(alpha: 0.3),
-        ),
-      );
+      return _buildShimmerPlaceholder(height: 160);
     }
     final items = _subscriptionData?['items'] as List<dynamic>? ?? [];
+
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

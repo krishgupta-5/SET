@@ -1,3 +1,10 @@
+import socket
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,6 +13,7 @@ import requests
 import os
 import pandas as pd
 import json
+import time
 from dotenv import load_dotenv
 
 from services.auth_service import verify_token
@@ -40,36 +48,56 @@ API_KEY = os.getenv("GROQ_API_KEY")
 # ---------------------------
 # GROQ CALL
 # ---------------------------
-def call_llm(prompt):
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "openai/gpt-oss-20b",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "response_format": {"type": "json_object"},
-                "temperature": 0.3,
-                "max_tokens": 800
-            },
-            timeout=15
-        )
+def call_llm(prompt, retries=3):
+    for attempt in range(retries):
+        try:
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "openai/gpt-oss-20b",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.3,
+                    "max_tokens": 800
+                },
+                timeout=15
+            )
 
-        if response.status_code != 200:
-            return {"error": f"Groq Error: {response.text}"}
+            if response.status_code == 429: # Rate Limit
+                time.sleep(2 ** attempt)
+                continue
 
-        return json.loads(response.json()["choices"][0]["message"]["content"])
+            if response.status_code != 200:
+                print(f"LLM API Error: {response.text}")
+                return {"error": f"API Error: {response.text}"}
 
-    except Exception as e:
-        return {"error": str(e)}
+            content = response.json()["choices"][0]["message"]["content"]
+            
+            # Clean markdown codeblocks
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+                
+            return json.loads(content.strip())
+
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"LLM Parsing Error: {e}")
+                return {"error": str(e)}
+            time.sleep(1)
 
 
 # ---------------------------
@@ -306,7 +334,7 @@ Return a helpful message telling the user to add data first.
 For sections with "items", return 1 item with title "No data yet", description "Add expenses to get insights.", savings "{cs}0/mo", color "#8E8E93".
 For sections with "insight", return "Add expenses to get started."
 For sections with "bullet_points", return ["Add expenses to get started."].
-For sections with "primary_insight", return primary_insight "Welcome to AI Insights", high_impact_summary "ADD DATA", description "Add expenses to get started.".
+For sections with "primary_insight", return the exact JSON: {{"primary_insight": "Welcome to AI Insights", "high_impact_summary": "ADD DATA", "description": "Add expenses to get started."}}.
 """
 
     prompt = f"""
@@ -320,8 +348,8 @@ CURRENCY: Always use {cs} as the currency symbol. Never use $ or any other symbo
 {data_context}
 CRITICAL INSTRUCTIONS:
 1. You must output ONLY valid JSON. Do not include markdown blocks or any other text.
-2. DO NOT hallucinate or invent numbers, expenses, or insights that are not in the metrics above.
-3. Only base your recommendations on the ACTUAL data provided in the metrics above.
+2. If the data is limited, you ARE ALLOWED to make safe, hypothetical assumptions to generate complete recommendations. Do NOT return empty lists. Always provide the maximum requested items by filling in the gaps with industry-standard startup advice related to the data.
+3. Base your primary insights on the actual data provided, but expand on it for actionable advice.
 4. All monetary values must use the {cs} symbol.
 
 {prompt_instruction}
