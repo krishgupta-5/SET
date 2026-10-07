@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:startup_expense_tracker/models/domain_events.dart';
 import 'package:startup_expense_tracker/services/event_dispatcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Manages the lifecycle of the AI Context for the user.
@@ -22,9 +23,28 @@ class AiContextManager {
 
   /// Subscribes to domain events. Should be called once during app initialization.
   void initListeners() {
-    EventDispatcher().subscribe<FinancialEvent>((event) {
+    EventDispatcher().subscribe<FinancialEvent>((event) async {
       debugPrint("AiContextManager received FinancialEvent. Invalidating context...");
-      invalidate();
+      
+      // 1. Invalidate backend context
+      await invalidate();
+      
+      // 2. Mark local data as changed in Firestore to bust frontend caches
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        try {
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+            'lastDataUpdate': FieldValue.serverTimestamp(),
+          });
+          debugPrint("Updated lastDataUpdate timestamp for frontend cache invalidation.");
+        } catch (e) {
+          debugPrint("Failed to update lastDataUpdate: $e");
+          // If the doc doesn't exist or misses the field, use set with merge
+          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+            'lastDataUpdate': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+      }
     });
   }
 

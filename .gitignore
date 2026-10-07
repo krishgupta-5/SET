@@ -59,3 +59,5 @@ app.*.map.json
 # Python
 **/.venv/
 
+app/build/
+app/startup-expense-tracker-3df6b-firebase-adminsdk-fbsvc-1a9a687e91.json

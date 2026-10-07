@@ -348,9 +348,9 @@ CURRENCY: Always use {cs} as the currency symbol. Never use $ or any other symbo
 {data_context}
 CRITICAL INSTRUCTIONS:
 1. You must output ONLY valid JSON. Do not include markdown blocks or any other text.
-2. If the data is limited, you ARE ALLOWED to make safe, hypothetical assumptions to generate complete recommendations. Do NOT return empty lists. Always provide the maximum requested items by filling in the gaps with industry-standard startup advice related to the data.
+2. You MUST NOT invent, hallucinate, or make hypothetical assumptions about numbers, expenses, or any data. If data is missing or insufficient, you MUST STILL return the EXACT requested JSON structure, but use safe fallback text (e.g. 'Insufficient data to analyze') or 0 for the values. Do not make up fake values.
 3. Base your primary insights on the actual data provided, but expand on it for actionable advice.
-4. All monetary values must use the {cs} symbol.
+4. All monetary values must use the exact '{cs}' symbol. NEVER use '$' unless '{cs}' is '$'.
 
 {prompt_instruction}
 """

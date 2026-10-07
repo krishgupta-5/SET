@@ -8,6 +8,11 @@ import 'package:http/http.dart' as http;
 import 'package:shimmer/shimmer.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
+import 'package:startup_expense_tracker/services/ai_service.dart';
+import 'package:startup_expense_tracker/services/currency_formatter.dart';
+import 'package:startup_expense_tracker/services/currency_preference_service.dart';
+import 'package:startup_expense_tracker/services/ai_cache_service.dart';
+
 extension HexColor on Color {
   static Color fromHex(String hexString, [BuildContext? context]) {
     if (hexString.isEmpty) {
@@ -51,6 +56,8 @@ class _AiScreenState extends State<AiScreen>
   Map<String, dynamic>? _staffingData;
   Map<String, dynamic>? _expenseData;
   Map<String, dynamic>? _subscriptionData;
+  
+  String _userCountryCode = '+1'; // Default
 
   @override
   bool get wantKeepAlive => true;
@@ -58,8 +65,49 @@ class _AiScreenState extends State<AiScreen>
   @override
   void initState() {
     super.initState();
+    CurrencyPreferenceService.currencyNotifier.addListener(_onCurrencyChanged);
     _initializeLoadStates();
-    _fetchAIInsight();
+    _initializeAndFetch();
+  }
+
+  @override
+  void dispose() {
+    CurrencyPreferenceService.currencyNotifier.removeListener(_onCurrencyChanged);
+    super.dispose();
+  }
+
+  void _onCurrencyChanged() {
+    if (mounted) {
+      final newCurrency = CurrencyPreferenceService.getCurrencyPreferenceSync();
+      if (_userCountryCode != newCurrency) {
+        setState(() {
+          _userCountryCode = newCurrency;
+        });
+        
+        // Reset load states so lazy-loaded sections will re-fetch
+        _initializeLoadStates();
+        _pendingSections.clear();
+        
+        // Re-fetch insights from backend with new currency
+        _fetchAIInsight();
+      }
+    }
+  }
+
+  Future<void> _initializeAndFetch() async {
+    _userCountryCode = CurrencyPreferenceService.getCurrencyPreferenceSync();
+    final asyncCode = await CurrencyPreferenceService.getCurrencyPreference();
+    if (mounted && asyncCode != _userCountryCode) {
+      setState(() => _userCountryCode = asyncCode);
+    }
+    
+    try {
+      await AIService.syncAICollections();
+    } catch (e) {
+      debugPrint("Failed to sync AI data in AI screen init: $e");
+    }
+
+    await _fetchAIInsight();
   }
 
   Map<String, dynamic> _cleanTimestamps(Map<String, dynamic> data) {
@@ -83,12 +131,35 @@ class _AiScreenState extends State<AiScreen>
     return cleaned;
   }
 
-  Future<void> _fetchAIInsight() async {
+  Future<void> _fetchAIInsight({bool forceRefresh = false}) async {
     setState(() => _isLoading = true);
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
       final String uid = user.uid;
+
+      // Check cache first!
+      if (!forceRefresh) {
+        final isValid = await AiCacheService.isCacheValid();
+        if (isValid) {
+          final rawCachedState = await AiCacheService.loadSectionCache('full_ui_state');
+          if (rawCachedState != null && rawCachedState.isNotEmpty) {
+            debugPrint("Loaded UI AI insights from fast local cache!");
+            setState(() {
+              final map = rawCachedState[0] as Map<String, dynamic>;
+              _mainData = map["main"];
+              _keyPointsData = map["keyPoints"];
+              _runwayData = map["runway"];
+              _burnData = map["burn"];
+              _staffingData = map["staffing"];
+              _expenseData = map["expense"];
+              _subscriptionData = map["subscription"];
+              _isLoading = false;
+            });
+            return;
+          }
+        }
+      }
 
       final expensesSnapshot = await FirebaseFirestore.instance
           .collection('expenses')
@@ -114,6 +185,18 @@ class _AiScreenState extends State<AiScreen>
           .get();
 
       if (!mounted) return;
+
+      if (expensesSnapshot.docs.isEmpty) {
+        setState(() {
+          _mainData = {
+            "primary_insight": "Welcome to AI Insights",
+            "high_impact_summary": "NO DATA",
+            "description": "No expenses recorded yet. Add some expenses to generate your first financial intelligence report.",
+          };
+          _isLoading = false;
+        });
+        return;
+      }
 
       final expenses = expensesSnapshot.docs.map((doc) => doc.data()).toList();
       final cleanExpenses = expenses.map((e) {
@@ -181,11 +264,18 @@ class _AiScreenState extends State<AiScreen>
         ? "http://127.0.0.1:8000"
         : "http://10.0.2.2:8000";
 
+    final currencySymbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+    debugPrint("====== AI SCREEN UI DEBUG ======");
+    debugPrint("Current _userCountryCode: $_userCountryCode");
+    debugPrint("Calculated currencySymbol: $currencySymbol");
+    debugPrint("=============================");
+
     await Future.wait(sectionsToProcess.map((sectionKey) async {
       try {
         final requestBody = {
           "sectionName": sectionKey,
           "sectionData": _cachedPayload,
+          "currencySymbol": currencySymbol,
         };
 
         final res = await http.post(
@@ -224,6 +314,19 @@ class _AiScreenState extends State<AiScreen>
     }));
 
     if (mounted) {
+      // Save all state after parallel loading finishes
+      final uiState = {
+        "main": _mainData,
+        "keyPoints": _keyPointsData,
+        "runway": _runwayData,
+        "burn": _burnData,
+        "staffing": _staffingData,
+        "expense": _expenseData,
+        "subscription": _subscriptionData,
+      };
+      await AiCacheService.saveSectionCache('full_ui_state', [uiState]);
+      await AiCacheService.updateSyncTimestamp();
+      
       setState(() => _isFetchingMore = false);
     }
   }
@@ -278,8 +381,10 @@ class _AiScreenState extends State<AiScreen>
                       color: context.textPrimary,
                       backgroundColor: context.cardBackground,
                       onRefresh: () async {
-                        // This will show a spinner until the sync is complete
-                        await _fetchAIInsight();
+                        _initializeLoadStates();
+                        _pendingSections.clear();
+                        await AIService.syncAICollections();
+                        await _fetchAIInsight(forceRefresh: true);
                       },
                       child: NotificationListener<ScrollNotification>(
                         onNotification: (scrollInfo) {
@@ -310,37 +415,25 @@ class _AiScreenState extends State<AiScreen>
                               // Main Insight Card
                               _buildMainInsightCard(),
 
-                              const SizedBox(height: 32),
-
                               // Key Points
                               if (_sectionLoadStates['keyPoints']!)
                                 _buildKeyPointsSection(),
-
-                              const SizedBox(height: 32),
 
                               // Runway Recommendations
                               if (_sectionLoadStates['runway']!)
                                 _buildRunwayRecommendationsSection(),
 
-                              const SizedBox(height: 32),
-
                               // Burn Optimization
                               if (_sectionLoadStates['burn']!)
                                 _buildBurnOptimizationSection(),
-
-                              const SizedBox(height: 32),
 
                               // Staffing Insights
                               if (_sectionLoadStates['staffing']!)
                                 _buildStaffingInsightsSection(),
 
-                              const SizedBox(height: 32),
-
                               // Expense Analysis
                               if (_sectionLoadStates['expense']!)
                                 _buildExpenseAnalysisSection(),
-
-                              const SizedBox(height: 32),
 
                               // Subscription Insights
                               if (_sectionLoadStates['subscription']!)
@@ -556,19 +649,31 @@ class _AiScreenState extends State<AiScreen>
     );
   }
 
+  bool _isInsightBlank(String insight) {
+    final lower = insight.toLowerCase().trim();
+    if (lower.isEmpty) return true;
+    if (lower.contains("insufficient data")) return true;
+    if (lower.contains("not enough data")) return true;
+    if (lower == "none" || lower == "n/a") return true;
+    if (lower.contains("no insight")) return true;
+    return false;
+  }
+
   Widget _buildKeyPointsSection() {
     if (_keyPointsData == null) {
       return _buildShimmerPlaceholder(height: 160);
     }
     final items = _keyPointsData?['items'] as List<dynamic>? ?? [];
 
-    if (items.isEmpty) {
+    if (items.isEmpty || (items.length == 1 && _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Text(
           "Key Recommendations",
           style: TextStyle(
@@ -606,8 +711,9 @@ class _AiScreenState extends State<AiScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildKeyPoint(
     String title,
@@ -684,15 +790,17 @@ class _AiScreenState extends State<AiScreen>
     }
     final bulletPoints = _runwayData?['bullet_points'] as List<dynamic>? ?? [];
     
-    if (bulletPoints.isEmpty) {
+    if (bulletPoints.isEmpty || (bulletPoints.length == 1 && _isInsightBlank(bulletPoints[0].toString()))) {
       return const SizedBox.shrink();
     }
     
     final textContent = bulletPoints.map((b) => "• $b").join('\n');
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Text(
           "Runway Optimization",
           style: TextStyle(
@@ -751,8 +859,9 @@ class _AiScreenState extends State<AiScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildBurnOptimizationSection() {
     if (_burnData == null) {
@@ -760,13 +869,15 @@ class _AiScreenState extends State<AiScreen>
     }
     final items = _burnData?['items'] as List<dynamic>? ?? [];
 
-    if (items.isEmpty) {
+    if (items.isEmpty || (items.length == 1 && _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Text(
           "Burn Optimization",
           style: TextStyle(
@@ -826,8 +937,9 @@ class _AiScreenState extends State<AiScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildOptimizationItem(
     String title,
@@ -902,15 +1014,17 @@ class _AiScreenState extends State<AiScreen>
     if (_staffingData == null) {
       return _buildShimmerPlaceholder(height: 140);
     }
-    final insight = _staffingData?['insight'] ?? "";
+    final insight = _staffingData?['insight']?.toString() ?? "";
 
-    if (insight.isEmpty) {
+    if (_isInsightBlank(insight)) {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Text(
           "Staffing Analysis",
           style: TextStyle(
@@ -969,22 +1083,25 @@ class _AiScreenState extends State<AiScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildExpenseAnalysisSection() {
     if (_expenseData == null) {
       return _buildShimmerPlaceholder(height: 140);
     }
-    final insight = _expenseData?['insight'] ?? "";
+    final insight = _expenseData?['insight']?.toString() ?? "";
 
-    if (insight.isEmpty) {
+    if (_isInsightBlank(insight)) {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Text(
           "Expense Analysis",
           style: TextStyle(
@@ -1043,8 +1160,9 @@ class _AiScreenState extends State<AiScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildSubscriptionInsightsSection() {
     if (_subscriptionData == null) {
@@ -1052,13 +1170,15 @@ class _AiScreenState extends State<AiScreen>
     }
     final items = _subscriptionData?['items'] as List<dynamic>? ?? [];
 
-    if (items.isEmpty) {
+    if (items.isEmpty || (items.length == 1 && _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
       return const SizedBox.shrink();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(top: 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
         Text(
           "Subscription Analysis",
           style: TextStyle(
@@ -1118,6 +1238,7 @@ class _AiScreenState extends State<AiScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 }
