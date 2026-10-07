@@ -284,7 +284,7 @@ def generate_ai_section(data: dict):
     "E.g. Pause all non-essential hiring for the next quarter to ensure your runway extends beyond 12 months."
   ]
 }}""",
-        "burn": f"""Return a JSON object containing up to 3 burn optimization items based ONLY on real data. Use this structure as an EXAMPLE and REPLACE the values. Descriptions MUST be detailed (1-2 sentences, 15-25 words) explaining the optimization. Use {cs} as the currency symbol:
+        "burn": f"""Return a JSON object containing up to 3 burn optimization items based ONLY on real data. If there is historical burn data over time, you can optionally include a 'chart_type' of "bar" and a 'chart_data' array to visualize the trend. Use this structure as an EXAMPLE and REPLACE the values. Descriptions MUST be detailed (1-2 sentences, 15-25 words) explaining the optimization. Use {cs} as the currency symbol:
 {{
   "items": [
     {{
@@ -293,15 +293,26 @@ def generate_ai_section(data: dict):
       "savings": "E.g. {cs}300/mo",
       "color": "#30D158"
     }}
+  ],
+  "chart_type": "bar",
+  "chart_data": [
+    {{"label": "Jul", "value": 15000, "color": "#FF9F0A"}},
+    {{"label": "Aug", "value": 12000, "color": "#FF9F0A"}},
+    {{"label": "Sep", "value": 9000, "color": "#FF9F0A"}}
   ]
 }}""",
         "staffing": f"""Return a JSON object. The insight must be a detailed analysis (1-2 sentences, 15-25 words) based ONLY on real data. Use this structure as an EXAMPLE and REPLACE the values. Use {cs} as the currency symbol:
 {{
   "insight": "E.g. Your engineering costs have risen significantly over the past quarter. Consider utilizing more freelance contractors for short-term projects instead of full-time hires."
 }}""",
-        "expense": f"""Return a JSON object. The insight must be a detailed analysis (1-2 sentences, 15-25 words) based ONLY on real data. Use this structure as an EXAMPLE and REPLACE the values. Use {cs} as the currency symbol:
+        "expense": f"""Return a JSON object. The insight must be a detailed analysis (1-2 sentences, 15-25 words) based ONLY on real data. If there are at least 2 expense categories, include a 'chart_type' of "pie" and 'chart_data' array. Use this structure as an EXAMPLE and REPLACE the values. Use {cs} as the currency symbol:
 {{
-  "insight": "E.g. Marketing spend spiked unexpectedly this month without a proportional increase in revenue. It's recommended to audit your current ad campaigns and pause underperforming ones."
+  "insight": "E.g. Software expenses dominate at {cs}500, while marketing is minimal. Consider reallocating to high-impact areas.",
+  "chart_type": "pie",
+  "chart_data": [
+    {{"label": "Software", "value": 500, "color": "#0A84FF"}},
+    {{"label": "Marketing", "value": 100, "color": "#FF453A"}}
+  ]
 }}""",
         "subscription": f"""Return a JSON object containing up to 3 subscriptions based ONLY on real data. IF NO SUBSCRIPTIONS EXIST, RETURN 1 ITEM SAYING NO SUBSCRIPTIONS FOUND. Use this structure as an EXAMPLE and REPLACE the values. Descriptions MUST be detailed (1-2 sentences, 15-25 words). Use {cs} as the currency symbol:
 {{

@@ -12,6 +12,7 @@ import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/services/currency_formatter.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 import 'package:startup_expense_tracker/services/ai_cache_service.dart';
+import 'package:fl_chart/fl_chart.dart';
 
 extension HexColor on Color {
   static Color fromHex(String hexString, [BuildContext? context]) {
@@ -784,6 +785,138 @@ class _AiScreenState extends State<AiScreen>
     );
   }
 
+  Widget _buildChart(Map<String, dynamic> data, {String defaultType = 'bar'}) {
+    final chartType = data['chart_type'] as String? ?? defaultType;
+    final chartData = data['chart_data'] as List<dynamic>?;
+    
+    if (chartData == null || chartData.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    try {
+      if (chartType == 'pie') {
+        return _buildPieChart(chartData);
+      } else if (chartType == 'bar') {
+        return _buildBarChart(chartData);
+      }
+    } catch (e) {
+      debugPrint("Error building chart: $e");
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildPieChart(List<dynamic> chartData) {
+    return Container(
+      height: 200,
+      margin: const EdgeInsets.only(top: 24, bottom: 8),
+      child: PieChart(
+        PieChartData(
+          sectionsSpace: 2,
+          centerSpaceRadius: 60,
+          sections: chartData.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final item = entry.value as Map<String, dynamic>;
+            final val = double.tryParse(item['value'].toString()) ?? 0;
+            final colorHex = item['color']?.toString() ?? '#30D158';
+            final color = HexColor.fromHex(colorHex, context);
+            return PieChartSectionData(
+              color: color,
+              value: val,
+              title: item['label']?.toString() ?? '',
+              radius: 20,
+              titleStyle: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              badgeWidget: _Badge(
+                item['label']?.toString() ?? '',
+                size: 30,
+                borderColor: color,
+              ),
+              badgePositionPercentageOffset: 1.5,
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarChart(List<dynamic> chartData) {
+    return Container(
+      height: 200,
+      margin: const EdgeInsets.only(top: 24, bottom: 8),
+      child: BarChart(
+        BarChartData(
+          alignment: BarChartAlignment.spaceAround,
+          maxY: chartData.map((e) => double.tryParse(e['value'].toString()) ?? 0).reduce((a, b) => a > b ? a : b) * 1.2,
+          barTouchData: BarTouchData(enabled: false),
+          titlesData: FlTitlesData(
+            show: true,
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                getTitlesWidget: (value, meta) {
+                  if (value.toInt() >= 0 && value.toInt() < chartData.length) {
+                    final item = chartData[value.toInt()] as Map<String, dynamic>;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        item['label']?.toString() ?? '',
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+                    );
+                  }
+                  return const Text('');
+                },
+              ),
+            ),
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: 1000,
+            getDrawingHorizontalLine: (value) {
+              return FlLine(
+                color: context.isDarkMode ? Colors.white10 : Colors.black12,
+                strokeWidth: 1,
+              );
+            },
+          ),
+          borderData: FlBorderData(show: false),
+          barGroups: chartData.asMap().entries.map((entry) {
+            final idx = entry.key;
+            final item = entry.value as Map<String, dynamic>;
+            final val = double.tryParse(item['value'].toString()) ?? 0;
+            final colorHex = item['color']?.toString() ?? '#30D158';
+            final color = HexColor.fromHex(colorHex, context);
+            return BarChartGroupData(
+              x: idx,
+              barRods: [
+                BarChartRodData(
+                  toY: val,
+                  color: color,
+                  width: 16,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(6),
+                    topRight: Radius.circular(6),
+                  ),
+                )
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _buildRunwayRecommendationsSection() {
     if (_runwayData == null) {
       return _buildShimmerPlaceholder(height: 140);
@@ -933,6 +1066,8 @@ class _AiScreenState extends State<AiScreen>
                   ),
                 );
               }),
+              if (_burnData != null && _burnData!['chart_data'] != null)
+                _buildChart(_burnData!, defaultType: 'bar'),
             ],
           ),
         ),
@@ -1156,6 +1291,8 @@ class _AiScreenState extends State<AiScreen>
                   fontWeight: FontWeight.w400,
                 ),
               ),
+              if (_expenseData != null && _expenseData!['chart_data'] != null)
+                _buildChart(_expenseData!, defaultType: 'pie'),
             ],
           ),
         ),
@@ -1241,4 +1378,49 @@ class _AiScreenState extends State<AiScreen>
     ),
   );
 }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge(
+    this.text, {
+    super.key,
+    required this.size,
+    required this.borderColor,
+  });
+
+  final String text;
+  final double size;
+  final Color borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      width: size * 2.5,
+      height: size,
+      decoration: BoxDecoration(
+        color: context.cardBackground,
+        shape: BoxShape.rectangle,
+        borderRadius: BorderRadius.circular(size / 2),
+        border: Border.all(
+          color: borderColor,
+          width: 2,
+        ),
+        boxShadow: context.cardShadow,
+      ),
+      padding: EdgeInsets.all(size * .15),
+      child: Center(
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 10,
+            color: context.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
 }
