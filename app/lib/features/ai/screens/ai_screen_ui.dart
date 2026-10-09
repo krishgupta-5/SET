@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -8,7 +7,6 @@ import 'package:http/http.dart' as http;
 import 'package:shimmer/shimmer.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
-import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/services/currency_formatter.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 import 'package:startup_expense_tracker/services/ai_cache_service.dart';
