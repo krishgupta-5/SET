@@ -21,6 +21,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   final ScrollController _scrollController = ScrollController();
   
   bool _isTyping = false;
+  bool _isLoadingHistory = true;
 
   List<Map<String, dynamic>> _chatMessages = [];
   late SharedPreferences _prefs;
@@ -40,6 +41,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       final List<dynamic> decoded = jsonDecode(storedHistory);
       setState(() {
         _chatMessages = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        _isLoadingHistory = false;
       });
     } else {
       setState(() {
@@ -47,6 +49,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           'role': 'ai',
           'text': 'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!',
         });
+        _isLoadingHistory = false;
       });
       _saveChatHistory();
     }
@@ -54,7 +57,12 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   }
 
   Future<void> _saveChatHistory() async {
-    await _prefs.setString(_chatHistoryKey, jsonEncode(_chatMessages));
+    // Filter out error messages and cap history at 50 messages
+    List<Map<String, dynamic>> messagesToSave = _chatMessages.where((m) => m['role'] != 'error').toList();
+    if (messagesToSave.length > 50) {
+      messagesToSave = messagesToSave.sublist(messagesToSave.length - 50);
+    }
+    await _prefs.setString(_chatHistoryKey, jsonEncode(messagesToSave));
   }
 
   @override
@@ -135,7 +143,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+      if (mounted && _scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
@@ -199,6 +207,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                 await _saveChatHistory();
                 await AiContextManager().invalidate();
                 if (context.mounted) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Chat and context cleared.')),
                   );
@@ -209,11 +218,13 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               icon: Icon(Icons.refresh, color: context.textSecondary),
               tooltip: "Clear Context Cache",
               onPressed: () async {
+                ScaffoldMessenger.of(context).clearSnackBars();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Clearing cache...')),
                 );
                 await AiContextManager().invalidate();
                 if (context.mounted) {
+                  ScaffoldMessenger.of(context).clearSnackBars();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Cache cleared.')),
                   );
@@ -226,7 +237,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           child: Column(
             children: [
               Expanded(
-                child: ListView.builder(
+                child: _isLoadingHistory 
+                  ? Center(child: CircularProgressIndicator(color: context.textPrimary))
+                  : ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(24),
                   itemCount: _chatMessages.length,
@@ -401,11 +414,13 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                         child: TextField(
                           controller: _messageController,
                           enabled: !_isTyping,
+                          maxLength: 500,
                           style: GoogleFonts.inter(
                             color: context.textPrimary,
                             fontSize: 14,
                           ),
                           decoration: InputDecoration(
+                            counterText: "", // Hide the character counter below the field
                             hintText: "Ask about your startup's finances...",
                             hintStyle: GoogleFonts.inter(
                               color: context.textSecondary,
@@ -426,7 +441,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     const SizedBox(width: 12),
                     GestureDetector(
                       onTap: () {
-                        if (!_isTyping) _sendMessage();
+                        if (!_isTyping) {
+                          HapticFeedback.lightImpact();
+                          _sendMessage();
+                        }
                       },
                       child: Container(
                         width: 52,

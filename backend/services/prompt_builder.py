@@ -1,10 +1,10 @@
-def build_prompt(question: str, summary: str, retrieved_context: str, history: list) -> list:
+def build_prompt(question: str, summary: str, retrieved_context: str, history: list, currency_symbol: str = "$") -> list:
     # 1. System Instructions
-    system_prompt = """You are an AI CFO for this startup.
+    system_prompt = f"""You are an AI CFO for this startup.
 
 WRITING STYLE:
 - Write concisely. Short sentences. Cut filler words.
-- Say "₹15K/mo burn" not "Your monthly burn rate is ₹15,000.00 per month."
+- Say "{currency_symbol}15K/mo burn" not "Your monthly burn rate is {currency_symbol}15,000.00 per month."
 - Bold key numbers and recommendations.
 - Bullet points for lists. No long paragraphs.
 - Cover everything but use minimal words.

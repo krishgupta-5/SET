@@ -51,7 +51,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
         print(f"🔑 [AUTH] No token provided!")
         raise HTTPException(status_code=401, detail="No authentication token provided.")
 
-    print(f"🔑 [AUTH] Token received (first 20 chars): {token[:20]}...")
+    # print(f"🔑 [AUTH] Token received (first 20 chars): {token[:20]}...") # Removed for security
     print(f"🔑 [AUTH] Firebase available: {_firebase_available}")
 
     # Try Firebase Admin verification first (production mode)
@@ -72,25 +72,27 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
         finally:
             executor.shutdown(wait=False)
 
-    # Dev mode: decode the JWT without verification to extract UID
-    # This is safe for local development only.
-    try:
-        import base64
-        import json
-        # JWT has 3 parts: header.payload.signature
-        payload = token.split('.')[1]
-        # Add padding if needed
-        padding = 4 - len(payload) % 4
-        if padding != 4:
-            payload += '=' * padding
-        decoded = json.loads(base64.b64decode(payload))
-        uid = decoded.get('user_id') or decoded.get('sub')
-        if uid:
-            print(f"🔓 Dev mode: extracted UID {uid} from token (not cryptographically verified)")
-            return uid
-        raise HTTPException(status_code=401, detail="Could not extract UID from token.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"🔑 [AUTH] Dev mode also failed: {e}")
-        raise HTTPException(status_code=401, detail=f"Invalid authentication credentials: {e}")
+    # Fallback to dev mode only if explicitly enabled
+    if os.getenv("DEBUG_MODE", "false").lower() == "true":
+        try:
+            import base64
+            import json
+            # JWT has 3 parts: header.payload.signature
+            payload = token.split('.')[1]
+            # Add padding if needed
+            padding = 4 - len(payload) % 4
+            if padding != 4:
+                payload += '=' * padding
+            decoded = json.loads(base64.b64decode(payload))
+            uid = decoded.get('user_id') or decoded.get('sub')
+            if uid:
+                print(f"🔓 Dev mode: extracted UID {uid} from token (not cryptographically verified)")
+                return uid
+            raise HTTPException(status_code=401, detail="Could not extract UID from token.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"🔑 [AUTH] Dev mode also failed: {e}")
+            raise HTTPException(status_code=401, detail=f"Invalid authentication credentials: {e}")
+    else:
+        raise HTTPException(status_code=401, detail="Authentication failed and dev mode is disabled.")

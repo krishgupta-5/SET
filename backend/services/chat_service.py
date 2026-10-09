@@ -90,7 +90,7 @@ def process_chat_message(uid: str, question: str, history: list, client_data: di
         
         # 4. Build Prompt (No Summarization Latency)
         print(f"🔵 [CHAT] Building prompt...")
-        messages = build_prompt(question, summary, retrieved_context, history)
+        messages = build_prompt(question, summary, retrieved_context, history, currency_symbol)
         print(f"🔵 [CHAT] Prompt built with {len(messages)} messages. Calling Groq LLM...")
         
         # 5. Call LLM
@@ -133,7 +133,7 @@ def process_chat_message_stream(uid: str, question: str, history: list, client_d
             set_cached_context(uid, full_data, summary)
             
         retrieved_context = retrieve_relevant_data(intent, summary, full_data, currency_symbol)
-        messages = build_prompt(question, summary, retrieved_context, history)
+        messages = build_prompt(question, summary, retrieved_context, history, currency_symbol)
         print(f"🟢 [STREAM] Prompt built ({len(messages)} messages). Calling Groq (streaming)...")
         
         response = requests.post(

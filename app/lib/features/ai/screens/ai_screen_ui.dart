@@ -12,7 +12,10 @@ import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/services/currency_formatter.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 import 'package:startup_expense_tracker/services/ai_cache_service.dart';
+import 'package:startup_expense_tracker/services/chat_service.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:startup_expense_tracker/features/ai/widgets/main_insight_card.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 extension HexColor on Color {
   static Color fromHex(String hexString, [BuildContext? context]) {
@@ -102,11 +105,7 @@ class _AiScreenState extends State<AiScreen>
       setState(() => _userCountryCode = asyncCode);
     }
     
-    try {
-      await AIService.syncAICollections();
-    } catch (e) {
-      debugPrint("Failed to sync AI data in AI screen init: $e");
-    }
+    // Removed unnecessary AIService.syncAICollections() here since _fetchAIInsight fetches data.
 
     await _fetchAIInsight();
   }
@@ -261,9 +260,7 @@ class _AiScreenState extends State<AiScreen>
     final sectionsToProcess = List<String>.from(_pendingSections);
     _pendingSections.clear();
 
-    String baseUrl = Platform.isIOS
-        ? "http://127.0.0.1:8000"
-        : "http://10.0.2.2:8000";
+    String baseUrl = ChatService.baseUrl;
 
     final currencySymbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
     debugPrint("====== AI SCREEN UI DEBUG ======");
@@ -271,7 +268,7 @@ class _AiScreenState extends State<AiScreen>
     debugPrint("Calculated currencySymbol: $currencySymbol");
     debugPrint("=============================");
 
-    await Future.wait(sectionsToProcess.map((sectionKey) async {
+    for (final sectionKey in sectionsToProcess) {
       try {
         final requestBody = {
           "sectionName": sectionKey,
@@ -283,7 +280,7 @@ class _AiScreenState extends State<AiScreen>
           Uri.parse("$baseUrl/generate-ai-section"),
           headers: {"Content-Type": "application/json"},
           body: jsonEncode(requestBody),
-        );
+        ).timeout(const Duration(seconds: 30));
 
         if (!mounted) return;
 
@@ -311,8 +308,27 @@ class _AiScreenState extends State<AiScreen>
         }
       } catch (e) {
         debugPrint("Failed to load AI section $sectionKey: $e");
+        if (mounted) {
+          setState(() {
+            if (sectionKey == "main") {
+              _mainData = {"error": e.toString()};
+            } else if (sectionKey == "keyPoints") {
+              _keyPointsData = {"items": [{"title": "Connection Error", "description": e.toString(), "savings": "N/A", "color": "#FF453A"}]};
+            } else if (sectionKey == "runway") {
+              _runwayData = {"bullet_points": ["Connection Error: ${e.toString()}"]};
+            } else if (sectionKey == "burn") {
+              _burnData = {"items": [{"title": "Connection Error", "description": e.toString(), "savings": "N/A", "color": "#FF453A"}]};
+            } else if (sectionKey == "staffing") {
+              _staffingData = {"insight": "Connection Error: ${e.toString()}"};
+            } else if (sectionKey == "expense") {
+              _expenseData = {"insight": "Connection Error: ${e.toString()}"};
+            } else if (sectionKey == "subscription") {
+              _subscriptionData = {"items": [{"title": "Connection Error", "description": e.toString(), "savings": "N/A", "color": "#FF453A"}]};
+            }
+          });
+        }
       }
-    }));
+    }
 
     if (mounted) {
       // Save all state after parallel loading finishes
@@ -384,7 +400,6 @@ class _AiScreenState extends State<AiScreen>
                       onRefresh: () async {
                         _initializeLoadStates();
                         _pendingSections.clear();
-                        await AIService.syncAICollections();
                         await _fetchAIInsight(forceRefresh: true);
                       },
                       child: NotificationListener<ScrollNotification>(
@@ -414,7 +429,7 @@ class _AiScreenState extends State<AiScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // Main Insight Card
-                              _buildMainInsightCard(),
+                              MainInsightCard(mainData: _mainData),
 
                               // Key Points
                               if (_sectionLoadStates['keyPoints']!)
@@ -521,134 +536,7 @@ class _AiScreenState extends State<AiScreen>
     );
   }
 
-  Widget _buildMainInsightCard() {
-    if (_mainData == null) {
-      return _buildShimmerPlaceholder(height: 180);
-    }
-    
-    if (_mainData!.containsKey('error')) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
-          boxShadow: context.cardShadow,
-        ),
-        child: Text(
-          "API Error: ${_mainData!['error']}",
-          style: TextStyle(color: Colors.red, fontFamily: 'Satoshi'),
-        ),
-      );
-    }
-
-    final primaryInsight =
-        _mainData?['primary_insight'] ?? "No insight available.";
-    final description =
-        _mainData?['description'] ??
-        "We couldn't generate an insight at this time.";
-    final highImpact = _mainData?['high_impact_summary'] ?? "HIGH IMPACT";
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF30D158).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(
-                    color: const Color(0xFF30D158).withValues(alpha: 0.3),
-                  ),
-                ),
-                child: Text(
-                  "PRIMARY INSIGHT",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: const Color(0xFF30D158),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                  ),
-                ),
-              ),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width - 96,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF9F0A).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(100),
-                    border: Border.all(
-                      color: const Color(0xFFFF9F0A).withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    highImpact.toUpperCase(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: const Color(0xFFFF9F0A),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Text(
-            primaryInsight,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 16,
-              height: 1.5,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            description,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 14,
-              height: 1.5,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // MainInsightCard extracted to widgets/main_insight_card.dart
 
   bool _isInsightBlank(String insight) {
     final lower = insight.toLowerCase().trim();
@@ -806,50 +694,97 @@ class _AiScreenState extends State<AiScreen>
   }
 
   Widget _buildPieChart(List<dynamic> chartData) {
-    return Container(
-      height: 200,
-      margin: const EdgeInsets.only(top: 24, bottom: 8),
-      child: PieChart(
-        PieChartData(
-          sectionsSpace: 2,
-          centerSpaceRadius: 60,
-          sections: chartData.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final item = entry.value as Map<String, dynamic>;
-            final val = double.tryParse(item['value'].toString()) ?? 0;
-            final colorHex = item['color']?.toString() ?? '#30D158';
+    double total = chartData.fold(0.0, (sum, item) {
+      double val = double.tryParse((item as Map<String, dynamic>)['value'].toString()) ?? 0;
+      return sum + val;
+    });
+
+    return Column(
+      children: [
+        Container(
+          height: 200,
+          margin: const EdgeInsets.only(top: 24, bottom: 24),
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 60,
+              sections: chartData.map((dynamic dataItem) {
+                final item = dataItem as Map<String, dynamic>;
+                double val = double.tryParse(item['value'].toString()) ?? 0;
+                double percent = total > 0 ? (val / total) * 100 : 0;
+                if (val <= 0) val = 0.0001; // Avoid layout crash if sum is 0
+                final colorHex = item['color']?.toString() ?? '#30D158';
+                final color = HexColor.fromHex(colorHex, context);
+                return PieChartSectionData(
+                  color: color,
+                  value: val,
+                  showTitle: percent >= 5,
+                  title: '${percent.toStringAsFixed(0)}%',
+                  titleStyle: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  radius: percent >= 5 ? 25 : 20,
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        Wrap(
+          spacing: 16,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: chartData.map((item) {
+            final data = item as Map<String, dynamic>;
+            final colorHex = data['color']?.toString() ?? '#30D158';
             final color = HexColor.fromHex(colorHex, context);
-            return PieChartSectionData(
-              color: color,
-              value: val,
-              title: item['label']?.toString() ?? '',
-              radius: 20,
-              titleStyle: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-              badgeWidget: _Badge(
-                item['label']?.toString() ?? '',
-                size: 30,
-                borderColor: color,
-              ),
-              badgePositionPercentageOffset: 1.5,
+            final label = data['label']?.toString() ?? '';
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'Satoshi',
+                    color: context.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             );
           }).toList(),
         ),
-      ),
+      ],
     );
   }
 
   Widget _buildBarChart(List<dynamic> chartData) {
+    final maxVal = chartData.map((e) {
+      if (e is Map) return double.tryParse(e['value'].toString()) ?? 0.0;
+      return 0.0;
+    }).reduce((a, b) => a > b ? a : b);
+    
+    final safeMaxY = maxVal <= 0 ? 100.0 : maxVal * 1.2;
+
     return Container(
       height: 200,
       margin: const EdgeInsets.only(top: 24, bottom: 8),
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
-          maxY: chartData.map((e) => double.tryParse(e['value'].toString()) ?? 0).reduce((a, b) => a > b ? a : b) * 1.2,
+          maxY: safeMaxY,
+          minY: 0,
           barTouchData: BarTouchData(enabled: false),
           titlesData: FlTitlesData(
             show: true,
@@ -882,7 +817,7 @@ class _AiScreenState extends State<AiScreen>
           gridData: FlGridData(
             show: true,
             drawVerticalLine: false,
-            horizontalInterval: 1000,
+            horizontalInterval: safeMaxY / 4 > 0 ? safeMaxY / 4 : 1, // Safe interval
             getDrawingHorizontalLine: (value) {
               return FlLine(
                 color: context.isDarkMode ? Colors.white10 : Colors.black12,
@@ -901,7 +836,7 @@ class _AiScreenState extends State<AiScreen>
               x: idx,
               barRods: [
                 BarChartRodData(
-                  toY: val,
+                  toY: val < 0 ? 0 : val,
                   color: color,
                   width: 16,
                   borderRadius: const BorderRadius.only(
@@ -1378,49 +1313,4 @@ class _AiScreenState extends State<AiScreen>
     ),
   );
 }
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge(
-    this.text, {
-    super.key,
-    required this.size,
-    required this.borderColor,
-  });
-
-  final String text;
-  final double size;
-  final Color borderColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      width: size * 2.5,
-      height: size,
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        shape: BoxShape.rectangle,
-        borderRadius: BorderRadius.circular(size / 2),
-        border: Border.all(
-          color: borderColor,
-          width: 2,
-        ),
-        boxShadow: context.cardShadow,
-      ),
-      padding: EdgeInsets.all(size * .15),
-      child: Center(
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 10,
-            color: context.textPrimary,
-            fontWeight: FontWeight.bold,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
-  }
 }

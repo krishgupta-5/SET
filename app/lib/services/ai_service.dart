@@ -17,7 +17,7 @@ class AIService {
     final now = DateTime.now();
     final sixMonthsAgo = DateTime(now.year, now.month - 6, 1);
     final threeMonthsAgo = DateTime(now.year, now.month - 3, 1);
-    final twoMonthsAgo = DateTime(now.year, now.month - 1, 1);
+    final twoMonthsAgo = DateTime(now.year, now.month - 2, 1);
     final startOfCurrentMonth = DateTime(now.year, now.month, 1);
 
     // 1. FETCH BASE DATA ONCE (Max bounds to minimize reads)

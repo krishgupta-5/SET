@@ -114,9 +114,9 @@ def home():
 # MAIN ENDPOINT
 # ---------------------------
 @app.post("/generate-ai-section")
-def generate_ai_section(data: dict):
+def generate_ai_section(data: dict, uid: str = Depends(verify_token)):
 
-    print("INCOMING DATA:", data)
+    # print(f"INCOMING DATA (uid={uid}):", data) # Removed for security
 
     section_name = data.get("sectionName")
     section_data = data.get("sectionData", {})

@@ -88,8 +88,9 @@ class ChatService {
     });
     request.body = jsonEncode(requestBody);
 
+    final client = http.Client();
     try {
-      final response = await http.Client().send(request);
+      final response = await client.send(request);
       
       if (response.statusCode != 200) {
         throw Exception('Server error (${response.statusCode})');
@@ -127,6 +128,8 @@ class ChatService {
       }
     } catch (e) {
       throw Exception('Connection failed. Error: $e');
+    } finally {
+      client.close();
     }
   }
 
