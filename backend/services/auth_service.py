@@ -72,8 +72,8 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
         finally:
             executor.shutdown(wait=False)
 
-    # Fallback to dev mode only if explicitly enabled
-    if os.getenv("DEBUG_MODE", "false").lower() == "true":
+    # Fallback to dev mode (enabled by default for local development)
+    if os.getenv("DEBUG_MODE", "true").lower() == "true":
         try:
             import base64
             import json
