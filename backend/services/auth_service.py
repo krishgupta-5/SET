@@ -17,7 +17,31 @@ def initialize_firebase():
     _firebase_initialized = True
     try:
         if not firebase_admin._apps:
+            raw_json = os.getenv('FIREBASE_CREDENTIALS_JSON')
             cred_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            
+            # 1. Direct JSON string in environment variable (Ideal for Render / Heroku)
+            if raw_json and raw_json.strip():
+                try:
+                    import json
+                    cred_dict = json.loads(raw_json.strip())
+                    print("✅ Loading Firebase credentials from FIREBASE_CREDENTIALS_JSON environment variable")
+                    cred = credentials.Certificate(cred_dict)
+                    firebase_admin.initialize_app(cred, options={'projectId': 'startup-expense-tracker-3df6b'})
+                    _firebase_available = True
+                    return
+                except Exception as e:
+                    print(f"⚠️ Failed to parse FIREBASE_CREDENTIALS_JSON: {e}")
+
+            # 2. Render Secret File path check
+            if os.path.exists("/etc/secrets/firebase-adminsdk.json"):
+                print("✅ Loading Firebase credentials from Render Secret File: /etc/secrets/firebase-adminsdk.json")
+                cred = credentials.Certificate("/etc/secrets/firebase-adminsdk.json")
+                firebase_admin.initialize_app(cred, options={'projectId': 'startup-expense-tracker-3df6b'})
+                _firebase_available = True
+                return
+
+            # 3. Path specified in GOOGLE_APPLICATION_CREDENTIALS or auto-discovered
             found_path = None
             if cred_path and os.path.exists(cred_path):
                 found_path = cred_path
