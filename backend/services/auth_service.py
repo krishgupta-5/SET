@@ -18,9 +18,25 @@ def initialize_firebase():
     try:
         if not firebase_admin._apps:
             cred_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+            found_path = None
             if cred_path and os.path.exists(cred_path):
-                print(f"✅ Loading Firebase credentials explicitly from: {cred_path}")
-                cred = credentials.Certificate(cred_path)
+                found_path = cred_path
+            else:
+                # Auto-discover service account in current dir, backend/, or app/
+                import glob
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # backend dir
+                candidates = (
+                    glob.glob(os.path.join(base_dir, "*firebase-adminsdk*.json")) +
+                    glob.glob(os.path.join(base_dir, "firebase-adminsdk.json")) +
+                    glob.glob(os.path.join(os.path.dirname(base_dir), "app", "*firebase-adminsdk*.json")) +
+                    glob.glob("*firebase-adminsdk*.json")
+                )
+                if candidates:
+                    found_path = candidates[0]
+
+            if found_path and os.path.exists(found_path):
+                print(f"✅ Loading Firebase credentials from: {found_path}")
+                cred = credentials.Certificate(found_path)
                 firebase_admin.initialize_app(cred, options={'projectId': 'startup-expense-tracker-3df6b'})
             else:
                 print("⚠️  GOOGLE_APPLICATION_CREDENTIALS not set or file missing. Trying default auth...")
