@@ -336,18 +336,21 @@ class _AiScreenState extends State<AiScreen>
     }
 
     if (mounted) {
-      // Save all state after parallel loading finishes
-      final uiState = {
-        "main": _mainData,
-        "keyPoints": _keyPointsData,
-        "runway": _runwayData,
-        "burn": _burnData,
-        "staffing": _staffingData,
-        "expense": _expenseData,
-        "subscription": _subscriptionData,
-      };
-      await AiCacheService.saveSectionCache('full_ui_state', [uiState]);
-      await AiCacheService.updateSyncTimestamp();
+      // Only cache valid results; do not persist error states
+      final hasError = _mainData != null && _mainData!.containsKey("error");
+      if (!hasError && _mainData != null) {
+        final uiState = {
+          "main": _mainData,
+          "keyPoints": _keyPointsData,
+          "runway": _runwayData,
+          "burn": _burnData,
+          "staffing": _staffingData,
+          "expense": _expenseData,
+          "subscription": _subscriptionData,
+        };
+        await AiCacheService.saveSectionCache('full_ui_state', [uiState]);
+        await AiCacheService.updateSyncTimestamp();
+      }
       
       setState(() => _isFetchingMore = false);
     }
