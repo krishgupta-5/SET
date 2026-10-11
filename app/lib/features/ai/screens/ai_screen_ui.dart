@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shimmer/shimmer.dart';
+import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
 import 'package:startup_expense_tracker/services/currency_formatter.dart';
@@ -266,6 +267,9 @@ class _AiScreenState extends State<AiScreen>
     debugPrint("Calculated currencySymbol: $currencySymbol");
     debugPrint("=============================");
 
+    final user = FirebaseAuth.instance.currentUser;
+    final token = await user?.getIdToken();
+
     for (final sectionKey in sectionsToProcess) {
       try {
         final requestBody = {
@@ -276,7 +280,10 @@ class _AiScreenState extends State<AiScreen>
 
         final res = await http.post(
           Uri.parse("$baseUrl/generate-ai-section"),
-          headers: {"Content-Type": "application/json"},
+          headers: {
+            "Content-Type": "application/json",
+            if (token != null) "Authorization": "Bearer $token",
+          },
           body: jsonEncode(requestBody),
         ).timeout(const Duration(seconds: 30));
 

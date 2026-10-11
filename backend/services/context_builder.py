@@ -1,4 +1,5 @@
 import pandas as pd
+from datetime import datetime
 
 def build_business_summary(data: dict, currency_symbol: str = "$") -> str:
     company = data.get('company', {})
@@ -12,7 +13,9 @@ def build_business_summary(data: dict, currency_symbol: str = "$") -> str:
     company_type = company.get('Company Type', company.get('stage', 'Unknown'))
     company_work = company.get('Company Work', '')
     country = company.get('Country Location', 'Unknown')
-    runway_months = company.get('Runway', 'Unknown')
+    runway_raw = company.get('Runway', 'Unknown')
+    # Strip trailing "months" if present to avoid "12.20 months months"
+    runway_months = str(runway_raw).replace(' months', '').strip() if runway_raw else 'Unknown'
     funding = float(company.get('Funding', 0) or 0)
     total_expenses_recorded = float(company.get('totalExpenses', 0) or 0)
     
@@ -24,6 +27,7 @@ def build_business_summary(data: dict, currency_symbol: str = "$") -> str:
     expense_categories = {}
     top_expenses = []
     subscriptions = []
+    month_wise = {}
     
     if expenses:
         expense_df = pd.DataFrame(expenses)
@@ -33,7 +37,24 @@ def build_business_summary(data: dict, currency_symbol: str = "$") -> str:
             
             if 'Category' in expense_df.columns:
                 expense_categories = expense_df.groupby('Category')['Amount'].sum().to_dict()
-                
+            
+            # Parse dates for month-wise breakdown
+            month_wise = {}
+            if 'Date' in expense_df.columns:
+                for _, row in expense_df.iterrows():
+                    date_val = row.get('Date', '')
+                    month_key = None
+                    if isinstance(date_val, str) and date_val:
+                        try:
+                            dt = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+                            month_key = dt.strftime('%Y-%m')
+                        except (ValueError, TypeError):
+                            pass
+                    elif hasattr(date_val, 'strftime'):
+                        month_key = date_val.strftime('%Y-%m')
+                    if month_key:
+                        month_wise[month_key] = month_wise.get(month_key, 0) + float(row.get('Amount', 0))
+
             sorted_exp = expense_df.sort_values(by='Amount', ascending=False)
             top_expenses = sorted_exp.head(5).to_dict('records')
             
@@ -58,7 +79,7 @@ def build_business_summary(data: dict, currency_symbol: str = "$") -> str:
         funding_remaining = 0
     
     # Calculate Payroll
-    payroll = sum([float(m.get('salary', m.get('monthlyCost', 0)) or 0) for m in members])
+    payroll = sum([float(m.get('monthlyCost', m.get('salary', 0)) or 0) for m in members])
     
     # Team info
     team_names = [t.get('teamName', 'Unknown') for t in teams]
@@ -90,20 +111,50 @@ Expense Breakdown by Category:
     
     if not expense_categories:
         summary += "- No expense categories recorded yet.\n"
+
+    # Month-wise spending breakdown
+    summary += "\nMonth-wise Spending:\n"
+    if month_wise:
+        for month_key in sorted(month_wise.keys(), reverse=True):
+            try:
+                label = datetime.strptime(month_key, '%Y-%m').strftime('%B %Y')
+            except ValueError:
+                label = month_key
+            summary += f"- {label}: {currency}{month_wise[month_key]:,.2f}\n"
+    else:
+        summary += "- No dated expense data available.\n"
         
     summary += "\nRecurring Subscriptions:\n"
     if subscriptions:
         for sub in subscriptions:
-            summary += f"- {sub.get('Title', sub.get('Description', 'Unknown'))}: {currency}{sub.get('Amount', 0):,.2f}\n"
+            date_str = _format_date(sub.get('Date', ''))
+            date_suffix = f" (on {date_str})" if date_str else ""
+            summary += f"- {sub.get('Title', sub.get('Description', 'Unknown'))}: {currency}{sub.get('Amount', 0):,.2f}{date_suffix}\n"
     else:
         summary += "- No recurring subscriptions found.\n"
         
     summary += "\nTop Recent Expenses:\n"
     if top_expenses:
         for exp in top_expenses:
-            summary += f"- {exp.get('Title', exp.get('Description', 'Unknown'))}: {currency}{exp.get('Amount', 0):,.2f}\n"
+            date_str = _format_date(exp.get('Date', ''))
+            date_suffix = f" ({date_str})" if date_str else ""
+            summary += f"- {exp.get('Title', exp.get('Description', 'Unknown'))}: {currency}{exp.get('Amount', 0):,.2f}{date_suffix}\n"
     else:
         summary += "- No expenses recorded yet.\n"
         
     return summary
 
+
+def _format_date(date_val) -> str:
+    """Safely format a date value to a readable string."""
+    if not date_val:
+        return ''
+    if isinstance(date_val, str):
+        try:
+            dt = datetime.fromisoformat(date_val.replace('Z', '+00:00'))
+            return dt.strftime('%d %b %Y')
+        except (ValueError, TypeError):
+            return date_val
+    if hasattr(date_val, 'strftime'):
+        return date_val.strftime('%d %b %Y')
+    return str(date_val)
