@@ -14,6 +14,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 def call_groq_llm(messages: list, max_tokens: int = 1024):
     start_time = time.time()
+    if not GROQ_API_KEY:
+        print("⚠️  GROQ_API_KEY is not configured. Skipping Groq call.")
+        raise HTTPException(status_code=503, detail="AI service is not configured. Please try again later.")
     try:
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -31,7 +34,9 @@ def call_groq_llm(messages: list, max_tokens: int = 1024):
         )
         
         if response.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"Groq API Error: {response.text}")
+            # Log details server-side only; never leak the raw upstream body to clients.
+            print(f"Groq API Error (server-side): {response.text}")
+            raise HTTPException(status_code=502, detail="AI service is temporarily unavailable. Please try again later.")
             
         data = response.json()
         latency = time.time() - start_time
@@ -136,6 +141,11 @@ def process_chat_message_stream(uid: str, question: str, history: list, client_d
         messages = build_prompt(question, summary, retrieved_context, history, currency_symbol)
         print(f"🟢 [STREAM] Prompt built ({len(messages)} messages). Calling Groq (streaming)...")
         
+        if not GROQ_API_KEY:
+            print("⚠️  GROQ_API_KEY is not configured. Skipping stream call.")
+            yield 'data: {"error": "AI service is not configured. Please try again later."}\n\n'
+            return
+
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
@@ -156,9 +166,8 @@ def process_chat_message_stream(uid: str, question: str, history: list, client_d
         print(f"🟢 [STREAM] Groq responded with status: {response.status_code}")
         
         if response.status_code != 200:
-            error_text = response.text
-            print(f"🔴 [STREAM] Groq API Error: {error_text}")
-            yield f'data: {{"error": "Groq API Error ({response.status_code}): {error_text}"}}\n\n'
+            print(f"🔴 [STREAM] Groq API Error (server-side): {response.text}")
+            yield 'data: {"error": "AI service is temporarily unavailable. Please try again later."}\n\n'
             return
         
         chunk_count = 0

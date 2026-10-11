@@ -29,6 +29,11 @@ class MainInsightCard extends StatelessWidget {
     }
     
     if (mainData!.containsKey('error')) {
+      final errorCode = mainData!['code'] as String?;
+      final message = (errorCode == 'llm_not_configured' ||
+              errorCode == 'llm_auth_failed')
+          ? "We couldn't generate insights right now. Please try again in a moment."
+          : "We couldn't generate your insights at the moment. Please try again shortly.";
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(24),
@@ -38,9 +43,24 @@ class MainInsightCard extends StatelessWidget {
           border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
           boxShadow: context.cardShadow,
         ),
-        child: Text(
-          "API Error: ${mainData!['error']}",
-          style: const TextStyle(color: Colors.red, fontFamily: 'Satoshi'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "AI Insights Unavailable",
+              style: TextStyle(
+                color: context.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Satoshi',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: const TextStyle(color: Colors.red, fontFamily: 'Satoshi'),
+            ),
+          ],
         ),
       );
     }

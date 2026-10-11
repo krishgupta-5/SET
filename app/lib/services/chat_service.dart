@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -7,12 +6,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 
 class ChatService {
-  static String get baseUrl {
-    if (kReleaseMode) {
-      return dotenv.env['PROD_API_URL'] ?? "https://your-production-url.com";
-    }
-    return Platform.isIOS ? "http://127.0.0.1:8000" : "http://10.0.2.2:8000";
-  }
+  static String get baseUrl =>
+      dotenv.env['PROD_API_URL'] ?? "https://set-iamf.onrender.com";
 
   /// Fetches the user's financial data from Firestore and sends it
   /// alongside the chat message so the backend always has context.
@@ -38,25 +33,40 @@ class ChatService {
       "currencySymbol": currencySymbol,
     };
 
-    try {
-      final res = await http.post(
-        Uri.parse("$baseUrl/chat"),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token",
-        },
-        body: jsonEncode(requestBody),
-      );
+    const maxAttempts = 2;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      http.Response? res;
+      Object? networkError;
+      try {
+        res = await http.post(
+          Uri.parse("$baseUrl/chat"),
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer $token",
+          },
+          body: jsonEncode(requestBody),
+        ).timeout(const Duration(seconds: 60));
+      } catch (e) {
+        networkError = e;
+      }
 
-      if (res.statusCode == 200) {
+      if (networkError != null) {
+        if (attempt == maxAttempts) {
+          throw Exception(
+            'Connection failed. Please ensure the server is running. Error: $networkError',
+          );
+        }
+      } else if (res!.statusCode == 200) {
         final data = jsonDecode(res.body);
         return data["response"] ?? "I couldn't process that.";
-      } else {
+      } else if (res.statusCode < 500 || attempt == maxAttempts) {
         throw Exception('Server error (${res.statusCode}): ${res.body}');
       }
-    } catch (e) {
-      throw Exception('Connection failed. Please ensure the server is running. Error: $e');
+
+      // Retry 5xx / network errors (Render cold start) with a short backoff.
+      await Future.delayed(Duration(seconds: 2 * attempt));
     }
+    throw Exception('Connection failed. Please ensure the server is running.');
   }
 
   /// Streams the user's financial data and yields LLM tokens for a typewriter effect.

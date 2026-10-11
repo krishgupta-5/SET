@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,12 +13,8 @@ class AiContextManager {
   factory AiContextManager() => _instance;
   AiContextManager._internal();
 
-  static String get baseUrl {
-    if (kReleaseMode) {
-      return dotenv.env['PROD_API_URL'] ?? "https://your-production-url.com";
-    }
-    return Platform.isIOS ? "http://127.0.0.1:8000" : "http://10.0.2.2:8000";
-  }
+  static String get baseUrl =>
+      dotenv.env['PROD_API_URL'] ?? "https://set-iamf.onrender.com";
 
   /// Subscribes to domain events. Should be called once during app initialization.
   void initListeners() {

@@ -43,12 +43,22 @@ app.add_middleware(
 
 API_KEY = os.getenv("GROQ_API_KEY")
 
+if not API_KEY:
+    print("⚠️  WARNING: GROQ_API_KEY is not configured. AI insights and chat will not work until it is set.")
+
 
 
 # ---------------------------
 # GROQ CALL
 # ---------------------------
 def call_llm(prompt, retries=3):
+    if not API_KEY:
+        print("⚠️  GROQ_API_KEY is not configured. Skipping LLM call.")
+        return {
+            "error": "AI service is not configured. Please try again later.",
+            "code": "llm_not_configured",
+        }
+
     for attempt in range(retries):
         try:
             response = requests.post(
@@ -76,9 +86,20 @@ def call_llm(prompt, retries=3):
                 time.sleep(2 ** attempt)
                 continue
 
+            if response.status_code == 401:
+                # Never leak the raw upstream body; log details server-side only.
+                print(f"LLM API auth error (server-side): {response.text}")
+                return {
+                    "error": "AI service authentication is misconfigured. Please try again later.",
+                    "code": "llm_auth_failed",
+                }
+
             if response.status_code != 200:
-                print(f"LLM API Error: {response.text}")
-                return {"error": f"API Error: {response.text}"}
+                print(f"LLM API Error (server-side): {response.text}")
+                return {
+                    "error": "AI service is temporarily unavailable. Please try again later.",
+                    "code": "llm_unavailable",
+                }
 
             content = response.json()["choices"][0]["message"]["content"]
             
@@ -96,7 +117,10 @@ def call_llm(prompt, retries=3):
         except Exception as e:
             if attempt == retries - 1:
                 print(f"LLM Parsing Error: {e}")
-                return {"error": str(e)}
+                return {
+                    "error": "AI service is temporarily unavailable. Please try again later.",
+                    "code": "llm_unavailable",
+                }
             time.sleep(1)
 
 

@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shimmer/shimmer.dart';
-import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
 import 'package:startup_expense_tracker/services/currency_formatter.dart';
@@ -278,20 +277,36 @@ class _AiScreenState extends State<AiScreen>
           "currencySymbol": currencySymbol,
         };
 
-        final res = await http.post(
-          Uri.parse("$baseUrl/generate-ai-section"),
-          headers: {
+        final res = await _postWithRetry(
+          "$baseUrl/generate-ai-section",
+          {
             "Content-Type": "application/json",
             if (token != null) "Authorization": "Bearer $token",
           },
-          body: jsonEncode(requestBody),
-        ).timeout(const Duration(seconds: 30));
+          requestBody,
+        );
 
         if (!mounted) return;
 
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
           final insight = data["insight"];
+
+          if (!mounted) return;
+
+          // Backend may return HTTP 200 with an error payload inside "insight".
+          if (insight is Map<String, dynamic> &&
+              insight.containsKey('error')) {
+            debugPrint(
+              "Backend error for section $sectionKey: "
+              "${insight['code'] ?? insight['error']}",
+            );
+            _applySectionError(
+              sectionKey,
+              "We couldn't load this section right now. Please try again in a moment.",
+            );
+            continue;
+          }
 
           setState(() {
             if (sectionKey == "main") {
@@ -314,23 +329,7 @@ class _AiScreenState extends State<AiScreen>
       } catch (e) {
         debugPrint("Failed to load AI section $sectionKey: $e");
         if (mounted) {
-          setState(() {
-            if (sectionKey == "main") {
-              _mainData = {"error": e.toString()};
-            } else if (sectionKey == "keyPoints") {
-              _keyPointsData = {"items": [{"title": "Connection Error", "description": e.toString(), "savings": "N/A", "color": "#FF453A"}]};
-            } else if (sectionKey == "runway") {
-              _runwayData = {"bullet_points": ["Connection Error: ${e.toString()}"]};
-            } else if (sectionKey == "burn") {
-              _burnData = {"items": [{"title": "Connection Error", "description": e.toString(), "savings": "N/A", "color": "#FF453A"}]};
-            } else if (sectionKey == "staffing") {
-              _staffingData = {"insight": "Connection Error: ${e.toString()}"};
-            } else if (sectionKey == "expense") {
-              _expenseData = {"insight": "Connection Error: ${e.toString()}"};
-            } else if (sectionKey == "subscription") {
-              _subscriptionData = {"items": [{"title": "Connection Error", "description": e.toString(), "savings": "N/A", "color": "#FF453A"}]};
-            }
-          });
+          _applySectionError(sectionKey, e.toString());
         }
       }
     }
@@ -354,6 +353,83 @@ class _AiScreenState extends State<AiScreen>
       
       setState(() => _isFetchingMore = false);
     }
+  }
+
+  /// Posts to the backend with a retry for Render free-tier cold starts.
+  /// Retries on network errors/timeouts and 5xx responses; 60s timeout per attempt.
+  Future<http.Response> _postWithRetry(
+    String url,
+    Map<String, String> headers,
+    Object body, {
+    int maxAttempts = 2,
+  }) async {
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        final r = await http.post(
+          Uri.parse(url),
+          headers: headers,
+          body: jsonEncode(body),
+        ).timeout(const Duration(seconds: 60));
+
+        // Accept any response on the final attempt; retry 5xx cold starts.
+        if (r.statusCode < 500 || attempt == maxAttempts) {
+          return r;
+        }
+      } catch (_) {
+        if (attempt == maxAttempts) rethrow;
+      }
+      await Future.delayed(Duration(seconds: 2 * attempt));
+    }
+    throw Exception('Request failed after $maxAttempts attempts');
+  }
+
+  /// Applies a per-section error fallback so the UI shows friendly content
+  /// instead of raw API responses.
+  void _applySectionError(String sectionKey, String error) {
+    setState(() {
+      if (sectionKey == "main") {
+        _mainData = {"error": error, "code": "llm_unavailable"};
+      } else if (sectionKey == "keyPoints") {
+        _keyPointsData = {
+          "items": [
+            {
+              "title": "Connection Error",
+              "description": error,
+              "savings": "N/A",
+              "color": "#FF453A",
+            },
+          ],
+        };
+      } else if (sectionKey == "runway") {
+        _runwayData = {"bullet_points": ["Connection Error: $error"]};
+      } else if (sectionKey == "burn") {
+        _burnData = {
+          "items": [
+            {
+              "title": "Connection Error",
+              "description": error,
+              "savings": "N/A",
+              "color": "#FF453A",
+            },
+          ],
+        };
+      } else if (sectionKey == "staffing") {
+        _staffingData = {"insight": "Connection Error: $error"};
+      } else if (sectionKey == "expense") {
+        _expenseData = {"insight": "Connection Error: $error"};
+      } else if (sectionKey == "subscription") {
+        _subscriptionData = {
+          "items": [
+            {
+              "title": "Connection Error",
+              "description": error,
+              "savings": "N/A",
+              "color": "#FF453A",
+            },
+          ],
+        };
+      }
+    });
   }
 
   void _initializeLoadStates() {
