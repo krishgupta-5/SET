@@ -61,3 +61,11 @@ app.*.map.json
 
 app/build/
 app/startup-expense-tracker-3df6b-firebase-adminsdk-fbsvc-1a9a687e91.json
+
+# Firebase service account credentials
+backend/firebase-adminsdk.json
+backend/*firebase-adminsdk*.json
+
+# Android Gradle generated files
+**/.gradle/
+**/build/
