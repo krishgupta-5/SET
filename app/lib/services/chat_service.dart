@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -8,6 +9,45 @@ import 'package:startup_expense_tracker/services/currency_preference_service.dar
 class ChatService {
   static String get baseUrl =>
       dotenv.env['PROD_API_URL'] ?? "https://set-iamf.onrender.com";
+
+  /// Builds the user's financial snapshot on-device so the backend always has
+  /// context, even if its own Firestore access is unavailable.
+  static Future<Map<String, dynamic>> _buildSectionData(String uid) async {
+    try {
+      final db = FirebaseFirestore.instance;
+      final results = await Future.wait([
+        db.collection('expenses').where('uid', isEqualTo: uid)
+            .orderBy('Date', descending: true).limit(50).get(),
+        db.collection('companies').where('uid', isEqualTo: uid).limit(1).get(),
+        db.collection('teams').where('uid', isEqualTo: uid).get(),
+        db.collection('members').where('uid', isEqualTo: uid).get(),
+      ]);
+      List<Map<String, dynamic>> docs(QuerySnapshot<Map<String, dynamic>> s) =>
+          s.docs.map((d) => _jsonSafe(d.data()) as Map<String, dynamic>).toList();
+
+      final company = docs(results[1]);
+      return {
+        "expenses": docs(results[0]),
+        "revenue": [],
+        "company": company.isNotEmpty ? company.first : {},
+        "teams": docs(results[2]),
+        "members": docs(results[3]),
+      };
+    } catch (e) {
+      debugPrint("ChatService: failed to build client context: $e");
+      return {};
+    }
+  }
+
+  /// Converts Firestore types (Timestamp, GeoPoint, refs) into JSON-encodable values.
+  static dynamic _jsonSafe(dynamic v) {
+    if (v is Timestamp) return v.toDate().toIso8601String();
+    if (v is Map) return v.map((k, val) => MapEntry(k.toString(), _jsonSafe(val)));
+    if (v is List) return v.map(_jsonSafe).toList();
+    if (v is GeoPoint) return {"lat": v.latitude, "lng": v.longitude};
+    if (v is DocumentReference) return v.path;
+    return v;
+  }
 
   /// Fetches the user's financial data from Firestore and sends it
   /// alongside the chat message so the backend always has context.
@@ -22,14 +62,15 @@ class ChatService {
       throw Exception('Failed to get auth token.');
     }
 
-    // Backend fetches the context itself; we send empty dictionary
+    // Send on-device data as a fallback in case the backend can't read Firestore.
     final currencyCode = await CurrencyPreferenceService.getCurrencyPreference();
     final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(currencyCode);
+    final sectionData = await _buildSectionData(user.uid);
 
     final requestBody = {
       "question": question,
       "history": history,
-      "sectionData": {},
+      "sectionData": sectionData,
       "currencySymbol": currencySymbol,
     };
 
@@ -83,11 +124,12 @@ class ChatService {
 
     final currencyCode = await CurrencyPreferenceService.getCurrencyPreference();
     final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(currencyCode);
+    final sectionData = await _buildSectionData(user.uid);
 
     final requestBody = {
       "question": question,
       "history": history,
-      "sectionData": {},
+      "sectionData": sectionData,
       "currencySymbol": currencySymbol,
     };
 

@@ -77,12 +77,21 @@ def call_llm(prompt, retries=3):
                     ],
                     "response_format": {"type": "json_object"},
                     "temperature": 0.3,
-                    "max_tokens": 800
+                    # gpt-oss is a reasoning model: hidden reasoning tokens count
+                    # against max_tokens. 800 was truncating longer sections
+                    # (keyPoints/burn). Keep reasoning low and leave headroom.
+                    "reasoning_effort": "low",
+                    "max_tokens": 2048
                 },
                 timeout=15
             )
 
             if response.status_code == 429: # Rate Limit
+                if attempt == retries - 1:
+                    return {
+                        "error": "AI service is busy. Please try again in a moment.",
+                        "code": "llm_rate_limited",
+                    }
                 time.sleep(2 ** attempt)
                 continue
 

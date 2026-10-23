@@ -12,6 +12,32 @@ from .logger import log_chat_request
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+
+def _has_data(d: dict) -> bool:
+    return bool(d and (d.get("expenses") or d.get("company") or d.get("members")))
+
+
+def _load_context(uid: str, client_data: dict, currency_symbol: str):
+    """Returns (full_data, summary, cache_hit).
+
+    Prefers cached context, then the backend's own Firestore read, then the
+    snapshot the app sends. Empty contexts are never cached, so a transient
+    Firestore failure can't leave the chatbot blind for an hour.
+    """
+    cached = get_cached_context(uid)
+    if cached and _has_data(cached.get("data", {})):
+        return cached["data"], cached["summary"], True
+
+    full_data = fetch_user_data(uid)
+    if not _has_data(full_data) and _has_data(client_data or {}):
+        print("📱 Using client-provided financial data (backend Firestore returned nothing)")
+        full_data = client_data
+
+    summary = build_business_summary(full_data, currency_symbol)
+    if _has_data(full_data):
+        set_cached_context(uid, full_data, summary)
+    return full_data, summary, False
+
 def call_groq_llm(messages: list, max_tokens: int = 1024):
     start_time = time.time()
     if not GROQ_API_KEY:
@@ -28,6 +54,7 @@ def call_groq_llm(messages: list, max_tokens: int = 1024):
                 "model": "openai/gpt-oss-20b",
                 "messages": messages,
                 "temperature": 0.3,
+                "reasoning_effort": "low",
                 "max_tokens": max_tokens
             },
             timeout=15
@@ -63,31 +90,12 @@ def process_chat_message(uid: str, question: str, history: list, client_data: di
         collections_needed = determine_required_collections(intent)
         print(f"🔵 [CHAT] Collections needed: {collections_needed}")
         
-        # 2. Check Cache
-        cached = get_cached_context(uid)
-        
-        if cached:
-            cache_hit = True
-            full_data = cached["data"]
-            summary = cached["summary"]
-            print(f"🔵 [CHAT] Cache HIT")
-        else:
-            print(f"🔵 [CHAT] Cache MISS - fetching from Firestore...")
-            # Rebuild cache
-            rebuild_start = time.time()
-            full_data = fetch_user_data(uid) # Try Firestore first
-            print(f"🔵 [CHAT] Firestore fetch complete in {time.time() - rebuild_start:.2f}s")
-            
-            # If Firestore returned empty data and client sent data, use that
-            if (not full_data.get("expenses") and not full_data.get("company")) and client_data:
-                print("📱 Using client-provided financial data (Firestore unavailable)")
-                full_data = client_data
-                
-            firestore_duration += (time.time() - rebuild_start)
-            
-            summary = build_business_summary(full_data, currency_symbol)
-            set_cached_context(uid, full_data, summary)
-            rebuild_duration = time.time() - rebuild_start
+        # 2. Load context (cache -> Firestore -> client snapshot)
+        rebuild_start = time.time()
+        full_data, summary, cache_hit = _load_context(uid, client_data, currency_symbol)
+        if not cache_hit:
+            rebuild_duration = firestore_duration = time.time() - rebuild_start
+        print(f"🔵 [CHAT] Context loaded (cache_hit={cache_hit})")
             
         # 3. Retrieve relevant specifics based on intent
         print(f"🔵 [CHAT] Retrieving relevant data...")
@@ -99,7 +107,7 @@ def process_chat_message(uid: str, question: str, history: list, client_data: di
         print(f"🔵 [CHAT] Prompt built with {len(messages)} messages. Calling Groq LLM...")
         
         # 5. Call LLM
-        answer, groq_latency = call_groq_llm(messages, max_tokens=600)
+        answer, groq_latency = call_groq_llm(messages, max_tokens=2048)
         print(f"🔵 [CHAT] Groq responded in {groq_latency:.2f}s")
         
         total_time = time.time() - start_time
@@ -121,21 +129,8 @@ def process_chat_message_stream(uid: str, question: str, history: list, client_d
         print(f"🟢 [STREAM] Intent: {intent}")
         collections_needed = determine_required_collections(intent)
         
-        cached = get_cached_context(uid)
-        if cached:
-            full_data = cached["data"]
-            summary = cached["summary"]
-            print(f"🟢 [STREAM] Cache HIT")
-        else:
-            print(f"🟢 [STREAM] Cache MISS - fetching Firestore...")
-            fs_start = time.time()
-            full_data = fetch_user_data(uid)
-            print(f"🟢 [STREAM] Firestore fetch took {time.time() - fs_start:.2f}s")
-            if (not full_data.get("expenses") and not full_data.get("company")) and client_data:
-                print(f"🟢 [STREAM] Using client data fallback")
-                full_data = client_data
-            summary = build_business_summary(full_data, currency_symbol)
-            set_cached_context(uid, full_data, summary)
+        full_data, summary, cache_hit = _load_context(uid, client_data, currency_symbol)
+        print(f"🟢 [STREAM] Context loaded (cache_hit={cache_hit})")
             
         retrieved_context = retrieve_relevant_data(intent, summary, full_data, currency_symbol)
         messages = build_prompt(question, summary, retrieved_context, history, currency_symbol)
@@ -156,7 +151,8 @@ def process_chat_message_stream(uid: str, question: str, history: list, client_d
                 "model": "openai/gpt-oss-20b",
                 "messages": messages,
                 "temperature": 0.3,
-                "max_tokens": 600,
+                "reasoning_effort": "low",
+                "max_tokens": 2048,
                 "stream": True
             },
             stream=True,
