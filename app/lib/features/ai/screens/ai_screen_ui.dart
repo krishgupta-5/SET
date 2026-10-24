@@ -475,8 +475,8 @@ class _AiScreenState extends State<AiScreen>
                   ? ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                       itemCount: 5,
-                      separatorBuilder: (_, __) => const SizedBox(height: 32),
-                      itemBuilder: (_, __) => _buildShimmerPlaceholder(height: 140),
+                      separatorBuilder: (_, _) => const SizedBox(height: 32),
+                      itemBuilder: (_, _) => _buildShimmerPlaceholder(height: 140),
                     )
                   : RefreshIndicator(
                       color: context.textPrimary,

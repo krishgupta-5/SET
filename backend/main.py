@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 load_dotenv()
 
-app = FastAPI(title="AI CFO Backend")
+app = FastAPI(title="RunWayX Backend")
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
