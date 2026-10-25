@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/expense_expansion_helper.dart';
+import 'financial_calculator.dart';
 import 'user_country_service.dart';
 
 class FinancialDataService {
@@ -103,36 +104,11 @@ class FinancialDataService {
             dt.isBefore(endOfMonth.add(const Duration(seconds: 1)));
       }).toList();
 
-      final currentMonthRevenue = allRevenue
-          .where((doc) {
-            final date =
-                (doc.data() as Map<String, dynamic>)['Date'] as Timestamp?;
-            return date != null &&
-                date.toDate().isAfter(
-                  startOfMonth.subtract(const Duration(seconds: 1)),
-                ) &&
-                date.toDate().isBefore(
-                  endOfMonth.add(const Duration(seconds: 1)),
-                );
-          })
-          .fold(
-            0.0,
-            (total, doc) =>
-                total +
-                (double.tryParse(
-                      (doc.data() as Map<String, dynamic>)['Amount']
-                              ?.toString() ??
-                          '0',
-                    ) ??
-                    0),
-          );
-
       final trendData = _calculateSixMonthTrend(
         expandedExpenses,
         teamMembersSnapshot.docs,
       );
 
-      double totalExpenses = 0;
       double salariesTotal = 0;
       Map<String, double> categoryTotals = {};
       Map<String, double> vendorTotals = {};
@@ -143,7 +119,6 @@ class FinancialDataService {
         if (category.toLowerCase() == 'salary') category = 'salaries';
         final vendor = data['Vendor']?.toString() ?? 'Unknown';
 
-        totalExpenses += amount;
         categoryTotals[category] = (categoryTotals[category] ?? 0) + amount;
         vendorTotals[vendor] = (vendorTotals[vendor] ?? 0) + amount;
       }
@@ -157,10 +132,29 @@ class FinancialDataService {
             0;
       }
 
+      // Gross/net burn come from the shared calculator so this screen agrees
+      // with the dashboard (includes payroll not yet paid this month).
+      final snapshot = FinancialCalculator.compute(
+        funding: 0,
+        rawExpenses: allExpensesMapped,
+        members: teamMembersSnapshot.docs
+            .map((d) => {...d.data() as Map<String, dynamic>, 'id': d.id})
+            .toList(),
+        revenue: allRevenue
+            .map((d) => {...d.data() as Map<String, dynamic>, 'id': d.id})
+            .toList(),
+      );
+      if (snapshot.unpaidPayroll > 0) {
+        categoryTotals['salaries'] =
+            (categoryTotals['salaries'] ?? 0) + snapshot.unpaidPayroll;
+      }
+      final totalExpenses =
+          snapshot.currentMonthExpenses + snapshot.unpaidPayroll;
+
       final result = {
         'grossBurn': totalExpenses,
-        'netBurn': totalExpenses - currentMonthRevenue,
-        'revenue': currentMonthRevenue,
+        'netBurn': totalExpenses - snapshot.monthlyRevenue,
+        'revenue': snapshot.monthlyRevenue,
         'categoryBreakdown': categoryTotals,
         'vendorBreakdown': vendorTotals,
         'teamCosts': salariesTotal,

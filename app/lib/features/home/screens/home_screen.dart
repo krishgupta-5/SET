@@ -4,9 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:developer';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -14,12 +11,13 @@ import 'runway_estimation_screen.dart';
 import 'funds_overview_screen.dart';
 import 'monthly_burn_screen.dart';
 import 'chatbot_screen.dart';
+import '../../../services/ai_context_manager.dart';
 import '../../../services/financial_data_service.dart';
 import '../../../services/financial_calculator.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/team_member_service.dart';
-import '../../../utils/expense_expansion_helper.dart';
+import '../../../services/telegram_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
@@ -31,9 +29,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Cache for Telegram photos to avoid repeated fetching
-  static final Map<String, String> _telegramPhotoCache = {};
-
   String? runwayValue;
   bool isLoading = true;
   String? errorMessage;
@@ -49,6 +44,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Map<String, dynamic>> allExpenses = [];
 
+  // Raw Firestore data; all derived numbers come from FinancialCalculator.
+  List<Map<String, dynamic>> _rawExpenses = [];
+  List<Map<String, dynamic>> _rawMembers = [];
+  List<Map<String, dynamic>> _rawRevenue = [];
+  bool _expensesLoaded = false;
+
   bool _isPieChartLoading = true;
   bool _isMonthlyBurnLoading = true;
   bool _isFundsLoading = true;
@@ -63,6 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<DocumentSnapshot>? _companySubscription;
   StreamSubscription<QuerySnapshot>? _expensesSubscription;
   StreamSubscription<QuerySnapshot>? _teamMembersSubscription;
+  StreamSubscription<QuerySnapshot>? _revenueSubscription;
+  StreamSubscription<QuerySnapshot>? _teamsSubscription;
   Timer? _realtimeDebounceTimer;
 
   @override
@@ -85,6 +88,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _companySubscription?.cancel();
     _expensesSubscription?.cancel();
     _teamMembersSubscription?.cancel();
+    _revenueSubscription?.cancel();
+    _teamsSubscription?.cancel();
     _realtimeDebounceTimer?.cancel();
     super.dispose();
   }
@@ -115,32 +120,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return CurrencyFormatter.formatByCountryCompact(amount, _userCountryCode);
   }
 
-  Future<String> getTelegramImageUrl(String fileId) async {
-    if (_telegramPhotoCache.containsKey(fileId)) {
-      return _telegramPhotoCache[fileId]!;
-    }
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-
-      if (botToken == null) throw Exception('Telegram bot token not found');
-
-      final res = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId",
-        ),
-      );
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-      final imageUrl = "https://api.telegram.org/file/bot$botToken/$path";
-
-      _telegramPhotoCache[fileId] = imageUrl;
-      return imageUrl;
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 
   Future<void> _loadUserCountryCode() async {
     final currencyCode =
@@ -166,35 +147,22 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Persists the computed runway so the AI backend sees the same number.
+  /// `totalExpenses` is intentionally not written here: it is maintained
+  /// atomically by [ExpenseService] and overwriting it from a snapshot races
+  /// with concurrent writes.
   Future<void> _syncCalculatedDataToFirestore() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    
+    if (user == null || !_expensesLoaded || runwayValue == null) return;
+
     try {
       final docRef = FirebaseFirestore.instance.collection("companies").doc(user.uid);
       final snapshot = await docRef.get();
-      if (snapshot.exists) {
-        final data = snapshot.data()!;
-        final currentRunway = (data['Runway'] ?? '').toString();
-        final currentTotalExpenses = _toDouble(data['totalExpenses'] ?? 0);
-        
-        final runwayString = "$runwayValue months";
-        bool needsUpdate = false;
-        Map<String, dynamic> updates = {};
-        
-        if (currentRunway != runwayString) {
-          updates['Runway'] = runwayString;
-          needsUpdate = true;
-        }
-        
-        if ((currentTotalExpenses - _absoluteTotalExpenses).abs() > 0.01) {
-          updates['totalExpenses'] = _absoluteTotalExpenses;
-          needsUpdate = true;
-        }
-        
-        if (needsUpdate) {
-          await docRef.update(updates);
-        }
+      if (!snapshot.exists) return;
+      final currentRunway = (snapshot.data()!['Runway'] ?? '').toString();
+      final runwayString = "$runwayValue months";
+      if (currentRunway != runwayString) {
+        await docRef.update({'Runway': runwayString});
       }
     } catch (e) {
       log("Error syncing calculated data to Firestore: $e");
@@ -226,6 +194,17 @@ class _HomeScreenState extends State<HomeScreen> {
               final data = docSnapshot.data()!;
               final funding =
                   data["Funding"] ?? data["funding"] ?? data["FUNDING"];
+
+              // Funding, budgets, company details → refresh AI context.
+              // Excludes fields this screen writes itself to avoid a loop.
+              final aiRelevant = Map<String, dynamic>.from(data)
+                ..remove('Runway')
+                ..remove('totalExpenses')
+                ..remove('updatedAt');
+              AiContextManager().reportDataChanged(
+                'company',
+                _fingerprint(aiRelevant),
+              );
 
               if (mounted) {
                 setState(() {
@@ -265,97 +244,11 @@ class _HomeScreenState extends State<HomeScreen> {
         .listen(
           (snapshot) {
             if (mounted) {
-              final now = DateTime.now();
-              double currentMonthTotal = 0.0;
-              double absoluteTotal = 0.0;
-              Map<String, double> localCategoryBreakdown = {};
-
-              final rawExpenses = snapshot.docs.map((doc) {
-                final data = doc.data();
-                return {...data, 'id': doc.id};
-              }).toList();
-
-              final endOfMonth = DateTime(
-                now.year,
-                now.month + 1,
-                0,
-                23,
-                59,
-                59,
-              );
-              final expandedProjected = ExpenseExpansionHelper.expandExpenses(
-                rawExpenses,
-                maxDate: endOfMonth,
-                allowFuture: true,
-              );
-
-              final expensesList = <Map<String, dynamic>>[];
-              for (final data in expandedProjected) {
-                if (data['isFunding'] == true) continue;
-
-                final amount = _toDouble(data['Amount'] ?? data['amount']);
-                final dateVal = data['Date'] ?? data['date'];
-                DateTime? dt;
-                if (dateVal is Timestamp) {
-                  dt = dateVal.toDate();
-                } else if (dateVal is DateTime) {
-                  dt = dateVal;
-                }
-                final category =
-                    (data['Category'] ?? data['category'] ?? 'others')
-                        .toString()
-                        .toLowerCase();
-
-                if (dt != null &&
-                    dt.month == now.month &&
-                    dt.year == now.year) {
-                  currentMonthTotal += amount;
-                  localCategoryBreakdown[category] =
-                      (localCategoryBreakdown[category] ?? 0.0) + amount;
-                }
-
-                expensesList.add({
-                  'id': data['id'] ?? data['expenseId'] ?? '',
-                  'amount': amount,
-                  'date': dateVal is Timestamp
-                      ? dateVal
-                      : (dt != null ? Timestamp.fromDate(dt) : null),
-                  'category': category,
-                  'type': data['Type'] ?? data['type'] ?? 'one_time',
-                  'recurrenceFrequency':
-                      data['recurrenceFrequency'] ??
-                      data['loanRateType'] ??
-                      'monthly',
-                  'recurringTenureMonths':
-                      data['recurringTenureMonths'] ?? data['loanTenureMonths'],
-                });
-              }
-
-              for (final e in expensesList) {
-                final dt = e['date'];
-                if (dt is Timestamp && dt.toDate().isAfter(now)) {
-                  continue;
-                } else if (dt is DateTime && dt.isAfter(now)) {
-                  continue;
-                }
-                absoluteTotal += _toDouble(e['amount']);
-              }
-
-              expensesList.sort((a, b) {
-                final aDate = a['date'] as Timestamp?;
-                final bDate = b['date'] as Timestamp?;
-                if (aDate == null) return 1;
-                if (bDate == null) return -1;
-                return bDate.compareTo(aDate);
-              });
-
+              _reportCollectionChange('expenses', snapshot);
               setState(() {
-                allExpenses = expensesList;
-                _absoluteTotalExpenses = absoluteTotal;
-                _currentMonthBurn = currentMonthTotal;
-                _realtimeCategoryBreakdown = localCategoryBreakdown;
+                _rawExpenses = FinancialCalculator.docsToMaps(snapshot.docs);
+                _expensesLoaded = true;
                 _updateRunwayValue();
-
                 _isMonthlyBurnLoading = false;
                 _isPieChartLoading = false;
               });
@@ -376,12 +269,59 @@ class _HomeScreenState extends State<HomeScreen> {
         .snapshots()
         .listen((snapshot) {
           if (mounted) {
+            _reportCollectionChange('members', snapshot);
             setState(() {
+              _rawMembers = FinancialCalculator.docsToMaps(snapshot.docs);
               _updateRunwayValue();
             });
             _handleRealtimeUpdate();
           }
         });
+
+    // 4. Revenue (optional — net burn falls back to gross burn without it)
+    _revenueSubscription = FirebaseFirestore.instance
+        .collection('revenue')
+        .where('uid', isEqualTo: user.uid)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (mounted) {
+              _reportCollectionChange('revenue', snapshot);
+              setState(() {
+                _rawRevenue = FinancialCalculator.docsToMaps(snapshot.docs);
+                _updateRunwayValue();
+              });
+            }
+          },
+          onError: (e) => log("Revenue listener error: $e"),
+        );
+
+    // 5. Teams (budgets, names) only feed the AI context.
+    _teamsSubscription = FirebaseFirestore.instance
+        .collection('teams')
+        .where('uid', isEqualTo: user.uid)
+        .snapshots()
+        .listen(
+          (snapshot) => _reportCollectionChange('teams', snapshot),
+          onError: (e) => log("Teams listener error: $e"),
+        );
+  }
+
+  /// Tells the AI layer when financial data really changed, from any screen
+  /// (funding, members, teams, revenue, budgets — not just expense edits).
+  void _reportCollectionChange(
+    String source,
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    // Skip our own pending local writes; the server echo will follow.
+    if (snapshot.metadata.hasPendingWrites) return;
+    final parts = snapshot.docs.map((d) => '${d.id}:${_fingerprint(d.data())}');
+    AiContextManager().reportDataChanged(source, parts.join('|'));
+  }
+
+  static String _fingerprint(Map<String, dynamic> data) {
+    final keys = data.keys.toList()..sort();
+    return keys.map((k) => '$k=${data[k]}').join(';').hashCode.toString();
   }
 
   Future<void> _loadFinancialDataForPieChart() async {
@@ -399,66 +339,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Recomputes every dashboard number from the latest raw data using the
+  /// shared [FinancialCalculator.compute], so home, runway, funds and
+  /// expenses screens always agree.
   void _updateRunwayValue() {
-    if (_fundingAmount <= 0) {
-      runwayValue = "0.0";
-      return;
-    }
-
-    final availableBalance = _fundingAmount - _absoluteTotalExpenses;
-    if (availableBalance <= 0) {
-      runwayValue = "0.0";
-      return;
-    }
-
-    final expensesForCalculation = allExpenses
-        .map(
-          (expense) => {
-            'amount': _toDouble(expense['amount']),
-            'date': expense['date'],
-            'type': 'one_time',
-            'recurrenceFrequency': expense['recurrenceFrequency'],
-            'recurringTenureMonths': expense['recurringTenureMonths'],
-          },
-        )
-        .toList();
-
-    double actualMonthlyBurn = FinancialCalculator.currentMonthBurn(
-      expensesForCalculation,
+    final s = FinancialCalculator.compute(
+      funding: _fundingAmount,
+      rawExpenses: _rawExpenses,
+      members: _rawMembers,
+      revenue: _rawRevenue,
     );
-
-    if (actualMonthlyBurn == 0 && allExpenses.isNotEmpty) {
-      actualMonthlyBurn = _calculateAverageMonthlyBurn();
-    }
-
-    if (actualMonthlyBurn <= 0) {
-      runwayValue = "0.0";
-    } else {
-      runwayValue = (availableBalance / actualMonthlyBurn).toStringAsFixed(2);
-    }
-  }
-
-  double _calculateAverageMonthlyBurn() {
-    if (allExpenses.isEmpty) return 0.0;
-    Map<String, double> monthlyTotals = {};
-
-    for (var expense in allExpenses) {
-      final expenseDate = expense['date'] as Timestamp?;
-      if (expenseDate != null) {
-        final expenseDateTime = expenseDate.toDate();
-        final monthKey =
-            "${expenseDateTime.year}-${expenseDateTime.month.toString().padLeft(2, '0')}";
-        monthlyTotals[monthKey] =
-            (monthlyTotals[monthKey] ?? 0.0) + _toDouble(expense['amount']);
-      }
-    }
-
-    if (monthlyTotals.isEmpty) return 0.0;
-    double total = monthlyTotals.values.fold(
-      0.0,
-      (totalSum, item) => totalSum + item,
-    );
-    return total / monthlyTotals.length;
+    allExpenses = s.expenses;
+    _absoluteTotalExpenses = s.totalSpent;
+    _currentMonthBurn = s.monthlyBurn;
+    _realtimeCategoryBreakdown = s.categoryBreakdown;
+    runwayValue = s.runwayMonths.toStringAsFixed(2);
   }
 
   // --- UI HELPERS ---
@@ -557,6 +452,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _getRunwayString(String runwayValue) {
     final runway = double.tryParse(runwayValue) ?? 0;
     if (runway <= 0) return "--";
+    if (runway >= kProfitableRunwayMonths) return "Profitable";
 
     if (runway > 120) {
       return ">10Y";

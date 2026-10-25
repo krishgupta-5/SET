@@ -11,7 +11,9 @@ import 'file_viewer_screen.dart';
 import '../../../utils/data_helpers.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/currency_formatter.dart';
+import '../../../services/expense_service.dart';
 import '../../../services/team_member_service.dart';
+import '../../../services/telegram_service.dart';
 import '../../../theme/app_theme.dart';
 
 class ExpenseDetailsScreen extends StatefulWidget {
@@ -29,9 +31,32 @@ class ExpenseDetailsScreen extends StatefulWidget {
 }
 
 class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
-  String get _originalId => widget.expenseId.contains('_')
-      ? widget.expenseId.split('_').first
-      : widget.expenseId;
+  // Virtual recurring occurrences have ids like "<docId>_<index>".
+  // UUID doc ids never contain '_', so splitting on the last '_' is safe.
+  String get _originalId =>
+      (widget.expenseData['originalId'] as String?)?.isNotEmpty == true
+      ? widget.expenseData['originalId'] as String
+      : (widget.expenseId.contains('_')
+            ? widget.expenseId.substring(0, widget.expenseId.lastIndexOf('_'))
+            : widget.expenseId);
+
+  /// Index of the occurrence being viewed, or null for a real document.
+  int? get _occurrenceIndex {
+    final v = widget.expenseData['virtualIndex'];
+    if (v is num) return v.toInt();
+    if (!widget.expenseId.contains('_')) return null;
+    return int.tryParse(
+      widget.expenseId.substring(widget.expenseId.lastIndexOf('_') + 1),
+    );
+  }
+
+  bool get _isRecurringSeries {
+    final data = _currentExpenseData.isNotEmpty
+        ? _currentExpenseData
+        : widget.expenseData;
+    final t = (data['Type'] ?? data['type'] ?? '').toString().toLowerCase();
+    return t == 'recurring' || t == 'subscription';
+  }
   String _userCountryCode = '+1'; // Default to USD
   bool _isLoadingCountry = true;
 
@@ -56,27 +81,8 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
     return _telegramBotToken;
   }
 
-  // ✅ Get Telegram file URL (uses cached token)
-  Future<String> getTelegramImageUrl(String fileId) async {
-    try {
-      final botToken = await _getBotToken();
-      if (botToken == null) throw Exception('Telegram bot token not found');
-
-      final res = await http.get(
-        Uri.parse(
-          'https://api.telegram.org/bot$botToken/getFile?file_id=$fileId',
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-
-      return 'https://api.telegram.org/file/bot$botToken/$path';
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 
   // ✅ Get Telegram file info (uses cached token)
   Future<Map<String, dynamic>?> getTelegramFileInfo(String fileId) async {
@@ -782,76 +788,42 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
     }
   }
 
-  Future<void> _deleteExpense() async {
+  /// Deletes either one occurrence ([wholeSeries] = false, recurring only) or
+  /// the whole expense document with its counters reversed in one batch.
+  Future<void> _deleteExpense({bool wholeSeries = true}) async {
     try {
-      final currentData = _currentExpenseData.isNotEmpty
-          ? _currentExpenseData
-          : widget.expenseData;
-      final expenseAmount = DataHelpers.safeParseDouble(currentData['Amount']);
-      final expenseType = currentData['ExpenseType'] as String?;
-      final teamId = currentData['TeamId'] as String?;
-      final teamMemberId = currentData['TeamMemberId'] as String?;
+      final occurrence = _occurrenceIndex;
+      if (!wholeSeries && occurrence != null) {
+        await ExpenseService().skipOccurrence(
+          expenseId: _originalId,
+          occurrenceIndex: occurrence,
+        );
+        if (mounted) {
+          Navigator.pop(context);
+          _showMinimalToast("Occurrence removed");
+        }
+        return;
+      }
 
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
         throw Exception('User not authenticated');
       }
 
-      // Get companyId from user document
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
 
-      final companyId = userDoc.data()?['companyId'];
+      final companyId = userDoc.data()?['companyId'] as String?;
       if (companyId == null) {
         throw Exception('Company not found');
       }
 
-      final batch = FirebaseFirestore.instance.batch();
-
-      // Delete expense document
-      final expenseRef = FirebaseFirestore.instance
-          .collection('expenses')
-          .doc(_originalId);
-      batch.delete(expenseRef);
-
-      // Atomically decrement company totalExpenses.
-      // Guard against going negative by running a transaction instead.
-      final companyRef = FirebaseFirestore.instance
-          .collection('companies')
-          .doc(companyId);
-
-      // We still need a read to clamp — use a transaction for this one write.
-      // For the rest of the batch writes we use increment which is safe.
-      await FirebaseFirestore.instance.runTransaction((txn) async {
-        final snap = await txn.get(companyRef);
-        final current = DataHelpers.safeParseDouble(
-          snap.data()?['totalExpenses'],
-        );
-        final newVal = (current - expenseAmount).clamp(0.0, double.infinity);
-        txn.update(companyRef, {'totalExpenses': newVal});
-      });
-
-      // Update team budget or member salary atomically
-      if (expenseType == 'team' && teamId != null) {
-        final teamRef = FirebaseFirestore.instance
-            .collection('teams')
-            .doc(teamId);
-        batch.update(teamRef, {
-          'usedBudget': FieldValue.increment(-expenseAmount),
-        });
-      } else if (expenseType == 'member' && teamMemberId != null) {
-        final memberRef = FirebaseFirestore.instance
-            .collection('members')
-            .doc(teamMemberId);
-        batch.update(memberRef, {
-          'totalExpenses': FieldValue.increment(-expenseAmount),
-          'remainingSalary': FieldValue.increment(expenseAmount),
-        });
-      }
-
-      await batch.commit();
+      await ExpenseService().deleteExpense(
+        expenseId: _originalId,
+        companyId: companyId,
+      );
 
       if (mounted) {
         Navigator.pop(context); // Go back to the list screen
@@ -867,6 +839,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
 
   // --- GORGEOUS CUSTOM DELETE DIALOG ---
   void _showDeleteConfirmation(BuildContext context) {
+    final showSeriesChoice = _isRecurringSeries && _occurrenceIndex != null;
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.8), // Darken backdrop
@@ -926,7 +899,9 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 const SizedBox(height: 20),
                 // Warning Text
                 Text(
-                  "This will permanently delete this expense record and reverse it from your total company expenses. This action cannot be undone.",
+                  showSeriesChoice
+                      ? "This is one charge in a recurring series. Remove only this charge, or delete the entire series and reverse it from your company totals. This cannot be undone."
+                      : "This will permanently delete this expense record and reverse it from your total company expenses. This action cannot be undone.",
                   style: TextStyle(
                     fontFamily: 'Satoshi',
                     color: context.textSecondary,
@@ -934,6 +909,34 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                     height: 1.5,
                   ),
                 ),
+                if (showSeriesChoice) ...[
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        Navigator.pop(dialogContext);
+                        await _deleteExpense(wholeSeries: false);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: const BorderSide(color: Color(0xFFFF453A)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        "Delete this occurrence only",
+                        style: TextStyle(
+                          fontFamily: 'Satoshi',
+                          color: Color(0xFFFF453A),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 32),
                 // Action Buttons
                 Row(
@@ -976,7 +979,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            "Delete",
+                            showSeriesChoice ? "Delete series" : "Delete",
                             style: TextStyle(
                               fontFamily: 'Satoshi',
                               color: Colors.white,

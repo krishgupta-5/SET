@@ -7,6 +7,63 @@ library;
 
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/expense_expansion_helper.dart';
+
+/// Runway value used when the company is profitable (revenue >= burn).
+/// UIs render anything above 120 months as "10+ years".
+const double kProfitableRunwayMonths = 999;
+
+/// One consistent view of the company's finances. Every screen that shows
+/// burn, spend, balance or runway must read from this so the numbers match.
+///
+/// Definitions:
+/// - [totalSpent]: actual outflow to date (occurrences dated <= now).
+/// - [monthlyBurn]: gross burn for the current calendar month = expenses
+///   dated this month (including recurring charges scheduled later this
+///   month) + active members' salaries not yet paid this month. If that is 0,
+///   falls back to the average of the last 3 months with spend
+///   ([isBurnEstimated] = true).
+/// - [netBurn]: [monthlyBurn] - this month's revenue.
+/// - [runwayMonths]: [availableFunds] / [netBurn]. 0 when there is no cash or
+///   no burn data, [kProfitableRunwayMonths] when net burn <= 0.
+class FinancialSnapshot {
+  const FinancialSnapshot({
+    required this.funding,
+    required this.totalSpent,
+    required this.availableFunds,
+    required this.currentMonthExpenses,
+    required this.unpaidPayroll,
+    required this.monthlyBurn,
+    required this.monthlyRevenue,
+    required this.netBurn,
+    required this.runwayMonths,
+    required this.isBurnEstimated,
+    required this.last30DaysSpend,
+    required this.categoryBreakdown,
+    required this.expenses,
+  });
+
+  final double funding;
+  final double totalSpent;
+  final double availableFunds;
+  final double currentMonthExpenses;
+  final double unpaidPayroll;
+  final double monthlyBurn;
+  final double monthlyRevenue;
+  final double netBurn;
+  final double runwayMonths;
+  final bool isBurnEstimated;
+  final double last30DaysSpend;
+
+  /// Current-month burn by lowercase category. Unpaid payroll is under
+  /// 'salary'. Sums to [monthlyBurn] unless [isBurnEstimated].
+  final Map<String, double> categoryBreakdown;
+
+  /// Expanded, non-funding expense occurrences up to the end of this month.
+  final List<Map<String, dynamic>> expenses;
+
+  bool get isProfitable => monthlyBurn > 0 && netBurn <= 0;
+}
 
 class FinancialCalculator {
   // Private constructor to prevent instantiation
@@ -129,118 +186,199 @@ class FinancialCalculator {
     return ((actual - budgeted) / budgeted) * 100;
   }
 
-  /// Calculate current month burn with proper recurring expense handling
+  // ---------------------------------------------------------------------------
+  // Single source of truth for burn / spend / runway
+  // ---------------------------------------------------------------------------
+
+  static double _num(dynamic v) {
+    if (v == null) return 0.0;
+    if (v is num) return v.toDouble();
+    if (v is String) {
+      return double.tryParse(v.replaceAll(RegExp(r'[^\d.-]'), '')) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  static DateTime? _date(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    return null;
+  }
+
+  static bool _sameMonth(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month;
+
+  /// Builds the [FinancialSnapshot] from raw Firestore data.
   ///
-  /// [expenses] - List of expense maps with 'amount', 'date', 'type' fields
-  /// Returns current month burn including recurring expenses that started before now
-  static double currentMonthBurn(List<Map<String, dynamic>> expenses) {
-    if (expenses.isEmpty) return 0;
+  /// [rawExpenses] - expense docs as maps (doc id under 'id'); funding rows
+  ///   (`isFunding == true`) are ignored, recurring templates are expanded.
+  /// [members] - member docs as maps (doc id under 'id'); active members'
+  ///   `monthlyCost` counts toward burn until a salary payment for them is
+  ///   recorded this month.
+  /// [revenue] - revenue docs as maps with `Amount` and `Date`.
+  static FinancialSnapshot compute({
+    required double funding,
+    required List<Map<String, dynamic>> rawExpenses,
+    List<Map<String, dynamic>> members = const [],
+    List<Map<String, dynamic>> revenue = const [],
+    DateTime? now,
+  }) {
+    final ref = now ?? DateTime.now();
+    final endOfMonth = DateTime(ref.year, ref.month + 1, 0, 23, 59, 59);
+    final thirtyDaysAgo = ref.subtract(const Duration(days: 30));
 
-    final now = DateTime.now();
-    final currentMonth = now.month;
-    final currentYear = now.year;
+    final expanded = ExpenseExpansionHelper.expandExpenses(
+      rawExpenses.where((e) => e['isFunding'] != true).toList(),
+      maxDate: endOfMonth,
+      allowFuture: true,
+      now: ref,
+    );
 
-    double total = 0;
+    double totalSpent = 0;
+    double currentMonthExpenses = 0;
+    double last30 = 0;
+    final monthly = <String, double>{};
+    final categories = <String, double>{};
+    final paidMembersThisMonth = <String>{};
+    final normalized = <Map<String, dynamic>>[];
 
-    for (var expense in expenses) {
-      final type = expense['type'] ?? 'one_time';
-      final amount = expense['amount'] as double? ?? 0.0;
-      final Timestamp? ts = expense['date'];
+    for (final e in expanded) {
+      final amount = _num(e['Amount'] ?? e['amount']);
+      final dt = _date(e['Date'] ?? e['date']);
+      final category = (e['Category'] ?? e['category'] ?? 'others')
+          .toString()
+          .toLowerCase()
+          .trim();
 
-      if (type == 'recurring' || type == 'subscription') {
-        final startDate = ts?.toDate();
-        final frequency =
-            expense['recurrenceFrequency'] as String? ?? 'monthly';
-        final tenureMonths = expense['recurringTenureMonths'] as int?;
+      normalized.add({
+        ...e,
+        'amount': amount,
+        'date': dt != null ? Timestamp.fromDate(dt) : null,
+        'category': category,
+      });
 
-        if (startDate != null &&
-            (startDate.isBefore(now) || startDate.isAtSameMomentAs(now))) {
-          if (tenureMonths != null) {
-            final endDate = DateTime(
-              startDate.year,
-              startDate.month + tenureMonths,
-              startDate.day,
-            );
-            if (now.isAfter(endDate)) {
-              continue;
-            }
-          }
+      if (dt == null) continue;
 
-          double monthlyAmount = amount;
-          if (frequency == 'weekly') {
-            monthlyAmount = amount * 4.33;
-          } else if (frequency == 'daily') {
-            monthlyAmount = amount * 30.44;
-          } else if (frequency == 'yearly') {
-            monthlyAmount = amount / 12.0;
-          }
-          total += monthlyAmount;
-        }
-      } else {
-        final dt = ts?.toDate();
-        if (dt != null && dt.month == currentMonth && dt.year == currentYear) {
-          total += amount;
+      if (!dt.isAfter(ref)) {
+        totalSpent += amount;
+        if (dt.isAfter(thirtyDaysAgo)) last30 += amount;
+        final key = '${dt.year}-${dt.month.toString().padLeft(2, '0')}';
+        monthly[key] = (monthly[key] ?? 0) + amount;
+      }
+
+      if (_sameMonth(dt, ref)) {
+        currentMonthExpenses += amount;
+        categories[category] = (categories[category] ?? 0) + amount;
+        final memberId = (e['memberId'] ?? e['TeamMemberId'])?.toString();
+        if (memberId != null &&
+            memberId.isNotEmpty &&
+            (category == 'salary' || category == 'salaries')) {
+          paidMembersThisMonth.add(memberId);
         }
       }
     }
 
-    return total;
-  }
+    // Payroll committed for this month but not yet recorded as paid.
+    double unpaidPayroll = 0;
+    for (final m in members) {
+      final status = (m['status'] ?? 'Active').toString();
+      if (status != 'Active') continue;
+      final id = m['id']?.toString();
+      if (id != null && paidMembersThisMonth.contains(id)) continue;
+      final joining = _date(m['joiningDate']);
+      if (joining != null && joining.isAfter(endOfMonth)) continue;
+      unpaidPayroll += _num(m['monthlyCost'] ?? m['salary']);
+    }
+    if (unpaidPayroll > 0) {
+      categories['salary'] = (categories['salary'] ?? 0) + unpaidPayroll;
+    }
 
-  /// Calculate rolling average monthly burn (last 3 months)
-  ///
-  /// [expenses] - List of expense maps with 'amount', 'date', 'type' fields
-  /// Returns average burn over last 3 months, or 0 if no data
-  static double rollingAverageMonthlyBurn(List<Map<String, dynamic>> expenses) {
-    if (expenses.isEmpty) return 0;
+    double monthlyBurn = currentMonthExpenses + unpaidPayroll;
+    bool estimated = false;
+    if (monthlyBurn <= 0 && monthly.isNotEmpty) {
+      final keys = monthly.keys.toList()..sort((a, b) => b.compareTo(a));
+      final recent = keys.take(3).toList();
+      monthlyBurn =
+          recent.fold<double>(0, (s, k) => s + monthly[k]!) / recent.length;
+      estimated = true;
+    }
 
-    Map<String, double> monthlyTotals = {};
-
-    for (var expense in expenses) {
-      final expenseDate = expense['date'] as Timestamp?;
-      if (expenseDate != null) {
-        final expenseDateTime = expenseDate.toDate();
-        final monthKey =
-            "${expenseDateTime.year}-${expenseDateTime.month.toString().padLeft(2, '0')}";
-
-        if (!monthlyTotals.containsKey(monthKey)) {
-          monthlyTotals[monthKey] = 0;
-        }
-
-        // Add both one-time and recurring expenses
-        monthlyTotals[monthKey] =
-            monthlyTotals[monthKey]! + (expense['amount'] as double? ?? 0.0);
+    double monthlyRevenue = 0;
+    for (final r in revenue) {
+      final dt = _date(r['Date'] ?? r['date']);
+      if (dt != null && _sameMonth(dt, ref)) {
+        monthlyRevenue += _num(r['Amount'] ?? r['amount']);
       }
     }
 
-    if (monthlyTotals.isEmpty) return 0;
+    final netBurn = monthlyBurn - monthlyRevenue;
+    final available = funding - totalSpent;
 
-    // Sort months newest first and take last 3 months only
-    final sortedKeys = monthlyTotals.keys.toList()
-      ..sort((a, b) => b.compareTo(a));
-    final recentKeys = sortedKeys.take(3);
-
-    if (recentKeys.isEmpty) return 0;
-
-    double total = 0;
-    for (var key in recentKeys) {
-      total += monthlyTotals[key]!;
+    double runway;
+    if (available <= 0 || monthlyBurn <= 0) {
+      runway = 0;
+    } else if (netBurn <= 0) {
+      runway = kProfitableRunwayMonths;
+    } else {
+      runway = available / netBurn;
     }
 
-    return total / recentKeys.length;
+    normalized.sort((a, b) {
+      final ad = a['date'] as Timestamp?;
+      final bd = b['date'] as Timestamp?;
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      return bd.compareTo(ad);
+    });
+
+    return FinancialSnapshot(
+      funding: funding,
+      totalSpent: totalSpent,
+      availableFunds: available,
+      currentMonthExpenses: currentMonthExpenses,
+      unpaidPayroll: unpaidPayroll,
+      monthlyBurn: monthlyBurn,
+      monthlyRevenue: monthlyRevenue,
+      netBurn: netBurn,
+      runwayMonths: runway,
+      isBurnEstimated: estimated,
+      last30DaysSpend: last30,
+      categoryBreakdown: categories,
+      expenses: normalized,
+    );
   }
 
-  /// Get real monthly burn with fallback strategy
-  ///
-  /// [expenses] - List of expense maps
-  /// Returns current month burn, or rolling average if current is 0
-  static double getRealMonthlyBurn(List<Map<String, dynamic>> expenses) {
-    double burn = currentMonthBurn(expenses);
-    if (burn == 0) {
-      burn = rollingAverageMonthlyBurn(expenses);
-    }
-    return burn;
+  /// Fetches everything [compute] needs for [uid] and returns the snapshot.
+  static Future<FinancialSnapshot> load(String uid) async {
+    final db = FirebaseFirestore.instance;
+    final results = await Future.wait<Object?>([
+      db.collection('companies').doc(uid).get(),
+      db.collection('expenses').where('uid', isEqualTo: uid).get(),
+      db.collection('members').where('uid', isEqualTo: uid).get(),
+      // Revenue is optional; a missing collection or rule must not break runway.
+      db
+          .collection('revenue')
+          .where('uid', isEqualTo: uid)
+          .get()
+          .then<Object?>((s) => s, onError: (_) => null),
+    ]);
+    final company = results[0] as DocumentSnapshot<Map<String, dynamic>>;
+    final expenses = results[1] as QuerySnapshot<Map<String, dynamic>>;
+    final members = results[2] as QuerySnapshot<Map<String, dynamic>>;
+    final revenue = results[3] as QuerySnapshot<Map<String, dynamic>>?;
+
+    final data = company.data() ?? {};
+    return compute(
+      funding: _num(data['Funding'] ?? data['funding'] ?? data['FUNDING']),
+      rawExpenses: docsToMaps(expenses.docs),
+      members: docsToMaps(members.docs),
+      revenue: revenue == null ? const [] : docsToMaps(revenue.docs),
+    );
   }
+
+  static List<Map<String, dynamic>> docsToMaps(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) => docs.map((d) => {...d.data(), 'id': d.id}).toList();
 
   /// Calculate percentage of amount relative to total
   ///

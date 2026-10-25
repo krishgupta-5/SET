@@ -9,6 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'dart:io';
+import '../../../services/telegram_service.dart';
 import '../../../widgets/avatar_widget.dart';
 import '../../../theme/app_theme.dart';
 
@@ -40,8 +41,6 @@ class _EditMemberScreenState extends State<EditMemberScreen> {
   // Telegram photo variables
   String? _telegramFileId;
 
-  // Cache for Telegram photos to avoid repeated fetching
-  static final Map<String, String> _telegramPhotoCache = {};
 
   final Map<String, String> _statuses = {
     'Active': 'Active',
@@ -264,38 +263,8 @@ class _EditMemberScreenState extends State<EditMemberScreen> {
     }
   }
 
-  Future<String> getTelegramImageUrl(String fileId) async {
-    // Check cache first
-    if (_telegramPhotoCache.containsKey(fileId)) {
-      return _telegramPhotoCache[fileId]!;
-    }
-
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      final res = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId",
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-      final imageUrl = "https://api.telegram.org/file/bot$botToken/$path";
-
-      // Cache the result
-      _telegramPhotoCache[fileId] = imageUrl;
-
-      return imageUrl;
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 
   Future<void> _showImagePicker() async {
     FocusScope.of(context).unfocus();

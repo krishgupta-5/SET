@@ -3,9 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:uuid/uuid.dart';
-
 import '../../../services/bank_account_service.dart';
+import '../../../services/expense_service.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../theme/app_theme.dart';
@@ -150,7 +149,6 @@ class _ProcessPaymentScreenState extends State<ProcessPaymentScreen>
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception("User is not logged in.");
 
-      final id = const Uuid().v4();
       final String expenseTitle = widget.isAdvance
           ? "Advance Salary - ${widget.memberName}"
           : "Salary - ${widget.memberName}";
@@ -159,68 +157,32 @@ class _ProcessPaymentScreenState extends State<ProcessPaymentScreen>
           ? "Advance reason: ${_reasonController.text.trim()}"
           : "Regular monthly salary payout for ${widget.memberName}";
 
-      // 1. Log Expense
-      await FirebaseFirestore.instance.collection('expenses').doc(id).set({
-        "uid": user.uid,
-        "Amount": amount,
-        "Title": expenseTitle,
-        "Description": expenseDesc,
-        "TeamId": widget.teamId,
-        "TeamName": widget.teamName,
-        "Date": DateTime.now(),
-        "Category": "salary",
-        "Type": "recurring",
-        // Store the bank account key (BankName-last4) for later lookup,
-        // or 'Cash-' for cash payments
-        "BankAccount": _selectedPaymentMethod == 'bank'
-            ? (_selectedBankAccount ?? 'Cash-')
-            : 'Cash-',
-        "bankAccount": _selectedPaymentMethod == 'bank'
-            ? (_selectedBankAccount ?? 'Cash-')
-            : 'Cash-',
-        "PaymentMethod": _selectedPaymentMethod,
-        "memberId": widget.memberId,
-        "Time": FieldValue.serverTimestamp(),
-      });
-
-      // 2. Update Company Total Expenses + Member Total Expenses (Fix #2)
-      final batch = FirebaseFirestore.instance.batch();
-
-      // 2a. Look up companyId from user document, fallback to user.uid
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
-      final companyId = userDoc.data()?['companyId'] ?? user.uid;
+      final companyId =
+          (userDoc.data()?['companyId'] as String?) ?? user.uid;
 
-      // Update company's totalExpenses
-      final companyDoc = await FirebaseFirestore.instance
-          .collection('companies')
-          .doc(companyId)
-          .get();
+      // Store the bank account key (BankName-last4), or 'Cash-' for cash.
+      final bankKey = _selectedPaymentMethod == 'bank'
+          ? (_selectedBankAccount ?? 'Cash-')
+          : 'Cash-';
 
-      if (companyDoc.exists && companyDoc.data() != null) {
-        final data = companyDoc.data()!;
-        final currentTotalExpenses =
-            double.tryParse(data["totalExpenses"]?.toString() ?? "0") ?? 0.0;
-        final newTotalExpenses = currentTotalExpenses + amount;
-
-        final companyRef = FirebaseFirestore.instance
-            .collection('companies')
-            .doc(companyId);
-        batch.update(companyRef, {"totalExpenses": newTotalExpenses});
-      }
-
-      // 2b. Increment member's totalExpenses so MemberDetailScreen stays accurate
-      final memberRef = FirebaseFirestore.instance
-          .collection('members')
-          .doc(widget.memberId);
-      batch.update(memberRef, {
-        "totalExpenses": FieldValue.increment(amount),
-        "remainingSalary": FieldValue.increment(-amount),
-      });
-
-      await batch.commit();
+      // Expense row + company/member counters in one atomic batch.
+      await ExpenseService().recordSalaryPayment(
+        uid: user.uid,
+        companyId: companyId,
+        memberId: widget.memberId,
+        memberName: widget.memberName,
+        teamId: widget.teamId,
+        teamName: widget.teamName,
+        amount: amount,
+        title: expenseTitle,
+        description: expenseDesc,
+        bankAccount: bankKey,
+        paymentMethod: _selectedPaymentMethod ?? 'cash',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

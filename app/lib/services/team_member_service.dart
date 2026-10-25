@@ -1,9 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'telegram_service.dart';
 
 class TeamMember {
   final String id;
@@ -120,7 +118,6 @@ class Team {
 
 class TeamMemberService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static final Map<String, String> _telegramPhotoCache = {};
 
   static Future<List<Team>> getTeams() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -210,38 +207,9 @@ class TeamMemberService {
     return null;
   }
 
-  static Future<String> getTelegramImageUrl(String fileId) async {
-    // Check cache first
-    if (_telegramPhotoCache.containsKey(fileId)) {
-      return _telegramPhotoCache[fileId]!;
-    }
-
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      final res = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId",
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-      final imageUrl = "https://api.telegram.org/file/bot$botToken/$path";
-
-      // Cache the result
-      _telegramPhotoCache[fileId] = imageUrl;
-
-      return imageUrl;
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  /// Delegates to [TelegramService.getImageUrl] (validated, cached, timed out).
+  static Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 
   static String? getTelegramFileId(String avatarUrl) {
     if (avatarUrl.startsWith('telegram:')) {

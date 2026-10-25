@@ -6,11 +6,10 @@ def classify_intent(question: str) -> str:
     Returns the classified intent based on keywords.
     """
     q = question.lower()
-    
-    # Month-specific or date-specific expense queries
-    if re.search(r'\b(january|february|march|april|may|june|july|august|september|october|november|december|this month|last month|monthly|month wise|month-wise|week|weekly|today|yesterday|this year|last year)\b', q):
-        return 'Expense Optimization'
-    
+
+    # Topic keywords are checked first. Date words ("monthly", "this month")
+    # only matter when no topic matched — previously they ran first and sent
+    # "what's my monthly burn?" to Expense Optimization.
     if re.search(r'\b(burn|burn rate|spending speed|spending rate|losing money|spend rate|burning)\b', q):
         return 'Burn Rate'
     elif re.search(r'\b(runway|months left|survival|how long|survive|run out of money)\b', q):
@@ -32,7 +31,7 @@ def classify_intent(question: str) -> str:
         return 'Subscriptions'
     elif re.search(r'\b(revenue|sales|income|mrr|arr|earning|make money|profit|top line|selling)\b', q):
         return 'Revenue'
-    elif re.search(r'\b(cash|cash flow|balance|funding|money left|bank account|capital|funds)\b', q):
+    elif re.search(r'\b(cash|cash flow|balance|funding|money left|bank account|capital|funds|left)\b', q):
         return 'Cash Flow'
     elif re.search(r'\b(invest|investor|raise|round|vc|seed|angel|pitch|valuation)\b', q):
         return 'Investment'
@@ -46,6 +45,8 @@ def classify_intent(question: str) -> str:
     elif re.search(r'\b(forecast|predict|projection|next quarter|next month|future)\b', q):
         return 'Financial Health'
     elif re.search(r'\b(expenses?|spending|spent|costs?|bills?|payments?)\b', q):
+        return 'Expense Optimization'
+    elif re.search(r'\b(january|february|march|april|may|june|july|august|september|october|november|december|this month|last month|monthly|month wise|month-wise|week|weekly|today|yesterday|this year|last year)\b', q):
         return 'Expense Optimization'
     elif re.search(r'\b(advice|tips?|strategy|grow|growth|recommendation|should i|what if|plan)\b', q):
         return 'General Startup Advice'

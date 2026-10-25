@@ -32,20 +32,66 @@ class TelegramService {
   ///
   /// Results are cached for [_urlTtl] so repeated widget rebuilds never hit
   /// the Telegram API more than necessary.
+  ///
+  /// Throws [TelegramFileException] on network errors, timeouts, non-200
+  /// responses, `ok: false` (e.g. expired/invalid `file_id`) or a malformed
+  /// body. Callers using `FutureBuilder` already render an avatar/placeholder
+  /// fallback on error.
   static Future<String> getImageUrl(String fileId) async {
+    if (fileId.isEmpty) {
+      throw const TelegramFileException('Empty file_id');
+    }
     final cached = _urlCache[fileId];
     if (cached != null && !cached.isExpired) return cached.url;
 
     final token = await _getToken();
-    final res = await http.get(
-      Uri.parse('https://api.telegram.org/bot$token/getFile?file_id=$fileId'),
-    );
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    final path = data['result']['file_path'] as String;
-    final url = 'https://api.telegram.org/file/bot$token/$path';
+    final http.Response res;
+    try {
+      res = await http
+          .get(
+            Uri.https('api.telegram.org', '/bot$token/getFile', {
+              'file_id': fileId,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      throw TelegramFileException('Network error: $e');
+    }
 
+    if (res.statusCode != 200) {
+      // Body may contain the bot token in error links, so don't log it.
+      throw TelegramFileException('getFile failed (${res.statusCode})');
+    }
+
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(res.body);
+    } catch (_) {
+      throw const TelegramFileException('Invalid getFile response');
+    }
+
+    final result = decoded is Map<String, dynamic> && decoded['ok'] == true
+        ? decoded['result']
+        : null;
+    final path = result is Map<String, dynamic> ? result['file_path'] : null;
+    if (path is! String || path.isEmpty) {
+      _urlCache.remove(fileId);
+      throw const TelegramFileException('File not available');
+    }
+
+    final url = 'https://api.telegram.org/file/bot$token/$path';
     _urlCache[fileId] = _CachedUrl(url);
     return url;
+  }
+
+  /// Like [getImageUrl] but returns null instead of throwing.
+  static Future<String?> tryGetImageUrl(String fileId) async {
+    try {
+      return await getImageUrl(fileId);
+    } catch (e) {
+      debugPrint('TelegramService: $e');
+      return null;
+    }
   }
 
   /// Uploads an image file to the configured Telegram chat.
@@ -66,9 +112,12 @@ class TelegramService {
       }
 
       final res = await http.Response.fromStream(response);
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final data = jsonDecode(res.body);
       // The Telegram API returns an array ordered lowest→highest quality.
-      return data['result']['photo'].last['file_id'] as String?;
+      final result = data is Map ? data['result'] : null;
+      final photos = result is Map ? result['photo'] : null;
+      if (photos is! List || photos.isEmpty) return null;
+      return photos.last['file_id'] as String?;
     } catch (e) {
       debugPrint('TelegramService: upload error $e');
       return null;
@@ -96,6 +145,14 @@ class TelegramService {
     }
     return _cachedToken!;
   }
+}
+
+class TelegramFileException implements Exception {
+  const TelegramFileException(this.message);
+  final String message;
+
+  @override
+  String toString() => 'TelegramFileException: $message';
 }
 
 /// Private TTL wrapper for cached Telegram file URLs.

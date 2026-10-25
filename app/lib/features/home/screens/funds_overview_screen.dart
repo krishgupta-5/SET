@@ -60,6 +60,7 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
   double _totalExpensesAmount = 0.0;
   double _availableAmount = 0.0;
   bool _dataLoaded = false;
+  FinancialSnapshot? _snapshot;
 
   String? lastUpdated;
   bool isLoading = true;
@@ -119,21 +120,19 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
     try {
       await Future.wait([_fetchFundsData(), _fetchAllExpenses()]);
 
-      if (fundingAmount != null) {
-        final now = DateTime.now();
-        final totalReal = allExpenses.fold<double>(0.0, (t, e) {
-          final ts = e['timestamp'] as Timestamp?;
-          if (ts != null && ts.toDate().isAfter(now)) {
-            return t;
-          }
-          return t + (e['rawAmount'] as double? ?? 0.0);
-        });
-        setState(() {
-          _totalExpensesAmount = totalReal;
-          _availableAmount = fundingAmount! - totalReal;
-          lastUpdated = 'Today';
-          _dataLoaded = true;
-        });
+      final user = FirebaseAuth.instance.currentUser;
+      if (fundingAmount != null && user != null) {
+        // Shared calculation, so balance/runway match the dashboard.
+        final s = await FinancialCalculator.load(user.uid);
+        if (mounted) {
+          setState(() {
+            _snapshot = s;
+            _totalExpensesAmount = s.totalSpent;
+            _availableAmount = s.availableFunds;
+            lastUpdated = 'Today';
+            _dataLoaded = true;
+          });
+        }
       }
 
       _calculateCashFlowBreakdown();
@@ -337,12 +336,13 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
       return 'NO DATA';
     }
 
-    final runwayMonths = FinancialCalculator.runwayMonths(
-      availableFunds: _availableAmount,
-      monthlyBurn: _calculateCurrentMonthBurn(),
-    );
-
-    return FinancialCalculator.runwayHealthStatus(runwayMonths);
+    final s = _snapshot;
+    if (s == null || s.monthlyBurn <= 0) return 'NO DATA';
+    final runway = s.runwayMonths;
+    // Same thresholds as the dashboard and runway screen.
+    if (runway <= 3) return 'CRITICAL';
+    if (runway <= 6) return 'WARNING';
+    return 'SAFE';
   }
 
   Color _getHealthStatusColor() {
@@ -357,22 +357,6 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
       default:
         return const Color(0xFF71717A); // Gray
     }
-  }
-
-  double _calculateCurrentMonthBurn() {
-    if (allExpenses.isEmpty) return 0.0;
-    final now = DateTime.now();
-    double currentMonthTotal = 0;
-    for (var expense in allExpenses) {
-      final ts = expense['timestamp'] as Timestamp?;
-      if (ts != null) {
-        final dt = ts.toDate();
-        if (dt.month == now.month && dt.year == now.year) {
-          currentMonthTotal += expense['rawAmount'] as double? ?? 0.0;
-        }
-      }
-    }
-    return currentMonthTotal;
   }
 
   Future<void> _fetchAllExpenses() async {

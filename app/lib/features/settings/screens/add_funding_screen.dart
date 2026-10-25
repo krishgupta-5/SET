@@ -2,10 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:uuid/uuid.dart';
 
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../services/expense_service.dart';
 import '../../../services/financial_calculator.dart';
 import '../../../theme/app_theme.dart';
 
@@ -278,8 +278,6 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
         (s) => s['key'] == _selectedSource,
       );
       final sourceLabel = sourceMap['label'] as String;
-      final newTotalFunding = _currentFunding + amount;
-      final now = DateTime.now();
 
       final isBankLoan = _selectedSource == 'bank_loan';
       final loanLenderBank = isBankLoan
@@ -299,96 +297,33 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
                 0.0)
           : null;
 
-      await FirebaseFirestore.instance.collection('funding_transactions').add({
-        'uid': user.uid,
-        'amount': amount,
-        'source': sourceLabel,
-        'sourceKey': _selectedSource,
-        'notes': _notesController.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'previousFunding': _currentFunding,
-        'newTotalFunding': newTotalFunding,
-        if (isBankLoan) ...{
-          'isBankLoan': true,
-          'loanLenderBank': loanLenderBank,
-          'loanInterestRate': loanInterestRate,
-          'loanRateType': loanRateType,
-          'loanTenureMonths': loanTenureMonths,
-          'loanEmiAmount': loanEmiAmount,
-          'loanEmiStartDate': Timestamp.fromDate(_selectedEmiDate),
-        },
-      });
-
-      final expenseId = const Uuid().v4();
-      await FirebaseFirestore.instance
-          .collection('expenses')
-          .doc(expenseId)
-          .set({
-            'uid': user.uid,
-            'Amount': amount,
-            'Title': 'Funding: $sourceLabel',
-            'Description': _notesController.text.trim(),
-            'Date': Timestamp.fromDate(now),
-            'Category': 'funding',
-            'Type': 'one_time',
-            'BankAccount': null,
-            'AttachmentFileId': '',
-            'ExpenseType': 'funding',
-            'isFunding': true,
-            'fundingSource': sourceLabel,
-            'fundingSourceKey': _selectedSource,
-            'Time': FieldValue.serverTimestamp(),
-            if (isBankLoan) ...{
-              'isBankLoan': true,
-              'loanLenderBank': loanLenderBank,
-              'loanInterestRate': loanInterestRate,
-              'loanRateType': loanRateType,
-              'loanTenureMonths': loanTenureMonths,
-              'loanEmiAmount': loanEmiAmount,
-              'loanEmiStartDate': Timestamp.fromDate(_selectedEmiDate),
-            },
-          });
-
-      if (isBankLoan && loanEmiAmount != null && loanEmiAmount > 0) {
-        final emiExpenseId = const Uuid().v4();
-        await FirebaseFirestore.instance
-            .collection('expenses')
-            .doc(emiExpenseId)
-            .set({
-              'uid': user.uid,
-              'companyId': user.uid,
-              'Amount': loanEmiAmount,
-              'Title': 'EMI: $loanLenderBank Loan Repayment',
-              'Description':
-                  'Monthly EMI repayment for $loanLenderBank loan of amount $amount',
-              'Date': Timestamp.fromDate(_selectedEmiDate),
-              'Category': 'others',
-              'Type': 'recurring',
-              'BankAccount': null,
-              'AttachmentFileId': '',
-              'ExpenseType': 'others',
-              'isFunding': false,
-              'isEmiRepayment': true,
-              'loanLenderBank': loanLenderBank,
-              'loanInterestRate': loanInterestRate,
-              'loanRateType': loanRateType,
-              'loanTenureMonths': loanTenureMonths,
-              'loanEmiStartDate': Timestamp.fromDate(_selectedEmiDate),
-              'Time': FieldValue.serverTimestamp(),
-            });
-      }
-
-      final Map<String, dynamic> updateData = {'Funding': newTotalFunding};
-
-      if (_updateTargetRunway &&
-          _targetRunwayController.text.trim().isNotEmpty) {
-        updateData['Target Runway'] = _targetRunwayController.text.trim();
-      }
-
-      await FirebaseFirestore.instance
-          .collection('companies')
-          .doc(user.uid)
-          .set(updateData, SetOptions(merge: true));
+      // Funding transaction, funding row, optional EMI schedule and the
+      // company total are written in a single atomic batch.
+      await ExpenseService().recordFunding(
+        uid: user.uid,
+        companyId: user.uid,
+        amount: amount,
+        previousFunding: _currentFunding,
+        sourceLabel: sourceLabel,
+        sourceKey: _selectedSource,
+        notes: _notesController.text.trim(),
+        targetRunway: _updateTargetRunway
+            ? _targetRunwayController.text.trim()
+            : null,
+        loan: isBankLoan
+            ? {
+                'isBankLoan': true,
+                'loanLenderBank': loanLenderBank,
+                'loanInterestRate': loanInterestRate,
+                'loanRateType': loanRateType,
+                'loanTenureMonths': loanTenureMonths,
+                'loanEmiAmount': loanEmiAmount,
+                'loanEmiStartDate': Timestamp.fromDate(_selectedEmiDate),
+              }
+            : null,
+        emiAmount: isBankLoan ? loanEmiAmount : null,
+        emiStartDate: isBankLoan ? _selectedEmiDate : null,
+      );
 
       if (mounted) {
         _showMinimalToast("Funding added successfully!");

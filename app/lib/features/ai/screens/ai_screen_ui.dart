@@ -47,7 +47,7 @@ class _AiScreenState extends State<AiScreen>
   final Map<String, bool> _sectionLoadStates = {};
 
   bool _isLoading = true;
-  bool _isFetchingMore = false;
+  bool _isFetchingMore = false; // a batch of section requests is in flight
   final List<String> _pendingSections = [];
   Map<String, dynamic>? _cachedPayload;
 
@@ -152,6 +152,8 @@ class _AiScreenState extends State<AiScreen>
               _staffingData = map["staffing"];
               _expenseData = map["expense"];
               _subscriptionData = map["subscription"];
+              // Everything is restored, so show every section immediately.
+              _sectionLoadStates.updateAll((_, _) => true);
               _isLoading = false;
             });
             return;
@@ -159,32 +161,30 @@ class _AiScreenState extends State<AiScreen>
         }
       }
 
-      final expensesSnapshot = await FirebaseFirestore.instance
-          .collection('expenses')
-          .where('uid', isEqualTo: uid)
-          .orderBy('Date', descending: true)
-          .limit(50)
-          .get();
-
-      final companySnapshot = await FirebaseFirestore.instance
-          .collection('companies')
-          .where('uid', isEqualTo: uid)
-          .limit(1)
-          .get();
-
-      final teamsSnapshot = await FirebaseFirestore.instance
-          .collection('teams')
-          .where('uid', isEqualTo: uid)
-          .get();
-
-      final membersSnapshot = await FirebaseFirestore.instance
-          .collection('members')
-          .where('uid', isEqualTo: uid)
-          .get();
+      final db = FirebaseFirestore.instance;
+      final results = await Future.wait<QuerySnapshot<Map<String, dynamic>>?>([
+        // All expenses (not the latest 50): totals, recurring expansion and
+        // runway are wrong on a slice. The backend re-reads Firestore anyway;
+        // this is the fallback snapshot.
+        db.collection('expenses').where('uid', isEqualTo: uid).limit(1000).get(),
+        db.collection('companies').where('uid', isEqualTo: uid).limit(1).get(),
+        db.collection('teams').where('uid', isEqualTo: uid).get(),
+        db.collection('members').where('uid', isEqualTo: uid).get(),
+        db
+            .collection('revenue')
+            .where('uid', isEqualTo: uid)
+            .get()
+            .then<QuerySnapshot<Map<String, dynamic>>?>((s) => s, onError: (_) => null),
+      ]);
+      final expensesSnapshot = results[0]!;
+      final companySnapshot = results[1]!;
+      final teamsSnapshot = results[2]!;
+      final membersSnapshot = results[3]!;
+      final revenueSnapshot = results[4];
 
       if (!mounted) return;
 
-      if (expensesSnapshot.docs.isEmpty) {
+      if (expensesSnapshot.docs.isEmpty && membersSnapshot.docs.isEmpty) {
         setState(() {
           _mainData = {
             "primary_insight": "Welcome to AI Insights",
@@ -196,50 +196,24 @@ class _AiScreenState extends State<AiScreen>
         return;
       }
 
-      final expenses = expensesSnapshot.docs.map((doc) => doc.data()).toList();
-      final cleanExpenses = expenses.map((e) {
-        return {
-          "Amount": (e["Amount"] ?? 0).toDouble(),
-          "Category": (e["Category"] ?? "unknown").toString(),
-          "Type": (e["Type"] ?? "unknown").toString(),
-          "Description": (e["Description"] ?? e["Title"] ?? "").toString(),
-          "ExpenseType": (e["ExpenseType"] ?? "unknown").toString(),
-          "TeamName": (e["TeamName"] ?? e["linkedTeamName"] ?? "general")
-              .toString(),
-          "TeamMemberName": (e["TeamMemberName"] ?? "none").toString(),
-          "PaymentMethod": (e["BankAccount"] ?? e["PaymentMethod"] ?? "unknown")
-              .toString(),
-          "Date": (e["Date"] is Timestamp)
-              ? (e["Date"] as Timestamp).toDate().toIso8601String()
-              : e["Date"]?.toString() ?? "",
-        };
-      }).toList();
+      // Keep every field the metrics need (isFunding, recurrence, tenure,
+      // skippedOccurrences, memberId) plus the doc id.
+      List<Map<String, dynamic>> docs(QuerySnapshot<Map<String, dynamic>>? s) =>
+          (s?.docs ?? const [])
+              .map((d) => {..._cleanTimestamps(d.data()), 'id': d.id})
+              .toList();
 
-      final companyData = companySnapshot.docs.isNotEmpty
-          ? _cleanTimestamps(companySnapshot.docs.first.data())
-          : {};
-      final teamsData = teamsSnapshot.docs
-          .map((doc) => _cleanTimestamps(doc.data()))
-          .toList();
-      final membersData = membersSnapshot.docs
-          .map((doc) => _cleanTimestamps(doc.data()))
-          .toList();
-
+      final company = docs(companySnapshot);
       _cachedPayload = {
-        "expenses": cleanExpenses,
-        "revenue": [],
-        "company": companyData,
-        "members": membersData,
-        "teams": teamsData,
+        "expenses": docs(expensesSnapshot),
+        "revenue": docs(revenueSnapshot),
+        "company": company.isNotEmpty ? company.first : {},
+        "members": docs(membersSnapshot),
+        "teams": docs(teamsSnapshot),
       };
 
-      _pendingSections.add("main");
-      _pendingSections.add("keyPoints");
-      _pendingSections.add("runway");
-      _pendingSections.add("burn");
-      _pendingSections.add("staffing");
-      _pendingSections.add("expense");
-      _pendingSections.add("subscription");
+      // Above-the-fold first; the rest load as the user scrolls.
+      _pendingSections.addAll(["main", "keyPoints"]);
       _processQueue();
     } catch (e) {
       debugPrint("Error fetching data: $e");
@@ -269,7 +243,9 @@ class _AiScreenState extends State<AiScreen>
     final user = FirebaseAuth.instance.currentUser;
     final token = await user?.getIdToken();
 
-    for (final sectionKey in sectionsToProcess) {
+    // Sections are independent; request them in parallel instead of one
+    // after another (7 sequential LLM calls took up to ~2 minutes).
+    await Future.wait(sectionsToProcess.map((sectionKey) async {
       try {
         final requestBody = {
           "sectionName": sectionKey,
@@ -305,7 +281,7 @@ class _AiScreenState extends State<AiScreen>
               sectionKey,
               "We couldn't load this section right now. Please try again in a moment.",
             );
-            continue;
+            return;
           }
 
           setState(() {
@@ -325,18 +301,46 @@ class _AiScreenState extends State<AiScreen>
               _subscriptionData = insight;
             }
           });
+        } else {
+          debugPrint("AI section $sectionKey failed: HTTP ${res.statusCode}");
+          _applySectionError(
+            sectionKey,
+            res.statusCode == 429
+                ? "Too many requests. Please wait a minute and pull to refresh."
+                : "We couldn't load this section right now. Please try again in a moment.",
+          );
         }
       } catch (e) {
         debugPrint("Failed to load AI section $sectionKey: $e");
         if (mounted) {
-          _applySectionError(sectionKey, e.toString());
+          // Don't surface raw exception text to users.
+          _applySectionError(
+            sectionKey,
+            "Couldn't reach the AI service. Pull down to retry.",
+          );
         }
       }
+    }));
+
+    if (!mounted) return;
+    setState(() => _isFetchingMore = false);
+
+    // Sections requested while this batch was running (scrolling) go next.
+    if (_pendingSections.isNotEmpty) {
+      _processQueue();
+      return;
     }
 
-    if (mounted) {
-      // Only cache valid results; do not persist error states
-      final hasError = _mainData != null && _mainData!.containsKey("error");
+    {
+      // Only cache once every section loaded cleanly; never persist error
+      // placeholders, or a one-off failure keeps showing until the cache expires.
+      final hasError = _sectionHasError(_mainData) ||
+          _sectionHasError(_keyPointsData) ||
+          _sectionHasError(_runwayData) ||
+          _sectionHasError(_burnData) ||
+          _sectionHasError(_staffingData) ||
+          _sectionHasError(_expenseData) ||
+          _sectionHasError(_subscriptionData);
       if (!hasError && _mainData != null) {
         final uiState = {
           "main": _mainData,
@@ -350,8 +354,6 @@ class _AiScreenState extends State<AiScreen>
         await AiCacheService.saveSectionCache('full_ui_state', [uiState]);
         await AiCacheService.updateSyncTimestamp();
       }
-      
-      setState(() => _isFetchingMore = false);
     }
   }
 
@@ -381,6 +383,36 @@ class _AiScreenState extends State<AiScreen>
       await Future.delayed(Duration(seconds: 2 * attempt));
     }
     throw Exception('Request failed after $maxAttempts attempts');
+  }
+
+  Map<String, dynamic>? _dataFor(String sectionKey) => switch (sectionKey) {
+    'main' => _mainData,
+    'keyPoints' => _keyPointsData,
+    'runway' => _runwayData,
+    'burn' => _burnData,
+    'staffing' => _staffingData,
+    'expense' => _expenseData,
+    'subscription' => _subscriptionData,
+    _ => null,
+  };
+
+  /// True if a section is missing or holds an error placeholder from
+  /// [_applySectionError].
+  bool _sectionHasError(Map<String, dynamic>? data) {
+    if (data == null) return true;
+    if (data.containsKey('error')) return true;
+    final items = data['items'];
+    if (items is List &&
+        items.any((i) => i is Map && i['title'] == 'Connection Error')) {
+      return true;
+    }
+    final bullets = data['bullet_points'];
+    if (bullets is List &&
+        bullets.any((b) => b is String && b.startsWith('Connection Error'))) {
+      return true;
+    }
+    final insight = data['insight'];
+    return insight is String && insight.startsWith('Connection Error');
   }
 
   /// Applies a per-section error fallback so the UI shows friendly content
@@ -442,13 +474,22 @@ class _AiScreenState extends State<AiScreen>
       'expense',
       'subscription',
     ];
+    // Only the above-the-fold sections start loaded; the rest are requested
+    // by _loadSection as the user scrolls (previously all were "true", so
+    // lazy loading never happened and every refresh made 7 LLM calls).
+    const eager = {'main', 'keyPoints'};
     for (final section in sections) {
-      _sectionLoadStates[section] = true;
+      _sectionLoadStates[section] = eager.contains(section);
     }
   }
 
   void _loadSection(String sectionKey) {
     if (_sectionLoadStates[sectionKey]! || _cachedPayload == null) return;
+    // Already have content for this section (e.g. restored from cache).
+    if (_dataFor(sectionKey) != null) {
+      setState(() => _sectionLoadStates[sectionKey] = true);
+      return;
+    }
     setState(() {
       _sectionLoadStates[sectionKey] = true;
     });

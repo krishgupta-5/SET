@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../services/financial_calculator.dart';
 import '../../../theme/app_theme.dart';
-import '../../../utils/expense_expansion_helper.dart';
 import '../../../shared/widgets/custom_back_button.dart';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -79,7 +78,6 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
 
   Future<void> _loadData() async {
     setState(() => isLoading = true);
-    await _fetchAllExpenses();
     await _fetchRunwayData();
   }
 
@@ -95,92 +93,47 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
         return;
       }
 
-      final docSnapshot = await FirebaseFirestore.instance
-          .collection("companies")
-          .doc(user.uid)
-          .get();
+      // Same snapshot the dashboard uses, so runway matches everywhere.
+      final s = await FinancialCalculator.load(user.uid);
+      if (!mounted) return;
+      allExpenses = s.expenses;
+      final zeroStr =
+          '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0';
 
-      if (docSnapshot.exists && docSnapshot.data() != null) {
-        final data = docSnapshot.data()!;
-
-        final runwayFromFirebase = data["Runway"]?.toString() ?? "0";
-        final funding = data["Funding"] ?? data["funding"] ?? data["FUNDING"];
-        final runwayAmount =
-            double.tryParse(runwayFromFirebase.toString()) ?? 0;
-        final fundingAmount = double.tryParse(funding?.toString() ?? "0") ?? 0;
-
-        final now = DateTime.now();
-        final realTotalExpenses = allExpenses.fold<double>(0.0, (t, e) {
-          final dt = e['date'];
-          if (dt is Timestamp && dt.toDate().isAfter(now)) {
-            return t;
-          } else if (dt is DateTime && dt.isAfter(now)) {
-            return t;
-          }
-          return t + _toDouble(e['amount']);
-        });
-
-        final availableBalance = fundingAmount - realTotalExpenses;
-
-        double currentMonthBurnAmount = 0.0;
-        for (final e in allExpenses) {
-          final rawDate = e['date'];
-          DateTime? dt;
-          if (rawDate is Timestamp) {
-            dt = rawDate.toDate();
-          } else if (rawDate is DateTime) {
-            dt = rawDate;
-          }
-          if (dt != null && dt.month == now.month && dt.year == now.year) {
-            currentMonthBurnAmount += _toDouble(e['amount']);
-          }
-        }
-
-        double actualMonthlyBurn = currentMonthBurnAmount;
-
-        if (actualMonthlyBurn == 0 && allExpenses.isNotEmpty) {
-          actualMonthlyBurn = _calculateAverageMonthlyBurn();
-        }
-
-        if (actualMonthlyBurn == 0 || availableBalance <= 0) {
-          setState(() {
-            runwayMonths = availableBalance <= 0 ? 0.0 : runwayAmount;
-            currentBalance = _formatCurrency(
-              availableBalance < 0 ? 0 : availableBalance,
-            );
-            monthlyBurn =
-                '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0';
-            netBurn =
-                '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0';
-            zeroCashDate = availableBalance <= 0
-                ? (fundingAmount == 0 ? 'Awaiting funding' : 'Funds depleted')
-                : 'Add expenses to track';
-            monthlyProjections = [];
-            isLoading = false;
-          });
-          return;
-        }
-
-        final calculatedZeroCashDate = _calculateZeroCashDate(
-          availableBalance / actualMonthlyBurn,
-        );
-        final projections = _generateMonthlyProjections(
-          availableBalance,
-          actualMonthlyBurn,
-        );
-
+      if (s.monthlyBurn <= 0 || s.availableFunds <= 0) {
         setState(() {
-          runwayMonths = availableBalance / actualMonthlyBurn;
-          currentBalance = _formatCurrency(availableBalance);
-          monthlyBurn = _formatCurrency(actualMonthlyBurn);
-          netBurn = _formatCurrency(realTotalExpenses);
-          zeroCashDate = calculatedZeroCashDate;
-          monthlyProjections = projections;
+          runwayMonths = 0.0;
+          currentBalance = _formatCurrency(
+            s.availableFunds < 0 ? 0 : s.availableFunds,
+          );
+          monthlyBurn = s.monthlyBurn > 0
+              ? _formatCurrency(s.monthlyBurn)
+              : zeroStr;
+          netBurn = s.monthlyBurn > 0 ? _formatCurrency(s.netBurn) : zeroStr;
+          zeroCashDate = s.availableFunds <= 0
+              ? (s.funding == 0 ? 'Awaiting funding' : 'Funds depleted')
+              : 'Add expenses to track';
+          monthlyProjections = [];
           isLoading = false;
         });
-      } else {
-        _setEmptyState();
+        return;
       }
+
+      final profitable = s.netBurn <= 0;
+      setState(() {
+        runwayMonths = s.runwayMonths;
+        currentBalance = _formatCurrency(s.availableFunds);
+        monthlyBurn = _formatCurrency(s.monthlyBurn);
+        // Net burn = this month's gross burn minus this month's revenue.
+        netBurn = _formatCurrency(s.netBurn);
+        zeroCashDate = profitable
+            ? 'Profitable'
+            : _calculateZeroCashDate(s.runwayMonths);
+        monthlyProjections = profitable
+            ? []
+            : _generateMonthlyProjections(s.availableFunds, s.netBurn);
+        isLoading = false;
+      });
     } catch (e) {
       debugPrint("Error fetching runway: $e");
       _setEmptyState();
@@ -198,77 +151,6 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
       monthlyProjections = [];
       isLoading = false;
     });
-  }
-
-  Future<void> _fetchAllExpenses() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
-
-      final expensesSnapshot = await FirebaseFirestore.instance
-          .collection('expenses')
-          .where('uid', isEqualTo: user.uid)
-          .get();
-
-      final mappedExpenses = expensesSnapshot.docs.map((doc) {
-        final data = doc.data();
-        return {...data, 'id': doc.id};
-      }).toList();
-
-      final now = DateTime.now();
-      final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
-      final expandedPast = ExpenseExpansionHelper.expandExpenses(
-        mappedExpenses,
-        maxDate: endOfMonth,
-        allowFuture: true,
-      );
-
-      allExpenses = expandedPast.where((data) => data['isFunding'] != true).map(
-        (data) {
-          final amountVal = data['Amount'] ?? data['amount'];
-          final amount = amountVal is num
-              ? amountVal.toDouble()
-              : double.tryParse(amountVal?.toString() ?? '0') ?? 0.0;
-          return {
-            'id': data['id'] ?? data['expenseId'] ?? '',
-            'title': data['Title'] ?? 'Unnamed Expense',
-            'amount': amount,
-            'category': data['Category'] ?? 'General',
-            'date': data['Date'] ?? data['date'],
-            'description': data['Description'] ?? '',
-            'type': data['Type'] ?? 'one_time',
-            'recurrenceFrequency':
-                data['recurrenceFrequency'] ??
-                data['loanRateType'] ??
-                'monthly',
-            'recurringTenureMonths':
-                data['recurringTenureMonths'] ?? data['loanTenureMonths'],
-          };
-        },
-      ).toList();
-    } catch (e) {
-      debugPrint("Error fetching expenses: $e");
-    }
-  }
-
-  double _calculateAverageMonthlyBurn() {
-    if (allExpenses.isEmpty) return 0;
-    Map<String, double> monthlyTotals = {};
-
-    for (var expense in allExpenses) {
-      final expenseDate = expense['date'] as Timestamp?;
-      if (expenseDate != null) {
-        final expenseDateTime = expenseDate.toDate();
-        final monthKey =
-            "${expenseDateTime.year}-${expenseDateTime.month.toString().padLeft(2, '0')}";
-        monthlyTotals[monthKey] =
-            (monthlyTotals[monthKey] ?? 0) + _toDouble(expense['amount']);
-      }
-    }
-
-    if (monthlyTotals.isEmpty) return 0;
-    double total = monthlyTotals.values.fold(0, (acc, item) => acc + item);
-    return total / monthlyTotals.length;
   }
 
   String _calculateZeroCashDate(double calculatedRunwayMonths) {
@@ -585,7 +467,9 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
                 child: Text(
                   isLoading
                       ? "--"
-                      : (runwayMonths?.toStringAsFixed(1) ?? "0.0"),
+                      : ((runwayMonths ?? 0) >= kProfitableRunwayMonths
+                            ? "∞"
+                            : (runwayMonths?.toStringAsFixed(1) ?? "0.0")),
                   style: TextStyle(
                     fontFamily: 'Satoshi',
                     color: context.textPrimary,
@@ -719,6 +603,17 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 16),
+        _buildMetricCard(
+          "Net Burn (after revenue)",
+          isLoading
+              ? '--'
+              : (netBurn ??
+                    '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0'),
+          HugeIcons.strokeRoundedFire,
+          const Color(0xFFEF4444),
+          isDark,
         ),
       ],
     );

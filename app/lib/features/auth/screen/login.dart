@@ -6,7 +6,6 @@ import 'package:startup_expense_tracker/features/auth/screen/signup.dart';
 import 'package:startup_expense_tracker/features/auth/screen/forget_password.dart';
 import 'package:startup_expense_tracker/features/auth/services/google_sign_in_service.dart';
 import 'package:startup_expense_tracker/features/company-setup/screen/company_setup_screen.dart';
-import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/shared/utils/error_handler.dart';
 import '../../../theme/app_theme.dart';
 
@@ -98,9 +97,6 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      AIService.syncAICollections().catchError((e) {
-        debugPrint('Failed to sync AI data after login: $e');
-      });
     } on FirebaseAuthException catch (e) {
       // If wrong credentials, check if account exists with a different provider
       if (e.code == 'wrong-password' ||
@@ -505,9 +501,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     'updatedAt': FieldValue.serverTimestamp(),
                   }, SetOptions(merge: true));
 
-              AIService.syncAICollections().catchError((e) {
-                debugPrint('Failed to sync AI data after Google sign-up: $e');
-              });
 
               if (mounted) {
                 ErrorHandler.handleSuccess(
@@ -521,9 +514,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 );
               }
             } else {
-              AIService.syncAICollections().catchError((e) {
-                debugPrint('Failed to sync AI data after Google sign-in: $e');
-              });
 
               if (mounted) {
                 ErrorHandler.handleSuccess(

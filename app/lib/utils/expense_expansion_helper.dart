@@ -9,9 +9,10 @@ class ExpenseExpansionHelper {
     List<Map<String, dynamic>> rawExpenses, {
     DateTime? maxDate,
     bool allowFuture = false,
+    DateTime? now,
   }) {
     final List<Map<String, dynamic>> expanded = [];
-    final now = DateTime.now();
+    now ??= DateTime.now();
     final limitDate = maxDate ?? now;
     final actualLimit = allowFuture
         ? limitDate
@@ -53,7 +54,10 @@ class ExpenseExpansionHelper {
       final frequency = (expense['recurrenceFrequency'] ?? 'monthly')
           .toString()
           .toLowerCase();
-      final tenureMonths = expense['recurringTenureMonths'] as int?;
+      // EMI repayment rows written before the fix only carry loanTenureMonths.
+      final rawTenure =
+          expense['recurringTenureMonths'] ?? expense['loanTenureMonths'];
+      final tenureMonths = rawTenure is num ? rawTenure.toInt() : null;
 
       DateTime? endDate;
       if (tenureMonths != null) {
@@ -74,6 +78,10 @@ class ExpenseExpansionHelper {
           : actualLimit;
 
       final originalId = expense['id'] ?? expense['expenseId'] ?? '';
+      final skipped = <int>{
+        for (final v in (expense['skippedOccurrences'] as List?) ?? const [])
+          if (v is num) v.toInt(),
+      };
 
       int index = 0;
       while (true) {
@@ -139,6 +147,16 @@ class ExpenseExpansionHelper {
         // Stop if the occurrence date exceeds our upperLimit
         if (occurrenceDate.isAfter(upperLimit)) {
           break;
+        }
+        // Tenure end is exclusive: a 3-month tenure yields exactly 3 charges.
+        if (endDate != null && !occurrenceDate.isBefore(endDate)) {
+          break;
+        }
+
+        // Occurrences deleted individually are recorded on the template.
+        if (skipped.contains(index)) {
+          index++;
+          continue;
         }
 
         // Create the virtual occurrence

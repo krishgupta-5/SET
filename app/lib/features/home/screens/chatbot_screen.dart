@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 import 'package:startup_expense_tracker/services/chat_service.dart';
 import 'package:startup_expense_tracker/services/ai_context_manager.dart';
+import 'package:startup_expense_tracker/services/ai_cache_service.dart';
 
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'dart:convert';
@@ -25,7 +26,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   List<Map<String, dynamic>> _chatMessages = [];
   late SharedPreferences _prefs;
-  static const String _chatHistoryKey = 'ai_cfo_chat_history';
+  // Scoped per user so a shared device never shows another account's chat.
+  final String _chatHistoryKey = AiCacheService.chatHistoryKey();
 
   @override
   void initState() {
@@ -35,12 +37,26 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   Future<void> _loadChatHistory() async {
     _prefs = await SharedPreferences.getInstance();
+    // Drop the pre-fix shared key so one account's chat never shows in another.
+    await _prefs.remove(AiCacheService.legacyChatHistoryKey);
     final String? storedHistory = _prefs.getString(_chatHistoryKey);
-    
+
+    List<Map<String, dynamic>>? restored;
     if (storedHistory != null) {
-      final List<dynamic> decoded = jsonDecode(storedHistory);
+      try {
+        restored = (jsonDecode(storedHistory) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .where((m) => (m['text'] ?? '').toString().trim().isNotEmpty)
+            .toList();
+      } catch (_) {
+        restored = null; // corrupted history → start fresh
+      }
+    }
+    if (!mounted) return;
+
+    if (restored != null && restored.isNotEmpty) {
       setState(() {
-        _chatMessages = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        _chatMessages = restored!;
         _isLoadingHistory = false;
       });
     } else {
@@ -120,13 +136,24 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         });
         _scrollToBottom();
       }
+      if ((_chatMessages.last['text'] as String).trim().isEmpty) {
+        throw const ChatException("The AI didn't return an answer. Please try again.");
+      }
       _saveChatHistory();
     } catch (e) {
       if (!mounted) return;
+      debugPrint('Chat error: $e');
       setState(() {
+        // Drop the partial/empty AI bubble so a cut-off answer isn't saved
+        // to history or sent back to the model as context.
+        if (_chatMessages.isNotEmpty && _chatMessages.last['role'] == 'ai') {
+          _chatMessages.removeLast();
+        }
         _chatMessages.add({
-          'role': 'error', 
-          'text': 'Oops! Something went wrong. \n\n${e.toString()}',
+          'role': 'error',
+          'text': e is ChatException
+              ? e.message
+              : 'Something went wrong. Please try again.',
           'originalText': text, // Store to allow retry
         });
       });

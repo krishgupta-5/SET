@@ -1,8 +1,11 @@
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-import pandas as pd
 import time
-import signal
+from datetime import datetime
+from .metrics_service import to_datetime
+
+# Hard ceiling per collection; well above realistic startup volumes.
+MAX_DOCS = 5000
 
 _firestore_available = None
 
@@ -27,7 +30,9 @@ def _safe_query(query_ref, label: str):
         import concurrent.futures
         
         def _run_query():
-            return [doc.to_dict() for doc in query_ref.stream()]
+            # Keep the doc id: salary payments reference members by id, and
+            # expenses reference teams by id.
+            return [{**(doc.to_dict() or {}), "id": doc.id} for doc in query_ref.stream()]
         
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = executor.submit(_run_query)
@@ -62,36 +67,34 @@ def fetch_user_data(uid: str):
     # Use FieldFilter for all queries (avoids deprecation warning)
     uid_filter = FieldFilter('uid', '==', uid)
     
-    # Expenses (last 100) — query WITHOUT order_by to avoid needing composite index
-    # We'll sort in Python after fetching
+    # All expenses: totals and runway are wrong if we only read a slice.
+    # (An arbitrary .limit(100) without ordering used to drop random rows.)
     expenses = _safe_query(
-        db.collection('expenses').where(filter=uid_filter).limit(100),
+        db.collection('expenses').where(filter=uid_filter).limit(MAX_DOCS),
         "expenses"
     )
-    # Sort by Date in Python (descending) if Date field exists
-    if expenses:
-        try:
-            expenses.sort(key=lambda x: x.get('Date', ''), reverse=True)
-        except Exception:
-            pass  # If dates aren't sortable, keep original order
-    
-    # Revenue (last 100) — same approach, no order_by
+    expenses.sort(key=lambda x: to_datetime(x.get('Date')) or datetime.min, reverse=True)
+
     revenue = _safe_query(
-        db.collection('revenue').where(filter=uid_filter).limit(100),
+        db.collection('revenue').where(filter=uid_filter).limit(MAX_DOCS),
         "revenue"
     )
-    if revenue:
-        try:
-            revenue.sort(key=lambda x: x.get('Date', ''), reverse=True)
-        except Exception:
-            pass
-    
-    # Companies
-    companies = _safe_query(
-        db.collection('companies').where(filter=uid_filter).limit(1),
-        "companies"
-    )
-    company = companies[0] if companies else {}
+    revenue.sort(key=lambda x: to_datetime(x.get('Date')) or datetime.min, reverse=True)
+
+    # Company doc id == uid (see company_setup_screen.dart); fall back to a query.
+    company = {}
+    try:
+        snap = db.collection('companies').document(uid).get(timeout=15)
+        if snap.exists:
+            company = {**(snap.to_dict() or {}), "id": snap.id}
+    except Exception as e:
+        print(f"  ⚠️ [FIRESTORE] company doc read failed: {type(e).__name__}")
+    if not company:
+        companies = _safe_query(
+            db.collection('companies').where(filter=uid_filter).limit(1),
+            "companies"
+        )
+        company = companies[0] if companies else {}
     
     # Members
     members = _safe_query(

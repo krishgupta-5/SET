@@ -7,6 +7,15 @@ import concurrent.futures
 
 security = HTTPBearer(auto_error=False)
 
+
+def _dev_mode() -> bool:
+    """Unverified-token fallback is opt-in only (DEBUG_MODE=true, local dev).
+
+    It used to default to true, which let anyone call the API as any user
+    with no token or a forged one.
+    """
+    return os.getenv("DEBUG_MODE", "false").strip().lower() == "true"
+
 _firebase_initialized = False
 _firebase_available = False
 
@@ -88,10 +97,9 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
         token = authorization.split("Bearer ")[1]
 
     if not token:
-        if os.getenv("DEBUG_MODE", "true").lower() == "true":
-            print(f"🔓 [AUTH] Dev mode: No token provided, using fallback dev-user-id")
+        if _dev_mode():
+            print("🔓 [AUTH] Dev mode: No token provided, using fallback dev-user-id")
             return "dev-user-id"
-        print(f"🔑 [AUTH] No token provided!")
         raise HTTPException(status_code=401, detail="No authentication token provided.")
 
     # print(f"🔑 [AUTH] Token received (first 20 chars): {token[:20]}...") # Removed for security
@@ -108,15 +116,18 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
             print(f"🔑 [AUTH] Firebase verified UID: {uid}")
             return uid
         except concurrent.futures.TimeoutError:
-            print(f"🔑 [AUTH] Firebase verification TIMED OUT — falling through to dev mode")
+            print("🔑 [AUTH] Firebase verification timed out")
+            if not _dev_mode():
+                raise HTTPException(status_code=503, detail="Authentication service unavailable. Please retry.")
         except Exception as e:
-            print(f"🔑 [AUTH] Firebase verification failed: {type(e).__name__}: {e}")
-            pass  # Fall through to dev mode
+            print(f"🔑 [AUTH] Firebase verification failed: {type(e).__name__}")
+            if not _dev_mode():
+                raise HTTPException(status_code=401, detail="Invalid or expired authentication token.")
         finally:
             executor.shutdown(wait=False)
 
-    # Fallback to dev mode (enabled by default for local development)
-    if os.getenv("DEBUG_MODE", "true").lower() == "true":
+    # Unverified decoding — local development only (DEBUG_MODE=true).
+    if _dev_mode():
         try:
             import base64
             import json
@@ -135,7 +146,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
         except HTTPException:
             raise
         except Exception as e:
-            print(f"🔑 [AUTH] Dev mode also failed: {e}")
-            raise HTTPException(status_code=401, detail=f"Invalid authentication credentials: {e}")
+            print(f"🔑 [AUTH] Dev mode also failed: {type(e).__name__}")
+            raise HTTPException(status_code=401, detail="Invalid authentication credentials.")
     else:
         raise HTTPException(status_code=401, detail="Authentication failed and dev mode is disabled.")

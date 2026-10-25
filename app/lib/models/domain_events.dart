@@ -18,3 +18,10 @@ class ExpenseDeletedEvent extends FinancialEvent {
   final String expenseId;
   ExpenseDeletedEvent(this.expenseId);
 }
+
+/// Any other financial data changed (funding, members, teams, company,
+/// budgets, revenue). Emitted when live data changes so AI context refreshes.
+class FinancialDataChangedEvent extends FinancialEvent {
+  final String source;
+  FinancialDataChangedEvent(this.source);
+}

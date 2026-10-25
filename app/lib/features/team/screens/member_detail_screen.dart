@@ -2,9 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // NOTE: Ensure these files exist or comment them out if testing in isolation
 import 'edit_member_screen.dart';
@@ -16,6 +13,7 @@ import 'transaction_details_screen.dart';
 import '../../../widgets/avatar_widget.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../services/telegram_service.dart';
 import '../../../utils/data_helpers.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/expense_expansion_helper.dart';
@@ -34,8 +32,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   final bool _isLoadingCountry =
       false; // Start as false since we use sync method
 
-  // Cache for Telegram photos to avoid repeated fetching
-  static final Map<String, String> _telegramPhotoCache = {};
 
   @override
   void initState() {
@@ -1603,37 +1599,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     }
   }
 
-  // Telegram photo fetching methods with caching
-  Future<String> getTelegramImageUrl(String fileId) async {
-    // Check cache first
-    if (_telegramPhotoCache.containsKey(fileId)) {
-      return _telegramPhotoCache[fileId]!;
-    }
-
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      final res = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId",
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-      final imageUrl = "https://api.telegram.org/file/bot$botToken/$path";
-
-      // Cache the result
-      _telegramPhotoCache[fileId] = imageUrl;
-
-      return imageUrl;
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,31 +18,53 @@ class AiContextManager {
   static String get baseUrl =>
       dotenv.env['PROD_API_URL'] ?? "https://set-iamf.onrender.com";
 
-  /// Subscribes to domain events. Should be called once during app initialization.
+  bool _initialized = false;
+  Timer? _debounce;
+
+  /// Subscribes to domain events. Safe to call more than once.
   void initListeners() {
-    EventDispatcher().subscribe<FinancialEvent>((event) async {
-      debugPrint("AiContextManager received FinancialEvent. Invalidating context...");
-      
-      // 1. Invalidate backend context
-      await invalidate();
-      
-      // 2. Mark local data as changed in Firestore to bust frontend caches
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        try {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-            'lastDataUpdate': FieldValue.serverTimestamp(),
-          });
-          debugPrint("Updated lastDataUpdate timestamp for frontend cache invalidation.");
-        } catch (e) {
-          debugPrint("Failed to update lastDataUpdate: $e");
-          // If the doc doesn't exist or misses the field, use set with merge
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'lastDataUpdate': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-        }
-      }
+    if (_initialized) return;
+    _initialized = true;
+    EventDispatcher().subscribe<FinancialEvent>((event) {
+      // Coalesce bursts (a batch save fires several events / snapshots).
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(seconds: 2), _markDataChanged);
     });
+  }
+
+  /// Fingerprints of the last-seen live data per source; used by
+  /// [reportDataChanged] to ignore the first snapshot and no-op updates.
+  final Map<String, String> _fingerprints = {};
+
+  /// Call from live Firestore listeners with a cheap fingerprint of the data
+  /// (e.g. doc ids + update times). Triggers invalidation only on real change.
+  void reportDataChanged(String source, String fingerprint) {
+    final previous = _fingerprints[source];
+    _fingerprints[source] = fingerprint;
+    if (previous == null || previous == fingerprint) return;
+    EventDispatcher().dispatch(FinancialDataChangedEvent(source));
+  }
+
+  /// Clears tracked fingerprints (call on sign-out / account switch).
+  void reset() {
+    _fingerprints.clear();
+    _debounce?.cancel();
+  }
+
+  Future<void> _markDataChanged() async {
+    debugPrint("AiContextManager: financial data changed, invalidating AI context");
+    await invalidate();
+
+    // Bumps the timestamp the AI Insights cache checks against.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'lastDataUpdate': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint("Failed to update lastDataUpdate: $e");
+    }
   }
 
   /// Invalidates the AI business context on the backend.
@@ -53,13 +77,12 @@ class AiContextManager {
     if (token == null) return;
 
     try {
-      await http.post(
-        Uri.parse("$baseUrl/ai/context/invalidate"),
-        headers: {
-          "Authorization": "Bearer $token",
-        },
-      );
-      debugPrint("AI Context invalidated successfully.");
+      await http
+          .post(
+            Uri.parse("$baseUrl/ai/context/invalidate"),
+            headers: {"Authorization": "Bearer $token"},
+          )
+          .timeout(const Duration(seconds: 20));
     } catch (e) {
       debugPrint('Failed to invalidate AI context: $e');
     }

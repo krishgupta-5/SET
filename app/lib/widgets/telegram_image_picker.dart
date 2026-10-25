@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../services/telegram_service.dart';
 
 class TelegramImagePicker extends StatefulWidget {
   final String? existingFileId;
@@ -74,30 +75,8 @@ class _TelegramImagePickerState extends State<TelegramImagePicker> {
     }
   }
 
-  Future<String> getTelegramImageUrl(String fileId) async {
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      final res = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId",
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-
-      return "https://api.telegram.org/file/bot$botToken/$path";
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 
   // ✅ Upload image from file path (for auto-upload from scan)
   Future<void> _uploadImageFromPath(String filePath) async {

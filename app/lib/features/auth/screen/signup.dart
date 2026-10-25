@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:startup_expense_tracker/features/auth/services/google_sign_in_service.dart';
 import 'package:startup_expense_tracker/features/company-setup/screen/company_setup_screen.dart';
-import 'package:startup_expense_tracker/services/ai_service.dart';
 import 'package:startup_expense_tracker/shared/utils/error_handler.dart';
 
 import 'package:startup_expense_tracker/features/auth/auth_wrapper.dart';
@@ -266,9 +265,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        AIService.syncAICollections().catchError((e) {
-          debugPrint('Failed to sync AI data after signup: $e');
-        });
 
         if (mounted) {
           ErrorHandler.handleSuccess(
@@ -681,9 +677,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     'updatedAt': FieldValue.serverTimestamp(),
                   }, SetOptions(merge: true));
 
-              AIService.syncAICollections().catchError((e) {
-                debugPrint('Failed to sync AI data after Google sign-up: $e');
-              });
 
               if (mounted) {
                 ErrorHandler.handleSuccess(
@@ -698,9 +691,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               }
             } else {
               // Existing account — treat as login
-              AIService.syncAICollections().catchError((e) {
-                debugPrint('Failed to sync AI data after Google sign-in: $e');
-              });
 
               if (mounted) {
                 ErrorHandler.handleSuccess(

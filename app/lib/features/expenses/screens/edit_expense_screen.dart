@@ -563,23 +563,27 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       final double oldAmount = DataHelpers.safeParseDouble(
         widget.expenseData['Amount'],
       );
-      final double diff = newAmount - oldAmount;
+      final oldMemberId = widget.expenseData['ExpenseType'] == 'member'
+          ? widget.expenseData['TeamMemberId'] as String?
+          : null;
 
-      final expenseType = widget.expenseData['ExpenseType'] as String?;
-      final teamId = widget.expenseData['TeamId'] as String?;
-      final teamMemberId = widget.expenseData['TeamMemberId'] as String?;
-
-      if (diff != 0 && expenseType == 'member' && teamMemberId != null) {
+      // Validate against the member the expense will belong to after saving.
+      // If it stays on the same member, only the change in amount is new.
+      final targetMemberId =
+          _expenseType == 'member' ? _selectedTeamMember?.id : null;
+      if (targetMemberId != null) {
+        final addedToMember =
+            targetMemberId == oldMemberId ? newAmount - oldAmount : newAmount;
         final memberDoc = await FirebaseFirestore.instance
             .collection('members')
-            .doc(teamMemberId)
+            .doc(targetMemberId)
             .get();
-        if (memberDoc.exists) {
+        if (addedToMember > 0 && memberDoc.exists) {
           final data = memberDoc.data() as Map<String, dynamic>;
           final salary = (data['salary'] as num?)?.toDouble() ?? 0.0;
           final currentExpenses = (data['totalExpenses'] as num?)?.toDouble() ?? 0.0;
-          final newMemberExpenses = currentExpenses + diff;
-          if (newMemberExpenses > salary) {
+          final newMemberExpenses = currentExpenses + addedToMember;
+          if (salary > 0 && newMemberExpenses > salary) {
             if (mounted) {
               _showMinimalToast(
                 "Cannot update: Expense amount exceeds remaining salary for ${data['fullName'] ?? 'member'}",
@@ -595,20 +599,27 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       await ExpenseService().updateExpense(
         expenseId: widget.expenseId,
         companyId: companyId,
-        diff: diff,
         newAmount: newAmount,
         title: _titleController.text.trim(),
         description: _notesController.text.trim(),
         date: _selectedDate,
-        category: _selectedCategory,
+        // Same rule as the add flow, so a member expense keeps its category.
+        category: _expenseType == 'member' && _selectedTeamMember != null
+            ? 'salary'
+            : _selectedCategory,
         type: _selectedType,
         bankAccount: _selectedBankAccount,
         attachmentFileId: _attachmentFileId,
         expenseType: _expenseType,
-        teamId: _selectedTeam?.id,
-        teamName: _selectedTeam?.teamName,
-        teamMemberId: _selectedTeamMember?.id,
-        teamMemberName: _selectedTeamMember?.fullName,
+        // A member expense is attributed to the member only (matches add flow).
+        teamId: _expenseType == 'member'
+            ? _selectedTeamMember?.teamId
+            : _selectedTeam?.id,
+        teamName: _expenseType == 'member' ? null : _selectedTeam?.teamName,
+        teamMemberId:
+            _expenseType == 'member' ? _selectedTeamMember?.id : null,
+        teamMemberName:
+            _expenseType == 'member' ? _selectedTeamMember?.fullName : null,
         isRecurringOrSub: isRecurringOrSub,
         recurrenceFrequency: _recurrenceFrequency,
         recurringTenure: recurringTenure,
@@ -625,6 +636,11 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           e.message ?? 'Failed to update expense',
           isError: true,
         );
+      }
+    } catch (e) {
+      debugPrint('Failed to update expense: $e');
+      if (mounted) {
+        _showMinimalToast('Failed to update expense', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

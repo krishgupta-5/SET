@@ -12,8 +12,9 @@ import 'package:startup_expense_tracker/services/theme_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
-  await dotenv.load(fileName: ".env.local");
+  // Must run before any plugin/asset access (dotenv reads from the bundle).
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env.local");
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Initialize decoupled domain event listeners

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../services/telegram_service.dart';
 import '../../../theme/app_theme.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -30,8 +31,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   // Profile image variables
   String? _profileImageFileId;
 
-  // Cache for Telegram photos to avoid repeated fetching
-  static final Map<String, String> _telegramPhotoCache = {};
 
   // Country Code State
   String _selectedCountryCode = "+1";
@@ -171,38 +170,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<String> getTelegramImageUrl(String fileId) async {
-    if (_telegramPhotoCache.containsKey(fileId)) {
-      return _telegramPhotoCache[fileId]!;
-    }
-
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      final res = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=$fileId",
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      final path = data['result']['file_path'];
-
-      final imageUrl = "https://api.telegram.org/file/bot$botToken/$path";
-
-      _telegramPhotoCache[fileId] = imageUrl;
-
-      return imageUrl;
-    } catch (e) {
-      debugPrint('Error getting Telegram image URL: $e');
-      rethrow;
-    }
-  }
+  Future<String> getTelegramImageUrl(String fileId) =>
+      TelegramService.getImageUrl(fileId);
 
   Future<void> _handleSave() async {
     FocusScope.of(context).unfocus();

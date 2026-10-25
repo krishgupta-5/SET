@@ -488,29 +488,26 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
           final monthlyBudget =
               (tData['monthlyBudget'] as num?)?.toDouble() ?? 0.0;
 
-          final membersSnapshot = await FirebaseFirestore.instance
-              .collection('members')
-              .where('teamId', isEqualTo: _selectedTeam!.id)
-              .get();
-          double totalMonthlyCost = 0.0;
-          for (var doc in membersSnapshot.docs) {
-            final mData = doc.data();
-            totalMonthlyCost +=
-                (mData['monthlyCost'] as num?)?.toDouble() ?? 0.0;
-          }
-
-          if (monthlyBudget > 0 && totalMonthlyCost + amount > monthlyBudget) {
-            if (!mounted) return;
-            ErrorPopup.show(
-              context: context,
-              title: "Exceeds Team Budget",
-              message:
-                  "This expense exceeds the monthly budget for ${_selectedTeam!.teamName}.\n\n"
-                  "Monthly Budget: ${CurrencyFormatter.formatByCountry(monthlyBudget, currencyCode)}\n"
-                  "Total Monthly Cost: ${CurrencyFormatter.formatByCountry(totalMonthlyCost, currencyCode)}\n"
-                  "This expense: ${CurrencyFormatter.formatByCountry(amount, currencyCode)}",
-              type: ErrorType.warning,
+          if (monthlyBudget > 0) {
+            // This month's payroll + expenses already tagged to the team,
+            // same definition the Monthly Burn screen uses.
+            final spentThisMonth = await ExpenseService().teamSpendThisMonth(
+              uid: user.uid,
+              teamId: _selectedTeam!.id,
             );
+            if (spentThisMonth + amount > monthlyBudget) {
+              if (!mounted) return;
+              ErrorPopup.show(
+                context: context,
+                title: "Exceeds Team Budget",
+                message:
+                    "This expense exceeds the monthly budget for ${_selectedTeam!.teamName}.\n\n"
+                    "Monthly Budget: ${CurrencyFormatter.formatByCountry(monthlyBudget, currencyCode)}\n"
+                    "Spent this month: ${CurrencyFormatter.formatByCountry(spentThisMonth, currencyCode)}\n"
+                    "This expense: ${CurrencyFormatter.formatByCountry(amount, currencyCode)}",
+                type: ErrorType.warning,
+              );
+            }
           }
         }
       }
@@ -592,26 +589,12 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
 
       if (budget <= 0) return true; // No budget set → proceed silently
 
-      final now = DateTime.now();
-      final startOfMonth = DateTime(now.year, now.month, 1);
-      final expensesSnapshot = await FirebaseFirestore.instance
-          .collection('expenses')
-          .where('uid', isEqualTo: userId)
-          .where(
-            'Date',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth),
-          )
-          .get();
-
-      double currentSpending = 0.0;
-      for (final doc in expensesSnapshot.docs) {
-        final data = doc.data();
-        if (data['isFunding'] == true) continue;
-        final cat = (data['Category'] as String?)?.toLowerCase().trim() ?? '';
-        if (cat == _selectedCategory.toLowerCase().trim()) {
-          currentSpending += (data['Amount'] as num?)?.toDouble() ?? 0.0;
-        }
-      }
+      // Query on uid only (no composite index needed); filters and expands
+      // recurring charges in Dart so this matches the budget screen.
+      final currentSpending = await ExpenseService().categorySpendThisMonth(
+        uid: userId,
+        category: _selectedCategory,
+      );
 
       final projectedTotal = currentSpending + newAmount;
       if (projectedTotal <= budget) return true; // Still within budget

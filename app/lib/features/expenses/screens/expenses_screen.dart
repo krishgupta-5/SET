@@ -136,38 +136,16 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           .snapshots()
           .listen((expensesSnapshot) {
             if (mounted) {
-              final rawList = expensesSnapshot.docs.map((doc) {
-                final data = doc.data();
-                return {...data, 'id': doc.id};
-              }).toList();
-
-              final expanded = ExpenseExpansionHelper.expandExpenses(
-                rawList,
-                maxDate: DateTime.now(),
+              final s = FinancialCalculator.compute(
+                funding: _totalFunding,
+                rawExpenses: FinancialCalculator.docsToMaps(
+                  expensesSnapshot.docs,
+                ),
               );
-
-              double totalRealSpent = 0.0;
-              List<Map<String, dynamic>> expenses = [];
-              for (final data in expanded) {
-                if (data['isFunding'] != true) {
-                  final amt = DataHelpers.safeParseDouble(
-                    data['Amount'] ?? data['amount'],
-                  );
-                  totalRealSpent += amt;
-                  expenses.add({
-                    ...data,
-                    'amount': amt,
-                    'date': data['Date'] ?? data['date'],
-                    'type': data['Type'] ?? data['type'] ?? 'one_time',
-                  });
-                }
-              }
-
-              final rollingMonthlyBurn =
-                  FinancialCalculator.rollingAverageMonthlyBurn(expenses);
               setState(() {
-                _totalExpenses = totalRealSpent;
-                _avgDaily = rollingMonthlyBurn / 30;
+                _totalExpenses = s.totalSpent;
+                // Matches the "30-day rolling avg" label shown in the UI.
+                _avgDaily = s.last30DaysSpend / 30;
                 _isLoading = false;
               });
             }
