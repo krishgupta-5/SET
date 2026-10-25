@@ -69,3 +69,4 @@ backend/*firebase-adminsdk*.json
 # Android Gradle generated files
 **/.gradle/
 **/build/
+/.kiro
