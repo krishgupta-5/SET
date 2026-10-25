@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -11,7 +11,9 @@ import '../../../../services/currency_formatter.dart';
 import '../../../../services/currency_preference_service.dart';
 import '../../../../services/bank_account_service.dart';
 import '../../../../utils/expense_expansion_helper.dart';
-import '../../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class PaymentHistoryScreen extends StatefulWidget {
   final DateTime joiningDate;
@@ -252,502 +254,269 @@ class _PaymentHistoryScreenState extends State<PaymentHistoryScreen> {
     } catch (e) {
       _showMessage("Error generating payment history: $e");
     } finally {
-      setState(() => _isDownloading = false);
+      if (mounted) setState(() => _isDownloading = false);
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.appBackground,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        backgroundColor: context.textPrimary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
+  void _showMessage(String message) => showRxToast(context, message);
+
+  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
     final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: Stack(
-        children: [
-          AnnotatedRegion<SystemUiOverlayStyle>(
-            value: context.isDarkMode
-                ? SystemUiOverlayStyle.light
-                : SystemUiOverlayStyle.dark,
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  // 1. Header
-                  _buildHeader(context),
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              RxTopBar(
+                title: 'Payments',
+                trailing: RxCircleButton(
+                  icon: HugeIcons.strokeRoundedDownload04,
+                  semanticLabel: 'Export as PDF',
+                  onTap: _isDownloading ? null : _downloadPaymentHistory,
+                ),
+              ),
+              if (_isDownloading)
+                LinearProgressIndicator(
+                  minHeight: 2,
+                  color: rx.textPrimary,
+                  backgroundColor: Colors.transparent,
+                ),
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('expenses')
+                      .where('uid', isEqualTo: currentUser?.uid)
+                      .where('memberId', isEqualTo: widget.memberId)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                        children: const [
+                          RxSkeleton(height: 92, radius: 22),
+                          SizedBox(height: 24),
+                          RxSkeleton(height: 220, radius: 22),
+                        ],
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: RxEmptyState(
+                          icon: HugeIcons.strokeRoundedAlert02,
+                          title: "Couldn't load payments",
+                          message: 'Go back and try again',
+                        ),
+                      );
+                    }
 
-                  // 2. Content with StreamBuilder
-                  Expanded(
-                    child: StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('expenses')
-                          .where('uid', isEqualTo: currentUser?.uid)
-                          // Fix #7: Filter server-side — avoids reading all expenses
-                          .where('memberId', isEqualTo: widget.memberId)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return Center(
-                            child: CircularProgressIndicator(
-                              color: context.textSecondary,
-                            ),
-                          );
-                        }
+                    final rawList = (snapshot.data?.docs ?? []).map((doc) {
+                      return {
+                        ...doc.data() as Map<String, dynamic>,
+                        'id': doc.id,
+                      };
+                    }).toList();
+                    final expanded = ExpenseExpansionHelper.expandExpenses(
+                      rawList,
+                      maxDate: DateTime.now(),
+                    );
 
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              "Error loading payment history.",
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: Colors.redAccent,
-                              ),
-                            ),
-                          );
-                        }
+                    double totalPaid = 0;
+                    final payments = <Map<String, dynamic>>[];
+                    for (final data in expanded) {
+                      final title = data['Title']?.toString() ?? '';
+                      final category = data['Category']?.toString() ?? '';
+                      final rawDate = data['Date'] ?? data['date'];
+                      final ts = rawDate is Timestamp ? rawDate : null;
+                      final amt = (data['Amount'] as num?)?.toDouble() ?? 0.0;
+                      totalPaid += amt;
+                      payments.add({
+                        "id": data['id'] ?? data['expenseId'] ?? '',
+                        "rawData": data,
+                        "rawDate": ts,
+                        "date": _formatDate(ts),
+                        "amt": _formatCurrency(amt),
+                        "method": _getBankAccountDisplay(data),
+                        "title": title.contains("Advance")
+                            ? "Advance Payout"
+                            : category.toLowerCase() == 'salary'
+                            ? "Salary Payout"
+                            : title,
+                      });
+                    }
+                    payments.sort((a, b) {
+                      final da = a["rawDate"] as Timestamp?;
+                      final db = b["rawDate"] as Timestamp?;
+                      if (da == null || db == null) return 0;
+                      return db.compareTo(da);
+                    });
 
-                        // Extract raw docs and expand recurring salary entries
-                        final allDocs = snapshot.data?.docs ?? [];
-                        final rawList = allDocs.map((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          return {...data, 'id': doc.id};
-                        }).toList();
+                    if (payments.isEmpty) {
+                      return Center(
+                        child: RxEmptyState(
+                          icon: HugeIcons.strokeRoundedMoneySend01,
+                          title: 'No payments yet',
+                          message:
+                              'Use Pay salary on ${widget.memberName}\'s profile to log the first one',
+                        ),
+                      );
+                    }
 
-                        // Expand recurring entries into individual occurrences
-                        final expanded = ExpenseExpansionHelper.expandExpenses(
-                          rawList,
-                          maxDate: DateTime.now(),
-                        );
-
-                        List<Map<String, dynamic>> memberPayments = [];
-                        double totalPaid = 0.0;
-
-                        for (var data in expanded) {
-                          final String title = data['Title']?.toString() ?? '';
-                          final String category =
-                              data['Category']?.toString() ?? '';
-                          final rawDate = data['Date'] ?? data['date'];
-                          final Timestamp? ts = rawDate is Timestamp
-                              ? rawDate
-                              : null;
-
-                          final double amt =
-                              (data['Amount'] as num?)?.toDouble() ?? 0.0;
-
-                          totalPaid += amt;
-                          memberPayments.add({
-                            "id": data['id'] ?? data['expenseId'] ?? '',
-                            "rawData": data,
-                            "rawDate": ts,
-                            "date": _formatDate(ts),
-                            "amt": _formatCurrency(amt),
-                            "status": "Completed",
-                            "title": title.contains("Advance")
-                                ? "Advance Payout"
-                                : category.toLowerCase() == 'salary'
-                                ? "Salary Payout"
-                                : title,
-                          });
-                        }
-
-                        // Sort newest first
-                        memberPayments.sort((a, b) {
-                          final Timestamp? dateA = a["rawDate"];
-                          final Timestamp? dateB = b["rawDate"];
-                          if (dateA == null || dateB == null) return 0;
-                          return dateB.compareTo(dateA);
-                        });
-
-                        return SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                    return ListView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        12,
+                        20,
+                        MediaQuery.paddingOf(context).bottom + 32,
+                      ),
+                      children: [
+                        RxReveal.index(
+                          0,
+                          child: _buildSummary(payments.length, totalPaid),
+                        ),
+                        const SizedBox(height: 28),
+                        RxReveal.index(
+                          1,
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start, // Align to left
                             children: [
-                              const SizedBox(height: 16),
-                              Text(
-                                "Payment History",
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textPrimary,
-                                  fontSize: 28, // Compact Hero
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -1.0,
+                              RxSectionHeader(title: widget.memberName),
+                              RxCard(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 4,
+                                ),
+                                child: Column(
+                                  children: [
+                                    for (
+                                      var i = 0;
+                                      i < payments.length;
+                                      i++
+                                    ) ...[
+                                      if (i > 0) const RxDivider(indent: 52),
+                                      _buildRow(payments[i]),
+                                    ],
+                                  ],
                                 ),
                               ),
-                              const SizedBox(height: 24),
-
-                              // --- SUMMARY CARD ---
-                              _buildSummaryCard(
-                                memberPayments.length,
-                                totalPaid,
-                              ),
-
-                              const SizedBox(height: 32),
-
-                              // --- PAYMENT LIST ---
-                              if (memberPayments.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 40),
-                                  child: Center(
-                                    child: Text(
-                                      "No payments processed yet.\nClick 'Pay Salary' to log the first payment.",
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontFamily: 'Satoshi',
-                                        color: context.textSecondary,
-                                        height: 1.5,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              else
-                                _buildPaymentList(memberPayments, context),
-
-                              const SizedBox(height: 40),
                             ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Loading Overlay
-          if (_isDownloading)
-            Container(
-              color: Colors.black.withValues(alpha: 0.6),
-              child: Center(
-                child: CircularProgressIndicator(color: context.textPrimary),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Export Button
-          GestureDetector(
-            onTap: _downloadPaymentHistory,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: context.textPrimary,
-                borderRadius: BorderRadius.circular(100),
-              ),
-              child: _isDownloading
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: context.appBackground,
-                      ),
-                    )
-                  : Row(
-                      children: [
-                        Icon(
-                          Icons.download,
-                          color: context.appBackground,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          "Export",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.appBackground,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryCard(int paymentCount, double totalPaid) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "TOTAL PAID (ALL TIME)",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _formatCurrency(totalPaid),
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 32,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -1,
-              fontFeatures: [
-                // Enable font features for better symbol support
-                const FontFeature.enable('liga'),
-                const FontFeature.enable('clig'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF30D158).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  paymentCount == 0
-                      ? "No payments yet"
-                      : "$paymentCount payment(s) completed",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: const Color(0xFF30D158),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
+                    );
+                  },
                 ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildPaymentList(
-    List<Map<String, dynamic>> payments,
-    BuildContext context,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle("ALL PAYMENTS"),
-        const SizedBox(height: 16),
-        Column(
-          children: payments.map((payment) {
-            bool isAdvance = payment['title'] == "Advance Payout";
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: GestureDetector(
-                onTap: () {
-                  // Navigate to the details screen
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => TransactionDetailsScreen(
-                        transactionId: payment['id'],
-                        transactionData: payment['rawData'],
-                        formattedDate: payment['date'],
-                        formattedAmount: payment['amt'],
-                        displayTitle: payment['title'],
-                      ),
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.cardBackground,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: context.borderColor),
-                    boxShadow: context.cardShadow,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: isAdvance
-                                  ? const Color(
-                                      0xFF5E5CE6,
-                                    ).withValues(alpha: 0.1)
-                                  : context.textPrimary.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              isAdvance
-                                  ? Icons.fast_forward
-                                  : Icons.arrow_outward,
-                              color: isAdvance
-                                  ? const Color(0xFF5E5CE6)
-                                  : context.textSecondary,
-                              size: 16,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                payment['title'],
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                payment['date'],
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textSecondary,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            payment['amt'],
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              fontFeatures: [
-                                // Enable font features for better symbol support
-                                const FontFeature.enable('liga'),
-                                const FontFeature.enable('clig'),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFF30D158,
-                              ).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              payment['status'],
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: const Color(0xFF30D158),
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
+  Widget _buildSummary(int count, double total) {
+    final rx = context.rx;
+    Widget half(String label, String value) => Expanded(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: RxText.label(context)),
+            const SizedBox(height: 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value, style: RxText.value(context, size: 20)),
+            ),
+          ],
         ),
-      ],
+      ),
+    );
+    return RxCard(
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            half('Total paid', _formatCurrency(total)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Container(width: 1, color: rx.hairline),
+            ),
+            half('Payments', '$count'),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Container(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
+  Widget _buildRow(Map<String, dynamic> p) {
+    final rx = context.rx;
+    final isAdvance = p['title'] == "Advance Payout";
+    final label = isAdvance
+        ? 'Advance'
+        : p['title'] == "Salary Payout"
+        ? 'Salary'
+        : p['title'] as String;
+    return RxPressable(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TransactionDetailsScreen(
+            transactionId: p['id'],
+            transactionData: p['rawData'],
+            formattedDate: p['date'],
+            formattedAmount: p['amt'],
+            displayTitle: p['title'],
+          ),
+        ),
+      ),
+      scale: 0.98,
+      semanticLabel: '$label, ${p['date']}, ${p['amt']}',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            RxIconTile(
+              icon: isAdvance
+                  ? HugeIcons.strokeRoundedFastWind
+                  : HugeIcons.strokeRoundedMoneySend01,
+              size: 40,
+              iconSize: 19,
+              background: isAdvance ? rx.warningSoft : rx.positiveSoft,
+              foreground: isAdvance ? rx.warning : rx.positive,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RxText.body(context),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${p['date']} · ${p['method']}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RxText.caption(context),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(p['amt'] as String, style: RxText.amount(context)),
+          ],
         ),
       ),
     );

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class SetPasswordScreen extends StatefulWidget {
   const SetPasswordScreen({super.key});
@@ -12,7 +14,6 @@ class SetPasswordScreen extends StatefulWidget {
 }
 
 class _SetPasswordScreenState extends State<SetPasswordScreen> {
-  final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
 
   bool _isLoading = false;
@@ -50,50 +51,16 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
     });
   }
 
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 4),
-        elevation: 0,
-      ),
-    );
-  }
+  void _showMinimalToast(String message, {bool isError = false}) =>
+      showRxToast(context, message, isError: isError);
 
   Future<void> _sendPasswordResetEmail() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) return;
+    if (_emailController.text.trim().isEmpty) {
+      _showMinimalToast('Email address is required', isError: true);
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -139,209 +106,103 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+    final email = _emailController.text;
+    final disabled = _isLoading || _cooldownSeconds > 0 || email.isEmpty;
+
     return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
+              const RxTopBar(title: 'Set password'),
               Expanded(
-                child: GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Form(
-                      key: _formKey,
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                  children: [
+                    RxReveal.index(
+                      0,
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          const RxEmptyArt(
+                            icon: HugeIcons.strokeRoundedMail01,
+                            scene: RxArtScene.mail,
+                          ),
                           const SizedBox(height: 16),
                           Text(
-                            "Set Password",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textPrimary,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -1.0,
-                            ),
+                            'We\'ll email you a secure link',
+                            textAlign: TextAlign.center,
+                            style: RxText.title(context).copyWith(fontSize: 22),
                           ),
-                          const SizedBox(height: 32),
+                          const SizedBox(height: 8),
                           Text(
-                            "We will send a secure link to your registered email address to set a password for your account.",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textSecondary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              height: 1.5,
-                            ),
+                            'Open it to set a password, so you can also sign in with email instead of Google.',
+                            textAlign: TextAlign.center,
+                            style: RxText.caption(
+                              context,
+                            ).copyWith(fontSize: 14, height: 1.45),
                           ),
-                          const SizedBox(height: 40),
-                          _buildSectionLabel("REGISTERED EMAIL ADDRESS"),
-                          _buildInputField(),
-                          const SizedBox(height: 100),
                         ],
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      1,
+                      child: RxCard(
+                        padding: const EdgeInsets.fromLTRB(14, 12, 16, 12),
+                        child: Row(
+                          children: [
+                            const RxIconTile(
+                              icon: HugeIcons.strokeRoundedMail01,
+                              size: 38,
+                              iconSize: 19,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Sent to',
+                                    style: RxText.caption(context),
+                                  ),
+                                  const SizedBox(height: 1),
+                                  Text(
+                                    email.isEmpty
+                                        ? 'No email on this account'
+                                        : email,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: RxText.body(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              _buildSubmitButton(),
+              RxBottomBar(
+                child: RxButton(
+                  label: _cooldownSeconds > 0
+                      ? 'Resend in ${_cooldownSeconds}s'
+                      : 'Send secure link',
+                  icon: _cooldownSeconds > 0
+                      ? null
+                      : HugeIcons.strokeRoundedSent,
+                  loading: _isLoading,
+                  onTap: disabled ? null : _sendPasswordResetEmail,
+                ),
+              ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputField() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: TextFormField(
-        controller: _emailController,
-        keyboardType: TextInputType.emailAddress,
-        textInputAction: TextInputAction.done,
-        readOnly: true,
-        canRequestFocus: false,
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textSecondary,
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-        ),
-        cursorColor: context.textPrimary,
-        decoration: InputDecoration(
-          hintText: "name@company.com",
-          hintStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-            fontSize: 15,
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          isDense: true,
-        ),
-        validator: (value) {
-          if (value == null || value.trim().isEmpty) {
-            return 'Email address is required';
-          }
-          return null;
-        },
-      ),
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    final bool isButtonDisabled =
-        _isLoading || _cooldownSeconds > 0 || _emailController.text.isEmpty;
-    final btnBg = context.isDarkMode ? Colors.white : Colors.black;
-    final btnText = context.isDarkMode ? Colors.black : Colors.white;
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: isButtonDisabled ? null : _sendPasswordResetEmail,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnBg,
-            foregroundColor: btnText,
-            disabledBackgroundColor: context.textTertiary,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          child: _isLoading
-              ? SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: btnText,
-                  ),
-                )
-              : Text(
-                  _cooldownSeconds > 0
-                      ? "Resend in ${_cooldownSeconds}s"
-                      : "Send Secure Link",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: isButtonDisabled ? context.textSecondary : btnText,
-                  ),
-                ),
         ),
       ),
     );

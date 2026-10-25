@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
@@ -306,9 +308,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
           children: [
             Icon(
               isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
+              color: isError ? context.rx.negative : context.rx.positive,
               size: 18,
             ),
             const SizedBox(width: 12),
@@ -316,7 +316,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
               child: Text(
                 message,
                 style: TextStyle(
-                  fontFamily: 'Satoshi',
+                  fontFamily: 'Geist',
                   color: context.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -365,10 +365,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
             body: Center(
               child: Text(
                 'Error loading expense details',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: Colors.redAccent,
-                ),
+                style: TextStyle(fontFamily: 'Geist', color: Colors.redAccent),
               ),
             ),
           );
@@ -381,7 +378,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
               child: Text(
                 'Expense not found',
                 style: TextStyle(
-                  fontFamily: 'Satoshi',
+                  fontFamily: 'Geist',
                   color: context.textSecondary,
                 ),
               ),
@@ -525,7 +522,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                       Text(
                         "Expense Details",
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textPrimary,
                           fontSize: 28,
                           fontWeight: FontWeight.w700,
@@ -554,7 +551,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                                         _userCountryCode,
                                       ),
                                 style: TextStyle(
-                                  fontFamily: 'Satoshi',
+                                  fontFamily: 'Geist',
                                   color: context.textPrimary,
                                   fontSize: 48,
                                   fontWeight: FontWeight.w600,
@@ -566,7 +563,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                             Text(
                               title,
                               style: TextStyle(
-                                fontFamily: 'Satoshi',
+                                fontFamily: 'Geist',
                                 color: context.textSecondary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
@@ -610,30 +607,33 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
 
                       const SizedBox(height: 32),
 
-                      // --- NOTES SECTION ---
-                      _buildSectionLabel("NOTES"),
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: context.cardBackground,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: context.borderColor),
-                          boxShadow: context.cardShadow,
-                        ),
-                        child: Text(
-                          notes,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textPrimary,
-                            fontSize: 15,
-                            height: 1.5,
+                      // --- NOTES SECTION (only when there are notes) ---
+                      if (notes.toString().trim().isNotEmpty &&
+                          notes != 'No notes provided.') ...[
+                        _buildSectionLabel("NOTES"),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: context.cardBackground,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: context.borderColor),
+                            boxShadow: context.cardShadow,
+                          ),
+                          child: Text(
+                            notes,
+                            style: TextStyle(
+                              fontFamily: 'Geist',
+                              color: context.textPrimary,
+                              fontSize: 15,
+                              height: 1.5,
+                            ),
                           ),
                         ),
-                      ),
 
-                      const SizedBox(height: 32),
+                        const SizedBox(height: 32),
+                      ],
 
                       // --- ATTACHMENT SECTION ---
                       _buildSectionLabel("ATTACHMENT"),
@@ -899,12 +899,12 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFF453A).withValues(alpha: 0.1),
+                        color: context.rx.negative.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.warning_amber_rounded,
-                        color: Color(0xFFFF453A),
+                        color: context.rx.negative,
                         size: 24,
                       ),
                     ),
@@ -913,7 +913,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                       child: Text(
                         "Delete Expense?",
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -928,7 +928,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 Text(
                   "This will permanently delete this expense record and reverse it from your total company expenses. This action cannot be undone.",
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textSecondary,
                     fontSize: 14,
                     height: 1.5,
@@ -952,7 +952,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                           child: Text(
                             "Cancel",
                             style: TextStyle(
-                              fontFamily: 'Satoshi',
+                              fontFamily: 'Geist',
                               color: context.textPrimary,
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -971,14 +971,14 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFF453A),
+                            color: context.rx.negative,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           alignment: Alignment.center,
                           child: Text(
                             "Delete",
                             style: TextStyle(
-                              fontFamily: 'Satoshi',
+                              fontFamily: 'Geist',
                               color: Colors.white,
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -1027,7 +1027,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 Text(
                   "Manage Expense",
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textSecondary,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -1092,55 +1092,12 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
   // --- WIDGET BUILDERS ---
 
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Actions Menu Button
-          GestureDetector(
-            onTap: () => _showOptionsBottomSheet(context),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
-                boxShadow: context.cardShadow,
-              ),
-              child: Icon(
-                Icons.more_horiz,
-                color: context.textPrimary,
-                size: 20,
-              ),
-            ),
-          ),
-        ],
+    return RxTopBar(
+      title: '',
+      trailing: RxCircleButton(
+        icon: HugeIcons.strokeRoundedMoreHorizontal,
+        semanticLabel: 'More options',
+        onTap: () => _showOptionsBottomSheet(context),
       ),
     );
   }
@@ -1162,7 +1119,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
           Text(
             category,
             style: TextStyle(
-              fontFamily: 'Satoshi',
+              fontFamily: 'Geist',
               color: context.textSecondary,
               fontSize: 11,
               fontWeight: FontWeight.bold,
@@ -1174,18 +1131,16 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
     );
   }
 
+  // Sentence-case field labels, like the rest of the redesign.
   Widget _buildSectionLabel(String text) {
+    final t = text.isEmpty
+        ? text
+        : text[0].toUpperCase() + text.substring(1).toLowerCase();
     return Padding(
       padding: const EdgeInsets.only(left: 4),
       child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
+        t,
+        style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -1197,7 +1152,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
         Text(
           label,
           style: TextStyle(
-            fontFamily: 'Satoshi',
+            fontFamily: 'Geist',
             color: context.textSecondary,
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -1206,7 +1161,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
         Text(
           value,
           style: TextStyle(
-            fontFamily: 'Satoshi',
+            fontFamily: 'Geist',
             color: context.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -1220,11 +1175,11 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
   Color _generateColorFromName(String name) {
     final int hash = name.hashCode;
     final List<Color> colors = [
-      const Color(0xFF0A84FF),
-      const Color(0xFF30D158),
+      context.rx.textPrimary,
+      context.rx.positive,
       const Color(0xFFFF9F0A),
       const Color(0xFFA259FF),
-      const Color(0xFFFF453A),
+      context.rx.negative,
       const Color(0xFF5AC8FA),
       const Color(0xFFFFCC00),
       const Color(0xFFAF52DE),
@@ -1273,7 +1228,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
         child: Text(
           initials,
           style: TextStyle(
-            fontFamily: 'Satoshi',
+            fontFamily: 'Geist',
             color: color,
             fontSize: size * 0.38,
             fontWeight: FontWeight.w700,
@@ -1291,7 +1246,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
           Text(
             "Linked Member",
             style: TextStyle(
-              fontFamily: 'Satoshi',
+              fontFamily: 'Geist',
               color: context.textSecondary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -1344,7 +1299,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
           Text(
             "Linked Member",
             style: TextStyle(
-              fontFamily: 'Satoshi',
+              fontFamily: 'Geist',
               color: context.textSecondary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -1353,7 +1308,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
           Text(
             "None",
             style: TextStyle(
-              fontFamily: 'Satoshi',
+              fontFamily: 'Geist',
               color: context.textSecondary.withValues(alpha: 0.6),
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -1370,7 +1325,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
         Text(
           displayLabel,
           style: TextStyle(
-            fontFamily: 'Satoshi',
+            fontFamily: 'Geist',
             color: context.textSecondary,
             fontSize: 14,
             fontWeight: FontWeight.w500,
@@ -1388,7 +1343,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 Text(
                   displayName,
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1398,7 +1353,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                   Text(
                     subtitle,
                     style: TextStyle(
-                      fontFamily: 'Satoshi',
+                      fontFamily: 'Geist',
                       color: context.textSecondary,
                       fontSize: 11,
                       fontWeight: FontWeight.w400,
@@ -1455,7 +1410,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 Text(
                   "No receipt attached",
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1463,9 +1418,9 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  "0 KB",
+                  "Attach one from Edit",
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textSecondary,
                     fontSize: 12,
                   ),
@@ -1489,7 +1444,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: const Color(0xFF30D158).withValues(alpha: 0.3),
+                color: context.rx.positive.withValues(alpha: 0.3),
               ),
               boxShadow: context.cardShadow,
             ),
@@ -1501,12 +1456,12 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF30D158).withValues(alpha: 0.1),
+                        color: context.rx.positive.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.receipt,
-                        color: Color(0xFF30D158),
+                        color: context.rx.positive,
                         size: 20,
                       ),
                     ),
@@ -1518,8 +1473,8 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                           Text(
                             "Loading receipt...",
                             style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: const Color(0xFF30D158),
+                              fontFamily: 'Geist',
+                              color: context.rx.positive,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1527,7 +1482,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                           Text(
                             "Fetching from Telegram",
                             style: TextStyle(
-                              fontFamily: 'Satoshi',
+                              fontFamily: 'Geist',
                               color: context.textSecondary,
                               fontSize: 11,
                             ),
@@ -1544,9 +1499,9 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                     color: context.appBackground,
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Center(
+                  child: Center(
                     child: CircularProgressIndicator(
-                      color: Color(0xFF30D158),
+                      color: context.rx.positive,
                       strokeWidth: 2,
                     ),
                   ),
@@ -1564,7 +1519,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
               color: context.cardBackground,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: const Color(0xFFFF453A).withValues(alpha: 0.3),
+                color: context.rx.negative.withValues(alpha: 0.3),
               ),
               boxShadow: context.cardShadow,
             ),
@@ -1576,12 +1531,12 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFF453A).withValues(alpha: 0.1),
+                        color: context.rx.negative.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.error_outline,
-                        color: Color(0xFFFF453A),
+                        color: context.rx.negative,
                         size: 20,
                       ),
                     ),
@@ -1593,8 +1548,8 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                           Text(
                             "Failed to load receipt",
                             style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: const Color(0xFFFF453A),
+                              fontFamily: 'Geist',
+                              color: context.rx.negative,
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1602,7 +1557,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                           Text(
                             "Could not fetch from Telegram",
                             style: TextStyle(
-                              fontFamily: 'Satoshi',
+                              fontFamily: 'Geist',
                               color: context.textSecondary,
                               fontSize: 11,
                             ),
@@ -1647,7 +1602,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
             color: context.cardBackground,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: const Color(0xFF30D158).withValues(alpha: 0.3),
+              color: context.rx.positive.withValues(alpha: 0.3),
             ),
             boxShadow: context.cardShadow,
           ),
@@ -1659,12 +1614,12 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF30D158).withValues(alpha: 0.1),
+                      color: context.rx.positive.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
                       getFileIcon(filePath),
-                      color: const Color(0xFF30D158),
+                      color: context.rx.positive,
                       size: 20,
                     ),
                   ),
@@ -1676,8 +1631,8 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                         Text(
                           "Receipt attached",
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: const Color(0xFF30D158),
+                            fontFamily: 'Geist',
+                            color: context.rx.positive,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1685,7 +1640,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                         Text(
                           "${(fileSize / 1024).toStringAsFixed(1)} KB • Stored in Telegram",
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: context.textSecondary,
                             fontSize: 11,
                           ),
@@ -1782,9 +1737,9 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                             color: context.appBackground,
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: const Center(
+                          child: Center(
                             child: CircularProgressIndicator(
-                              color: Color(0xFF30D158),
+                              color: context.rx.positive,
                               strokeWidth: 2,
                             ),
                           ),
@@ -1813,7 +1768,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                         Text(
                           fileName,
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: context.textPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -1824,7 +1779,7 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                         Text(
                           "Tap the download icon to view",
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: context.textSecondary,
                             fontSize: 12,
                           ),
@@ -1855,12 +1810,12 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: isDestructive
-              ? const Color(0xFFFF453A).withValues(alpha: 0.1)
+              ? context.rx.negative.withValues(alpha: 0.1)
               : context.appBackground,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isDestructive
-                ? const Color(0xFFFF453A).withValues(alpha: 0.2)
+                ? context.rx.negative.withValues(alpha: 0.2)
                 : context.borderColor,
           ),
         ),
@@ -1868,18 +1823,16 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
           children: [
             Icon(
               icon,
-              color: isDestructive
-                  ? const Color(0xFFFF453A)
-                  : context.textPrimary,
+              color: isDestructive ? context.rx.negative : context.textPrimary,
               size: 20,
             ),
             const SizedBox(width: 16),
             Text(
               label,
               style: TextStyle(
-                fontFamily: 'Satoshi',
+                fontFamily: 'Geist',
                 color: isDestructive
-                    ? const Color(0xFFFF453A)
+                    ? context.rx.negative
                     : context.textPrimary,
                 fontSize: 15,
                 fontWeight: FontWeight.w500,

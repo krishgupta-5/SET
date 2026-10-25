@@ -19,25 +19,33 @@ class AiContextManager {
   /// Subscribes to domain events. Should be called once during app initialization.
   void initListeners() {
     EventDispatcher().subscribe<FinancialEvent>((event) async {
-      debugPrint("AiContextManager received FinancialEvent. Invalidating context...");
-      
+      debugPrint(
+        "AiContextManager received FinancialEvent. Invalidating context...",
+      );
+
       // 1. Invalidate backend context
       await invalidate();
-      
+
       // 2. Mark local data as changed in Firestore to bust frontend caches
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
         try {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
-            'lastDataUpdate': FieldValue.serverTimestamp(),
-          });
-          debugPrint("Updated lastDataUpdate timestamp for frontend cache invalidation.");
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .update({'lastDataUpdate': FieldValue.serverTimestamp()});
+          debugPrint(
+            "Updated lastDataUpdate timestamp for frontend cache invalidation.",
+          );
         } catch (e) {
           debugPrint("Failed to update lastDataUpdate: $e");
           // If the doc doesn't exist or misses the field, use set with merge
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-            'lastDataUpdate': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({
+                'lastDataUpdate': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
         }
       }
     });
@@ -48,16 +56,14 @@ class AiContextManager {
   Future<void> invalidate() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    
+
     final token = await user.getIdToken();
     if (token == null) return;
 
     try {
       await http.post(
         Uri.parse("$baseUrl/ai/context/invalidate"),
-        headers: {
-          "Authorization": "Bearer $token",
-        },
+        headers: {"Authorization": "Bearer $token"},
       );
       debugPrint("AI Context invalidated successfully.");
     } catch (e) {

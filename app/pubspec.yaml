@@ -1,5 +1,5 @@
 name: startup_expense_tracker
-description: "A new Flutter project."
+description: "RunwayX: track expenses, burn and runway with an AI CFO."
 publish_to: "none"
 
 version: 1.0.0+1
@@ -53,6 +53,10 @@ flutter:
     - .env.local
 
   fonts:
+    # Geist: same typeface as the landing site (SIL OFL, see Geist-OFL.txt).
+    - family: Geist
+      fonts:
+        - asset: assets/fonts/Geist-Variable.ttf
     - family: Satoshi
       fonts:
         - asset: assets/fonts/Satoshi-Variable.ttf

@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:developer';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:hugeicons/hugeicons.dart';
 
 import '../../../services/currency_formatter.dart';
 import '../../../services/user_country_service.dart';
 import '../../../services/bank_account_service.dart';
 import '../../home/screens/add_bank_account_screen.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_pickers.dart';
+import '../../../widgets/rx_ui.dart';
 
 class CompanyDetailsScreen extends StatefulWidget {
   const CompanyDetailsScreen({super.key});
@@ -131,43 +134,6 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
         });
   }
 
-  Widget _buildReadOnlyMetric(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
-          child: Text(
-            value,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<void> _fetchExpenses() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -220,105 +186,7 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
     }
   }
 
-  void _showSuccessMessage(String message) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
-  }
-
-  void _showDeleteAccountDialog(Map<String, dynamic> account) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: context.cardBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: context.borderColor),
-          ),
-          title: Text(
-            'Delete Bank Account',
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          content: Text(
-            'Are you sure you want to delete "${account['name']?.toString() ?? account['bankName']?.toString() ?? account['bank_name']?.toString() ?? 'Unknown Bank'}"? This action cannot be undone.',
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                'Cancel',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _deleteBankAccount(account);
-              },
-              child: Text(
-                'Delete',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: const Color(0xFFFF453A),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  void _showSuccessMessage(String message) => showRxToast(context, message);
 
   Future<void> _deleteBankAccount(Map<String, dynamic> account) async {
     try {
@@ -398,39 +266,8 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
     }
   }
 
-  void _showErrorMessage(String message) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Color(0xFFFF453A), size: 18),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
-  }
+  void _showErrorMessage(String message) =>
+      showRxToast(context, message, isError: true);
 
   @override
   void dispose() {
@@ -543,472 +380,341 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
     }
   }
 
+  bool _isSaving = false;
+
+  Future<void> _save() async {
+    FocusScope.of(context).unfocus();
+    if (_companyNameController.text.trim().isEmpty) {
+      showRxToast(context, 'Company name cannot be empty', isError: true);
+      return;
+    }
+    setState(() => _isSaving = true);
+    await updateCompanyData();
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+    showRxToast(context, 'Company details saved');
+    Navigator.pop(context);
+  }
+
+  Future<void> _addBank() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddBankAccountScreen()),
+    );
+    if (result != null) {
+      await _loadAllData();
+      _showSuccessMessage('Bank account added');
+    }
+  }
+
+  Future<void> _confirmDelete(Map<String, dynamic> account) async {
+    final name =
+        account['name']?.toString() ??
+        account['bankName']?.toString() ??
+        account['bank_name']?.toString() ??
+        'this account';
+    final ok = await showRxConfirm(
+      context,
+      title: 'Remove $name?',
+      message:
+          'Past expenses keep their payment method. This can\'t be undone.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    );
+    if (ok) await _deleteBankAccount(account);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+    final symbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+
     return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
+              const RxTopBar(title: 'Company details'),
               Expanded(
-                child: SingleChildScrollView(
+                child: ListView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 16),
-                      Text(
-                        "Company Details",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -1.0,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      _buildSectionLabel("IDENTITY"),
-                      _buildInputGroup("COMPANY NAME", _companyNameController),
-                      const SizedBox(height: 24),
-                      _buildInputGroup("OWNER NAME", _ownerNameController),
-                      const SizedBox(height: 24),
-                      _buildInputGroup("OFFICIAL EMAIL", _emailController),
-                      const SizedBox(height: 40),
-                      _buildSectionLabel("LEGAL & LOCATION"),
-                      _buildDropdownGroup("COMPANY TYPE"),
-                      const SizedBox(height: 24),
-                      _buildInputGroup(
-                        "DESCRIPTION",
-                        _descController,
-                        maxLines: 3,
-                      ),
-                      const SizedBox(height: 24),
-                      _buildInputGroup(
-                        "REGISTERED ADDRESS",
-                        _addressController,
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 40),
-                      _buildSectionLabel("FINANCIAL OVERVIEW"),
-                      _buildReadOnlyMetric(
-                        "FUNDS LEFT (${CurrencyFormatter.getCurrencySymbol(_userCountryCode)})",
-                        CurrencyFormatter.formatByCountryCompact(
-                          _availableFunds,
-                          _userCountryCode,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      _buildInputGroup(
-                        "TARGET RUNWAY (MONTHS)",
-                        _targetRunwayController,
-                        isNumber: true,
-                      ),
-                      const SizedBox(height: 40),
-                      _buildBankSection(),
-                      const SizedBox(height: 100),
-                    ],
-                  ),
-                ),
-              ),
-              _buildSaveButton(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // --- WIDGET BUILDERS ---
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textTertiary,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputGroup(
-    String label,
-    TextEditingController controller, {
-    int maxLines = 1,
-    bool isNumber = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
-          child: TextField(
-            controller: controller,
-            keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-            maxLines: maxLines,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            cursorColor: context.textPrimary,
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(vertical: 14),
-              isDense: true,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDropdownGroup(String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 8),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: double.infinity),
-          child: ShadSelect<String>(
-            key: ValueKey(_selectedType),
-            initialValue: _selectedType,
-            placeholder: Text(
-              'Select $label',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-                fontSize: 15,
-              ),
-            ),
-            options: [
-              ...companyTypes.entries.map(
-                (e) => ShadOption(value: e.key, child: Text(e.value)),
-              ),
-            ],
-            selectedOptionBuilder: (context, selectedValue) => Text(
-              companyTypes[selectedValue] ?? selectedValue,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            onChanged: (val) {
-              if (val != null) {
-                setState(() => _selectedType = val);
-              }
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBankSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              "LINKED PAYMENT METHODS",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-              ),
-            ),
-            GestureDetector(
-              onTap: () async {
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AddBankAccountScreen(),
-                  ),
-                );
-                if (result != null) {
-                  await _loadAllData();
-                  _showSuccessMessage('Bank account added successfully');
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: context.glassBackgroundStrong,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: context.borderColor),
-                ),
-                child: Icon(Icons.add, color: context.iconPrimary, size: 16),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (_isLoading)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: CircularProgressIndicator(
-                color: context.iconSecondary,
-                strokeWidth: 2,
-              ),
-            ),
-          )
-        else if (_bankAccounts.isEmpty)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text(
-                "No accounts added",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          )
-        else
-          ...List.generate(_bankAccounts.length, (index) {
-            final account = _bankAccounts[index];
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: context.cardBackground,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: context.borderColor),
-                  boxShadow: context.cardShadow,
-                ),
-                child: Row(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
                   children: [
-                    Builder(
-                      builder: (context) {
-                        final isCash = account['isCash'] == true;
-                        final accentColor = isCash
-                            ? const Color(0xFFFF9F0A)
-                            : const Color(0xFF30D158);
-                        return Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: accentColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: accentColor.withValues(alpha: 0.3),
-                            ),
+                    // Summary first: what you have and how long you aim for.
+                    RxReveal.index(
+                      0,
+                      child: RxCard(
+                        padding: EdgeInsets.zero,
+                        child: IntrinsicHeight(
+                          child: Row(
+                            children: [
+                              _metric(
+                                'Funds left',
+                                CurrencyFormatter.formatByCountryCompact(
+                                  _availableFunds,
+                                  _userCountryCode,
+                                ),
+                                color: _availableFunds < 0 ? rx.negative : null,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                child: Container(width: 1, color: rx.hairline),
+                              ),
+                              _metric(
+                                'Accounts',
+                                _isLoading ? '--' : '${_bankAccounts.length}',
+                              ),
+                            ],
                           ),
-                          child: Icon(
-                            isCash
-                                ? Icons.payments_outlined
-                                : Icons.account_balance,
-                            color: accentColor,
-                            size: 20,
-                          ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      1,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            (() {
-                              final bankName =
-                                  account['name']?.toString() ??
-                                  account['bankName']?.toString() ??
-                                  account['bank_name']?.toString() ??
-                                  'Unknown Bank';
-                              return bankName;
-                            })(),
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          const RxSectionHeader(title: 'Identity'),
+                          RxTextInput(
+                            controller: _companyNameController,
+                            label: 'Company name',
+                            hint: 'e.g. Acme Labs',
+                            icon: HugeIcons.strokeRoundedBuilding03,
+                            textCapitalization: TextCapitalization.words,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            (() {
-                              final maskedNumber =
-                                  account['maskedNumber']?.toString() ??
-                                  (account['last4']?.toString().isNotEmpty ==
-                                          true
-                                      ? '****${account['last4']}'
-                                      : '****');
-                              return maskedNumber;
-                            })(),
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textSecondary,
-                              fontSize: 13,
-                            ),
+                          const SizedBox(height: 16),
+                          RxTextInput(
+                            controller: _ownerNameController,
+                            label: 'Owner name',
+                            hint: 'Your name',
+                            icon: HugeIcons.strokeRoundedUser,
+                            textCapitalization: TextCapitalization.words,
                           ),
-                          if (account['totalSpent'] != null &&
-                              ((account['totalSpent'] as num?)?.toDouble() ??
-                                      0.0) >
-                                  0) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Spent: ${CurrencyFormatter.formatByCountryCompact((account['totalSpent'] as num?)?.toDouble() ?? 0.0, _userCountryCode)}',
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: const Color(0xFFFF453A),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                          const SizedBox(height: 16),
+                          RxTextInput(
+                            controller: _emailController,
+                            label: 'Official email',
+                            icon: HugeIcons.strokeRoundedMail01,
+                            keyboardType: TextInputType.emailAddress,
+                            textCapitalization: TextCapitalization.none,
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    if (account['id'] != null)
-                      GestureDetector(
-                        onTap: () => _showDeleteAccountDialog(account),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(
-                              0xFFFF453A,
-                            ).withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const RxSectionHeader(title: 'Legal and location'),
+                          RxSelectField<String>(
+                            label: 'Company type',
+                            value: _selectedType,
+                            icon: HugeIcons.strokeRoundedLegalDocument01,
+                            options: [
+                              for (final e in companyTypes.entries)
+                                RxOption(e.key, e.value),
+                            ],
+                            onChanged: (v) => setState(() => _selectedType = v),
                           ),
-                          child: const Icon(
-                            Icons.delete_outline,
-                            color: Color(0xFFFF453A),
-                            size: 18,
+                          const SizedBox(height: 16),
+                          RxTextInput(
+                            controller: _descController,
+                            label: 'What you do',
+                            hint: 'A line about the business',
+                            maxLines: 3,
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          RxTextInput(
+                            controller: _addressController,
+                            label: 'Registered address',
+                            hint: 'Street, city, postcode',
+                            maxLines: 2,
+                          ),
+                        ],
                       ),
+                    ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const RxSectionHeader(title: 'Planning'),
+                          RxTextInput(
+                            controller: _targetRunwayController,
+                            label: 'Target runway',
+                            hint: 'e.g. 18',
+                            icon: HugeIcons.strokeRoundedTarget02,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            suffix: Text(
+                              'months',
+                              style: RxText.caption(context),
+                            ),
+                            textInputAction: TextInputAction.done,
+                            helper:
+                                'How long you want your cash to last ($symbol)',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(4, child: _buildBankSection()),
                   ],
                 ),
               ),
-            );
-          }),
+              RxBottomBar(
+                child: RxButton(
+                  label: 'Save changes',
+                  loading: _isSaving,
+                  onTap: _save,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _metric(String label, String value, {Color? color}) => Expanded(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: RxText.label(context)),
+          const SizedBox(height: 8),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: RxText.value(context, size: 20, color: color),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildBankSection() {
+    final rx = context.rx;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RxSectionHeader(
+          title: 'Payment methods',
+          actionLabel: 'Add',
+          onAction: _addBank,
+        ),
+        if (_isLoading)
+          const RxSkeleton(height: 132, radius: 22)
+        else if (_bankAccounts.isEmpty)
+          RxCard(
+            child: RxEmptyState(
+              icon: HugeIcons.strokeRoundedBank,
+              title: 'No accounts yet',
+              message: 'Add a bank account to tag where money is spent from',
+              actionLabel: 'Add bank account',
+              onAction: _addBank,
+            ),
+          )
+        else
+          RxCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            child: Column(
+              children: [
+                for (var i = 0; i < _bankAccounts.length; i++) ...[
+                  if (i > 0) const RxDivider(indent: 52),
+                  _bankRow(_bankAccounts[i], rx),
+                ],
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildSaveButton() {
-    final btnBg = context.isDarkMode ? Colors.white : Colors.black;
-    final btnText = context.isDarkMode ? Colors.black : Colors.white;
+  Widget _bankRow(Map<String, dynamic> account, RxColors rx) {
+    final isCash = account['isCash'] == true;
+    final name =
+        account['name']?.toString() ??
+        account['bankName']?.toString() ??
+        account['bank_name']?.toString() ??
+        'Unknown bank';
+    final masked =
+        account['maskedNumber']?.toString() ??
+        (account['last4']?.toString().isNotEmpty == true
+            ? '****${account['last4']}'
+            : '****');
+    final spent = (account['totalSpent'] as num?)?.toDouble() ?? 0.0;
+    final key = isCash ? 'meals' : 'servers';
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: () async {
-            await updateCompanyData();
-            if (mounted) Navigator.pop(context);
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnBg,
-            foregroundColor: btnText,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          RxIconTile(
+            icon: isCash
+                ? HugeIcons.strokeRoundedCoins01
+                : HugeIcons.strokeRoundedBank,
+            size: 40,
+            iconSize: 19,
+            background: RxCategory.soft(context, key),
+            foreground: RxCategory.color(context, key),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RxText.body(context),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  spent > 0
+                      ? '$masked · ${CurrencyFormatter.formatByCountryCompact(spent, _userCountryCode)} spent'
+                      : masked,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RxText.caption(context),
+                ),
+              ],
             ),
           ),
-          child: Text(
-            "Save Changes",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
+          if (account['id'] != null)
+            RxPressable(
+              onTap: () => _confirmDelete(account),
+              semanticLabel: 'Remove $name',
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(
+                  child: HugeIcon(
+                    icon: HugeIcons.strokeRoundedDelete02,
+                    color: rx.textTertiary,
+                    size: 18,
+                    strokeWidth: 1.8,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }

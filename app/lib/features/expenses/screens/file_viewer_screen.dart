@@ -129,9 +129,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
           children: [
             Icon(
               isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
+              color: isError ? context.rx.negative : context.rx.positive,
               size: 18,
             ),
             const SizedBox(width: 12),
@@ -139,7 +137,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
               child: Text(
                 message,
                 style: TextStyle(
-                  fontFamily: 'Satoshi',
+                  fontFamily: 'Geist',
                   color: context.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -184,7 +182,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
         title: Text(
           widget.fileName,
           style: TextStyle(
-            fontFamily: 'Satoshi',
+            fontFamily: 'Geist',
             color: context.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -220,12 +218,12 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: Color(0xFFFF453A), size: 64),
+            Icon(Icons.error_outline, color: context.rx.negative, size: 64),
             const SizedBox(height: 16),
             Text(
               "Failed to load file",
               style: TextStyle(
-                fontFamily: 'Satoshi',
+                fontFamily: 'Geist',
                 color: context.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
@@ -235,7 +233,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
             Text(
               _error!,
               style: TextStyle(
-                fontFamily: 'Satoshi',
+                fontFamily: 'Geist',
                 color: context.textSecondary,
                 fontSize: 14,
               ),
@@ -258,7 +256,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
               children: [
                 Icon(
                   _getFileIcon(widget.fileName),
-                  color: const Color(0xFF30D158),
+                  color: context.rx.positive,
                   size: 24,
                 ),
                 const SizedBox(width: 12),
@@ -269,7 +267,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                       Text(
                         widget.fileName,
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -284,7 +282,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                             ? 'Document preview'
                             : 'Preview not available in app',
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textSecondary,
                           fontSize: 12,
                         ),
@@ -312,7 +310,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                         child: Text(
                           'Unable to load text preview.',
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: context.textSecondary,
                             fontSize: 14,
                           ),
@@ -322,7 +320,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                         child: SelectableText(
                           _textPreview ?? 'Loading text preview...',
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: context.textPrimary,
                             fontSize: 14,
                           ),
@@ -365,7 +363,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                       Text(
                         'File cannot be previewed',
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -375,7 +373,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                       Text(
                         widget.fileName,
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textSecondary,
                           fontSize: 14,
                         ),
@@ -398,7 +396,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
                         label: Text(
                           'Open in Browser',
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: context.appBackground,
                             fontWeight: FontWeight.w600,
                           ),

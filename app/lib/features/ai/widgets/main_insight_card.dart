@@ -1,173 +1,185 @@
 import 'package:flutter/material.dart';
-import 'package:startup_expense_tracker/theme/app_theme.dart';
-import 'package:shimmer/shimmer.dart';
+import 'package:hugeicons/hugeicons.dart';
 
-class MainInsightCard extends StatelessWidget {
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
+import 'ai_widgets.dart';
+
+/// The headline briefing. The primary insight writes itself in word by
+/// word; the supporting text fades up once it finishes.
+class MainInsightCard extends StatefulWidget {
   final Map<String, dynamic>? mainData;
 
   const MainInsightCard({super.key, required this.mainData});
 
-  Widget _buildShimmerPlaceholder(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: context.isDarkMode ? Colors.grey[800]! : Colors.grey[300]!,
-      highlightColor: context.isDarkMode ? Colors.grey[700]! : Colors.grey[100]!,
-      child: Container(
-        width: double.infinity,
-        height: 180,
-        decoration: BoxDecoration(
-          color: context.isDarkMode ? Colors.grey[800] : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-    );
+  @override
+  State<MainInsightCard> createState() => _MainInsightCardState();
+}
+
+class _MainInsightCardState extends State<MainInsightCard> {
+  bool _typed = false;
+
+  @override
+  void didUpdateWidget(covariant MainInsightCard old) {
+    super.didUpdateWidget(old);
+    if (old.mainData?['primary_insight'] !=
+        widget.mainData?['primary_insight']) {
+      _typed = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (mainData == null) {
-      return _buildShimmerPlaceholder(context);
-    }
-    
-    if (mainData!.containsKey('error')) {
-      final errorCode = mainData!['code'] as String?;
-      final message = (errorCode == 'llm_not_configured' ||
-              errorCode == 'llm_auth_failed')
-          ? "We couldn't generate insights right now. Please try again in a moment."
-          : "We couldn't generate your insights at the moment. Please try again shortly.";
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.red.withValues(alpha: 0.5)),
-          boxShadow: context.cardShadow,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "AI Insights Unavailable",
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Satoshi',
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: const TextStyle(color: Colors.red, fontFamily: 'Satoshi'),
-            ),
-          ],
+    final rx = context.rx;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final data = widget.mainData;
+
+    if (data == null) return const SizedBox.shrink();
+
+    if (data.containsKey('error')) {
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedAlert02,
+          title: "Couldn't prepare your briefing",
+          message: 'Pull down to try again in a moment',
         ),
       );
     }
 
-    final primaryInsight =
-        mainData?['primary_insight'] ?? "No insight available.";
-    final description =
-        mainData?['description'] ??
-        "We couldn't generate an insight at this time.";
-    final highImpact = mainData?['high_impact_summary'] ?? "HIGH IMPACT";
+    final primary = (data['primary_insight'] ?? 'No insight available.')
+        .toString();
+    final description = (data['description'] ?? '').toString();
+    final impact = (data['high_impact_summary'] ?? '').toString().trim();
 
+    // Gradient hairline around the card marks it as the main read.
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(1.2),
       decoration: BoxDecoration(
-        color: context.cardBackground,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            rx.accent.withValues(alpha: dark ? 0.7 : 0.9),
+            const Color(0xFF4FD1C5).withValues(alpha: dark ? 0.35 : 0.5),
+            rx.hairline,
+          ],
+        ),
+        boxShadow: rx.cardShadow,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF30D158).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(
-                    color: const Color(0xFF30D158).withValues(alpha: 0.3),
-                  ),
-                ),
-                child: const Text(
-                  "PRIMARY INSIGHT",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: Color(0xFF30D158),
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                  ),
-                ),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        decoration: BoxDecoration(
+          color: rx.surface,
+          borderRadius: BorderRadius.circular(22.8),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color.alphaBlend(
+                rx.accent.withValues(alpha: dark ? 0.08 : 0.10),
+                rx.surface,
               ),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width - 96,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF9F0A).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(100),
-                    border: Border.all(
-                      color: const Color(0xFFFF9F0A).withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    highImpact.toUpperCase(),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: Color(0xFFFF9F0A),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ),
-              ),
+              rx.surface,
             ],
           ),
-          const SizedBox(height: 20),
-          Text(
-            primaryInsight,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 16,
-              height: 1.5,
-              fontWeight: FontWeight.w400,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const AiChip(label: 'TODAY\'S BRIEFING'),
+                const Spacer(),
+                HugeIcon(
+                  icon: HugeIcons.strokeRoundedQuoteDown,
+                  color: rx.textTertiary,
+                  size: 20,
+                  strokeWidth: 1.6,
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            description,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 14,
-              height: 1.5,
-              fontWeight: FontWeight.w400,
+            const SizedBox(height: 14),
+            AiTypewriter(
+              key: ValueKey(primary),
+              text: primary,
+              delay: const Duration(milliseconds: 250),
+              style: RxText.heading(context).copyWith(
+                fontSize: 19,
+                height: 1.4,
+                letterSpacing: -0.2,
+                color: rx.textPrimary,
+              ),
+              onDone: () {
+                if (mounted && !_typed) setState(() => _typed = true);
+              },
             ),
-          ),
-        ],
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: !_typed
+                  ? const SizedBox(width: double.infinity)
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (description.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          RxReveal(
+                            offset: 6,
+                            child: Text(
+                              description,
+                              style:
+                                  RxText.body(
+                                    context,
+                                    color: rx.textSecondary,
+                                  ).copyWith(
+                                    fontWeight: FontWeight.w400,
+                                    height: 1.5,
+                                  ),
+                            ),
+                          ),
+                        ],
+                        if (impact.isNotEmpty) ...[
+                          const SizedBox(height: 14),
+                          RxReveal(
+                            delay: const Duration(milliseconds: 120),
+                            offset: 6,
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+                              decoration: BoxDecoration(
+                                color: rx.warningSoft,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  HugeIcon(
+                                    icon: HugeIcons.strokeRoundedFlash,
+                                    color: rx.warning,
+                                    size: 16,
+                                    strokeWidth: 2,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      impact,
+                                      style: RxText.caption(
+                                        context,
+                                        color: rx.warning,
+                                      ).copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

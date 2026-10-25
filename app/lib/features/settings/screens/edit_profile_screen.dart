@@ -1,13 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'dart:developer';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_pickers.dart';
+import '../../../widgets/rx_ui.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -65,45 +68,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   // --- UNIFIED MINIMAL TOAST ---
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
-  }
+  void _showMinimalToast(String message, {bool isError = false}) =>
+      showRxToast(context, message, isError: isError);
 
   Future<void> loadUserProfile() async {
     try {
@@ -254,362 +220,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(context),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 16),
-                        Text(
-                          "Edit Profile",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textPrimary,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -1.0,
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        Center(child: _buildAvatarUploader()),
-                        const SizedBox(height: 40),
-
-                        _buildSectionLabel("PERSONAL DETAILS"),
-                        const SizedBox(height: 16),
-                        _buildInputGroup(
-                          "Full Name",
-                          _nameController,
-                          Icons.person_outline,
-                          textInputAction: TextInputAction.next,
-                        ),
-                        const SizedBox(height: 16),
-                        _buildInputGroup(
-                          "Email Address",
-                          _emailController,
-                          Icons.email_outlined,
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          readOnly: true,
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        _buildSectionLabel("CONTACT INFO"),
-                        const SizedBox(height: 16),
-                        _buildPhoneInputGroup(),
-                        const SizedBox(height: 16),
-                        _buildInputGroup(
-                          "Location",
-                          _locationController,
-                          Icons.location_on_outlined,
-                          textInputAction: TextInputAction.done,
-                        ),
-
-                        const SizedBox(height: 100),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              _buildSaveButton(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // --- WIDGET BUILDERS ---
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-
-  Widget _buildAvatarUploader() {
-    final badgeBg = context.isDarkMode ? Colors.white : Colors.black;
-    final badgeIcon = context.isDarkMode ? Colors.black : Colors.white;
-
-    return GestureDetector(
-      onTap: _showImagePicker,
-      child: Column(
-        children: [
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              shape: BoxShape.circle,
-              border: Border.all(color: context.borderColor, width: 1),
-              boxShadow: context.cardShadow,
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                _buildProfileAvatarForUploader(),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: badgeBg,
-                      shape: BoxShape.circle,
-                    ),
-                    child: _isLoading
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: badgeIcon,
-                            ),
-                          )
-                        : Icon(Icons.camera_alt, color: badgeIcon, size: 16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            "Update Photo",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileAvatarForUploader() {
-    if (_profileImageFileId != null && _profileImageFileId!.isNotEmpty) {
-      return FutureBuilder<String>(
-        future: getTelegramImageUrl(_profileImageFileId!),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return SizedBox(
-              width: 100 * 0.3,
-              height: 100 * 0.3,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: context.iconSecondary,
-              ),
-            );
-          } else if (snapshot.hasError || !snapshot.hasData) {
-            return _buildDefaultAvatarForUploader();
-          } else {
-            return ClipOval(
-              child: Image.network(
-                snapshot.data!,
-                width: 100,
-                height: 100,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return _buildDefaultAvatarForUploader();
-                },
-              ),
-            );
-          }
-        },
-      );
-    }
-
-    return _buildDefaultAvatarForUploader();
-  }
-
-  Widget _buildDefaultAvatarForUploader() {
-    return Container(
-      width: 100,
-      height: 100,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: context.cardBackground,
-        boxShadow: context.cardShadow,
-      ),
-      child: Icon(Icons.person, size: 40, color: context.iconSecondary),
-    );
-  }
-
-  void _showImagePicker() async {
-    FocusScope.of(context).unfocus();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: context.cardBackground,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => _buildImagePickerSheet(),
-    );
-  }
-
-  Widget _buildImagePickerSheet() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Profile Photo",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: context.glassBackgroundStrong,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: context.borderColor),
-                    ),
-                    child: Icon(
-                      Icons.close,
-                      color: context.iconSecondary,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildImagePickerOption(
-                  Icons.camera_alt,
-                  "Camera",
-                  () => _pickImage(ImageSource.camera),
-                ),
-                _buildImagePickerOption(
-                  Icons.photo_library,
-                  "Gallery",
-                  () => _pickImage(ImageSource.gallery),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImagePickerOption(
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
-    Color? color,
-  }) {
-    final effectiveColor = color ?? context.textPrimary;
-    return GestureDetector(
-      onTap: () {
-        Navigator.pop(context);
-        onTap();
-      },
-      child: Column(
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: effectiveColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: effectiveColor.withValues(alpha: 0.2)),
-            ),
-            child: Icon(icon, color: effectiveColor, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: effectiveColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _pickImage(ImageSource source) async {
     try {
       final ImagePicker picker = ImagePicker();
@@ -637,7 +247,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       _showMinimalToast("Error uploading photo: $e", isError: true);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -673,281 +283,333 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Widget _buildInputGroup(
-    String hint,
-    TextEditingController controller,
-    IconData icon, {
-    TextInputType keyboardType = TextInputType.text,
-    TextInputAction textInputAction = TextInputAction.done,
-    bool readOnly = false,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        textInputAction: textInputAction,
-        readOnly: readOnly,
-        canRequestFocus: !readOnly,
-        onTapOutside: (event) => FocusScope.of(context).unfocus(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: readOnly ? context.textTertiary : context.textPrimary,
-          fontSize: 15,
-          fontWeight: FontWeight.w500,
-        ),
-        cursorColor: context.textPrimary,
-        decoration: InputDecoration(
-          icon: Icon(icon, color: context.iconSecondary, size: 20),
-          labelText: hint,
-          labelStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 13,
+  @override
+  Widget build(BuildContext context) {
+    final rx = context.rx;
+    return Scaffold(
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              const RxTopBar(title: 'Edit profile'),
+              Expanded(
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                  children: [
+                    RxReveal.index(0, child: Center(child: _buildAvatar())),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const RxSectionHeader(title: 'Personal details'),
+                          RxTextInput(
+                            controller: _nameController,
+                            label: 'Full name',
+                            hint: 'Your name',
+                            icon: HugeIcons.strokeRoundedUser,
+                            textCapitalization: TextCapitalization.words,
+                          ),
+                          const SizedBox(height: 16),
+                          RxTextInput(
+                            controller: _emailController,
+                            label: 'Email',
+                            icon: HugeIcons.strokeRoundedMail01,
+                            enabled: false,
+                            helper: 'Your sign-in email can\'t be changed here',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const RxSectionHeader(title: 'Contact'),
+                          RxTextInput(
+                            controller: _phoneController,
+                            label: 'Phone',
+                            hint: 'Mobile number',
+                            keyboardType: TextInputType.phone,
+                            suffix: null,
+                            prefixText: null,
+                            icon: null,
+                            textCapitalization: TextCapitalization.none,
+                          ).withCountryCode(
+                            context,
+                            flag: _selectedFlag,
+                            code: _selectedCountryCode,
+                            onTap: _showCountryCodePicker,
+                          ),
+                          const SizedBox(height: 16),
+                          RxTextInput(
+                            controller: _locationController,
+                            label: 'Location',
+                            hint: 'City, country',
+                            icon: HugeIcons.strokeRoundedLocation01,
+                            textCapitalization: TextCapitalization.words,
+                            textInputAction: TextInputAction.done,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              RxBottomBar(
+                child: RxButton(
+                  label: 'Save changes',
+                  loading: _isLoading,
+                  onTap: _handleSave,
+                ),
+              ),
+            ],
           ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          floatingLabelBehavior: FloatingLabelBehavior.auto,
         ),
       ),
     );
   }
 
-  Widget _buildPhoneInputGroup() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+  Widget _buildAvatar() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const size = 96.0;
+
+    Widget placeholder() => Container(
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
+        color: rx.surface,
+        shape: BoxShape.circle,
+        border: Border.all(color: rx.hairline),
+        boxShadow: rx.cardShadow,
       ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () {
-              FocusScope.of(context).unfocus();
-              _showCountryCodePicker();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              color: Colors.transparent,
-              child: Row(
-                children: [
-                  Text(
-                    "$_selectedFlag $_selectedCountryCode",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
+      alignment: Alignment.center,
+      child: HugeIcon(
+        icon: HugeIcons.strokeRoundedUser,
+        color: rx.textTertiary,
+        size: 36,
+        strokeWidth: 1.5,
+      ),
+    );
+
+    Widget photo() {
+      final id = _profileImageFileId;
+      if (id == null || id.isEmpty) return placeholder();
+      return FutureBuilder<String>(
+        future: getTelegramImageUrl(id),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const RxSkeleton(width: size, height: size, radius: 100);
+          }
+          if (!snap.hasData) return placeholder();
+          return Container(
+            width: size,
+            height: size,
+            foregroundDecoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.black.withValues(alpha: 0.1),
+              ),
+            ),
+            child: ClipOval(
+              child: Image.network(
+                snap.data!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => placeholder(),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return Column(
+      children: [
+        RxPressable(
+          onTap: _isLoading ? null : _showImagePicker,
+          semanticLabel: 'Change photo',
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                photo(),
+                if (_isLoading)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: rx.barrier,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.keyboard_arrow_down,
-                    color: context.iconSecondary,
-                    size: 18,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Container(
-            height: 24,
-            width: 1,
-            color: context.borderColor,
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-          ),
-          Expanded(
-            child: TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              textInputAction: TextInputAction.next,
-              onTapOutside: (event) => FocusScope.of(context).unfocus(),
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-              ),
-              cursorColor: context.textPrimary,
-              decoration: InputDecoration(
-                labelText: "Phone Number",
-                labelStyle: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 13,
-                ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                floatingLabelBehavior: FloatingLabelBehavior.auto,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showCountryCodePicker() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: context.cardBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: BorderSide(color: context.borderColor),
-          ),
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.7,
-            ),
-            padding: const EdgeInsets.only(top: 24, bottom: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Country Code",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Icon(
-                          Icons.close,
-                          color: context.iconSecondary,
-                          size: 20,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Divider(color: context.borderColor, height: 1),
-                Expanded(
-                  child: ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: _countryCodes.length,
-                    itemBuilder: (context, index) {
-                      final country = _countryCodes[index];
-                      final isSelected =
-                          _selectedCountryCode == country["code"];
-
-                      return ListTile(
-                        onTap: () {
-                          setState(() {
-                            _selectedCountryCode = country["code"]!;
-                            _selectedFlag = country["flag"]!;
-                          });
-                          Navigator.pop(context);
-                        },
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 4,
-                        ),
-                        leading: Text(
-                          country["flag"]!,
-                          style: const TextStyle(fontSize: 22),
-                        ),
-                        title: Text(
-                          country["name"]!,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: isSelected
-                                ? context.textPrimary
-                                : context.textSecondary,
-                            fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: Text(
-                          country["code"]!,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: isSelected
-                                ? context.textPrimary
-                                : context.textTertiary,
-                            fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      );
-                    },
+                Positioned(
+                  right: -2,
+                  bottom: -2,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: rx.inverse,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: rx.background, width: 3),
+                    ),
+                    alignment: Alignment.center,
+                    child: HugeIcon(
+                      icon: HugeIcons.strokeRoundedCamera01,
+                      color: rx.onInverse,
+                      size: 14,
+                      strokeWidth: 2,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Change photo',
+          style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
     );
   }
 
-  Widget _buildSaveButton() {
-    final btnBg = context.isDarkMode ? Colors.white : Colors.black;
-    final btnText = context.isDarkMode ? Colors.black : Colors.white;
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _handleSave,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnBg,
-            foregroundColor: btnText,
-            disabledBackgroundColor: context.textTertiary,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+  void _showImagePicker() {
+    FocusScope.of(context).unfocus();
+    showRxActionSheet(
+      context,
+      title: 'Profile photo',
+      actions: [
+        RxSheetAction(
+          icon: HugeIcons.strokeRoundedCamera01,
+          label: 'Take photo',
+          onTap: () => _pickImage(ImageSource.camera),
+        ),
+        RxSheetAction(
+          icon: HugeIcons.strokeRoundedImage01,
+          label: 'Choose from gallery',
+          onTap: () => _pickImage(ImageSource.gallery),
+        ),
+        if (_profileImageFileId != null && _profileImageFileId!.isNotEmpty)
+          RxSheetAction(
+            icon: HugeIcons.strokeRoundedDelete02,
+            label: 'Remove photo',
+            subtitle: 'Saved when you tap Save changes',
+            destructive: true,
+            onTap: () => setState(() => _profileImageFileId = null),
           ),
-          child: _isLoading
-              ? SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    color: btnText,
-                    strokeWidth: 2,
-                  ),
-                )
-              : Text(
-                  "Save Changes",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
+      ],
+    );
+  }
+
+  void _showCountryCodePicker() async {
+    final picked = await showRxSelectSheet<String>(
+      context,
+      title: 'Country code',
+      selected: _selectedCountryCode,
+      options: [
+        for (final c in _countryCodes)
+          RxOption(
+            c['code']!,
+            '${c['flag']}  ${c['name']}',
+            subtitle: c['code'],
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    final c = _countryCodes.firstWhere((e) => e['code'] == picked);
+    setState(() {
+      _selectedCountryCode = picked;
+      _selectedFlag = c['flag']!;
+    });
+  }
+}
+
+/// Phone field: a tappable country code chip in front of [RxTextInput].
+extension on RxTextInput {
+  Widget withCountryCode(
+    BuildContext context, {
+    required String flag,
+    required String code,
+    required VoidCallback onTap,
+  }) {
+    final rx = context.rx;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            label ?? '',
+            style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+        Row(
+          children: [
+            RxPressable(
+              onTap: onTap,
+              semanticLabel: 'Country code $code',
+              child: Container(
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: rx.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: rx.textPrimary.withValues(alpha: 0.12),
                   ),
                 ),
+                child: Row(
+                  children: [
+                    Text(flag, style: const TextStyle(fontSize: 18)),
+                    const SizedBox(width: 6),
+                    Text(code, style: RxText.body(context)),
+                    const SizedBox(width: 2),
+                    HugeIcon(
+                      icon: HugeIcons.strokeRoundedArrowDown01,
+                      color: rx.textSecondary,
+                      size: 16,
+                      strokeWidth: 1.9,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: RxTextInput(
+                controller: controller,
+                hint: hint,
+                keyboardType: keyboardType,
+                textCapitalization: TextCapitalization.none,
+                icon: HugeIcons.strokeRoundedCall,
+              ),
+            ),
+          ],
         ),
-      ),
+      ],
     );
   }
 }

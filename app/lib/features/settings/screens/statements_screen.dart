@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -10,7 +10,9 @@ import '../../../../services/currency_preference_service.dart';
 import '../../../../services/currency_formatter.dart';
 import '../../../../services/bank_account_service.dart';
 import '../../../../utils/expense_expansion_helper.dart';
-import '../../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class ExpensesExportScreen extends StatefulWidget {
   const ExpensesExportScreen({super.key});
@@ -73,45 +75,8 @@ class _ExpensesExportScreenState extends State<ExpensesExportScreen> {
     return 'N/A';
   }
 
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
-  }
+  void _showMinimalToast(String message, {bool isError = false}) =>
+      showRxToast(context, message, isError: isError);
 
   Future<void> _downloadReport(String reportType) async {
     setState(() => _isDownloading = true);
@@ -362,109 +327,108 @@ class _ExpensesExportScreenState extends State<ExpensesExportScreen> {
     } catch (e) {
       _showMinimalToast("Error generating report.", isError: true);
     } finally {
-      setState(() => _isDownloading = false);
+      if (mounted) setState(() => _isDownloading = false);
     }
+  }
+
+  // Which report is being generated, so only that row shows a spinner.
+  String? _busyType;
+
+  Future<void> _download(String type) async {
+    if (_isDownloading) return;
+    setState(() => _busyType = type);
+    await _downloadReport(type);
+    if (mounted) setState(() => _busyType = null);
   }
 
   @override
   Widget build(BuildContext context) {
-    final DateTime now = DateTime.now();
+    final rx = context.rx;
+    final now = DateTime.now();
+    final month = "${_getMonthName(now.month)} ${now.year}";
+    final quarter = "Q${((now.month - 1) ~/ 3) + 1} ${now.year}";
+    final fyStart = now.month >= 4 ? now.year : now.year - 1;
+    final fy = "FY $fyStart-${(fyStart + 1).toString().substring(2)}";
 
-    final String currentMonthYear = "${_getMonthName(now.month)} ${now.year}";
-    final int currentQuarter = ((now.month - 1) ~/ 3) + 1;
-    final String currentQuarterStr = "Q$currentQuarter ${now.year}";
-    final bool isNewFY = now.month >= 4;
-    final int startYear = isNewFY ? now.year : now.year - 1;
-    final String currentFY =
-        "FY $startYear-${(startYear + 1).toString().substring(2)}";
+    final reports = [
+      ('Monthly', HugeIcons.strokeRoundedCalendar03, 'Monthly expenses', month),
+      (
+        'Quarterly',
+        HugeIcons.strokeRoundedCalendar01,
+        'Quarterly expenses',
+        quarter,
+      ),
+      ('Annual', HugeIcons.strokeRoundedFiles01, 'Annual summary', fy),
+    ];
 
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
-          child: Stack(
+          bottom: false,
+          child: Column(
             children: [
-              Column(
-                children: [
-                  _buildHeader(context),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+              const RxTopBar(title: 'Statements'),
+              Expanded(
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                  children: [
+                    // Document work: the default "papers" illustration.
+                    RxReveal.index(
+                      0,
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const SizedBox(height: 16),
+                          const RxEmptyArt(
+                            icon: HugeIcons.strokeRoundedFileDownload,
+                          ),
+                          const SizedBox(height: 14),
                           Text(
-                            "Downloads",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textPrimary,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -1.0,
-                            ),
+                            'Download a PDF statement',
+                            textAlign: TextAlign.center,
+                            style: RxText.title(context).copyWith(fontSize: 22),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 6),
                           Text(
-                            "Download and manage your expense reports",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textSecondary,
-                              fontSize: 14,
-                            ),
+                            'Every expense in the period, with category and payment method.',
+                            textAlign: TextAlign.center,
+                            style: RxText.caption(
+                              context,
+                            ).copyWith(fontSize: 14, height: 1.45),
                           ),
-                          const SizedBox(height: 40),
-
-                          _buildSectionLabel("AVAILABLE EXPENSE REPORTS"),
-
-                          _buildStatementCard(
-                            title: "Monthly Expenses",
-                            period: currentMonthYear,
-                            description:
-                                "Download detailed expense breakdown for $currentMonthYear",
-                            icon: Icons.receipt_long,
-                            onTap: () => _downloadReport("Monthly"),
-                          ),
-                          const SizedBox(height: 16),
-
-                          _buildStatementCard(
-                            title: "Quarterly Expenses",
-                            period: currentQuarterStr,
-                            description:
-                                "Comprehensive quarterly spending analysis",
-                            icon: Icons.pie_chart_outline,
-                            onTap: () => _downloadReport("Quarterly"),
-                          ),
-                          const SizedBox(height: 16),
-
-                          _buildStatementCard(
-                            title: "Annual Expense Summary",
-                            period: currentFY,
-                            description:
-                                "Complete annual overview of all expenses",
-                            icon: Icons.summarize,
-                            onTap: () => _downloadReport("Annual"),
-                          ),
-
-                          const SizedBox(height: 100),
                         ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-
-              if (_isDownloading)
-                Container(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  child: const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      1,
+                      child: Column(
+                        children: [
+                          const RxSectionHeader(title: 'Reports'),
+                          RxCard(
+                            padding: EdgeInsets.zero,
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < reports.length; i++) ...[
+                                  if (i > 0) const RxDivider(indent: 64),
+                                  _reportRow(
+                                    type: reports[i].$1,
+                                    icon: reports[i].$2,
+                                    title: reports[i].$3,
+                                    period: reports[i].$4,
+                                    rx: rx,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
+              ),
             ],
           ),
         ),
@@ -472,144 +436,57 @@ class _ExpensesExportScreenState extends State<ExpensesExportScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
+  Widget _reportRow({
+    required String type,
+    required List<List<dynamic>> icon,
+    required String title,
+    required String period,
+    required RxColors rx,
+  }) {
+    final busy = _busyType == type;
+    return RxPressable(
+      onTap: _isDownloading ? null : () => _download(type),
+      semanticLabel: 'Download $title, $period',
+      scale: 0.98,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Row(
+          children: [
+            RxIconTile(icon: icon, size: 38, iconSize: 19),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  Text(title, style: RxText.body(context)),
+                  const SizedBox(height: 1),
+                  Text(period, style: RxText.caption(context)),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textTertiary,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatementCard({
-    required String title,
-    required String period,
-    required String description,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    final iconBg = context.isDarkMode
-        ? Colors.white.withValues(alpha: 0.05)
-        : Colors.black.withValues(alpha: 0.05);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: context.borderColor),
-          boxShadow: context.cardShadow,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: context.borderColor),
-                  ),
-                  child: Icon(icon, color: context.iconSecondary, size: 20),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        period,
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textTertiary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: context.borderColor),
-                  ),
-                  child: Icon(
-                    Icons.download,
-                    color: context.textPrimary,
-                    size: 16,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              description,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 13,
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: rx.surfaceMuted,
+                shape: BoxShape.circle,
               ),
+              alignment: Alignment.center,
+              child: busy
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: rx.textPrimary,
+                      ),
+                    )
+                  : HugeIcon(
+                      icon: HugeIcons.strokeRoundedDownload04,
+                      color: rx.textPrimary,
+                      size: 17,
+                      strokeWidth: 2,
+                    ),
             ),
           ],
         ),

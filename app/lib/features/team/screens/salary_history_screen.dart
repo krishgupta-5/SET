@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../../../services/currency_formatter.dart';
-import '../../../../services/currency_preference_service.dart';
-import '../../../../theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+import '../../../services/currency_formatter.dart';
+import '../../../services/currency_preference_service.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class SalaryHistoryScreen extends StatefulWidget {
   final String memberId;
@@ -24,18 +26,16 @@ class SalaryHistoryScreen extends StatefulWidget {
 class _SalaryHistoryScreenState extends State<SalaryHistoryScreen> {
   bool _isRevoking = false;
 
-  // Helper to format currency
-  String _formatCurrency(double amount) {
-    final userCurrencyCode =
-        CurrencyPreferenceService.getCurrencyPreferenceSync();
-    return CurrencyFormatter.formatByCountryCompact(amount, userCurrencyCode);
-  }
+  String _formatCurrency(double amount) =>
+      CurrencyFormatter.formatByCountryCompact(
+        amount,
+        CurrencyPreferenceService.getCurrencyPreferenceSync(),
+      );
 
-  // Helper to format Firestore Timestamp
   String _formatDate(Timestamp? timestamp) {
-    if (timestamp == null) return "Unknown Date";
-    final DateTime dt = timestamp.toDate();
-    final List<String> months = [
+    if (timestamp == null) return "Unknown date";
+    final dt = timestamp.toDate();
+    const months = [
       'Jan',
       'Feb',
       'Mar',
@@ -49,50 +49,20 @@ class _SalaryHistoryScreenState extends State<SalaryHistoryScreen> {
       'Nov',
       'Dec',
     ];
-    return "${months[dt.month - 1]} ${dt.day.toString().padLeft(2, '0')}, ${dt.year}";
-  }
-
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.appBackground,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.textPrimary,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
+    return "${months[dt.month - 1]} ${dt.day}, ${dt.year}";
   }
 
   Future<void> _revokeFutureSalary() async {
+    final ok = await showRxConfirm(
+      context,
+      title: 'Cancel scheduled change?',
+      message: 'The salary stays at ${_formatCurrency(widget.currentSalary)}.',
+      confirmLabel: 'Cancel change',
+      cancelLabel: 'Keep',
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+
     setState(() => _isRevoking = true);
     try {
       await FirebaseFirestore.instance
@@ -103,310 +73,150 @@ class _SalaryHistoryScreenState extends State<SalaryHistoryScreen> {
             'futureSalaryDate': FieldValue.delete(),
             'futureSalaryReason': FieldValue.delete(),
           });
-      _showMinimalToast("Scheduled update canceled.");
+      if (mounted) showRxToast(context, "Scheduled change cancelled");
     } catch (e) {
-      _showMinimalToast("Failed to cancel update.", isError: true);
-    } finally {
       if (mounted) {
-        setState(() => _isRevoking = false);
+        showRxToast(context, "Failed to cancel change", isError: true);
       }
+    } finally {
+      if (mounted) setState(() => _isRevoking = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: Stack(
-        children: [
-          AnnotatedRegion<SystemUiOverlayStyle>(
-            value: context.isDarkMode
-                ? SystemUiOverlayStyle.light
-                : SystemUiOverlayStyle.dark,
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  _buildHeader(context),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 16),
-                          Text(
-                            "Appraisal History",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textPrimary,
-                              fontSize: 28, // Compact Hero
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -1.0,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          _buildSectionTitle("PENDING UPDATES"),
-                          const SizedBox(height: 16),
-                          _buildPendingUpdateSection(),
-                          const SizedBox(height: 40),
-                          _buildSectionTitle("PAST UPDATES"),
-                          const SizedBox(height: 16),
-                          _buildHistorySection(),
-                          const SizedBox(height: 40),
-                        ],
-                      ),
-                    ),
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              const RxTopBar(title: 'Salary history'),
+              Expanded(
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    12,
+                    20,
+                    MediaQuery.paddingOf(context).bottom + 32,
                   ),
-                ],
-              ),
-            ),
-          ),
-          if (_isRevoking)
-            Container(
-              color: Colors.black.withValues(alpha: 0.6),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
+                  children: [
+                    RxReveal.index(0, child: _buildCurrent()),
+                    RxReveal.index(1, child: _buildPendingUpdateSection()),
+                    const SizedBox(height: 28),
+                    RxReveal.index(2, child: _buildHistorySection()),
+                  ],
                 ),
               ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            ],
           ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Container(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textSecondary,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.5,
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState(String message, IconData icon) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: context.textSecondary, size: 40),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
+  Widget _buildCurrent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${widget.memberName} earns', style: RxText.label(context)),
+        const SizedBox(height: 8),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            _formatCurrency(widget.currentSalary),
+            style: RxText.hero(context, size: 44),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+        Text('per month', style: RxText.caption(context)),
+      ],
     );
   }
 
+  // Scheduled change, if any. Nothing is shown when none is pending.
   Widget _buildPendingUpdateSection() {
+    final rx = context.rx;
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
           .collection('members')
           .doc(widget.memberId)
           .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              color: context.textSecondary,
-              strokeWidth: 2,
-            ),
-          );
-        }
         if (!snapshot.hasData || !snapshot.data!.exists) {
           return const SizedBox.shrink();
         }
-
         final data = snapshot.data!.data() as Map<String, dynamic>;
         final futureSalary = data['futureSalary'];
         final futureDate = data['futureSalaryDate'] as Timestamp?;
+        if (futureSalary == null || futureDate == null) {
+          return const SizedBox.shrink();
+        }
         final reason =
             data['futureSalaryReason'] as String? ?? "No reason provided";
+        final next = (futureSalary as num).toDouble();
+        final up = next >= widget.currentSalary;
 
-        if (futureSalary == null || futureDate == null) {
-          return _buildEmptyState(
-            "No upcoming salary updates scheduled.",
-            Icons.schedule_outlined,
-          );
-        }
-
-        final amountFormatted = _formatCurrency(
-          (futureSalary as num).toDouble(),
-        );
-        final currentAmountFormatted = _formatCurrency(widget.currentSalary);
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.schedule,
-                        color: context.textSecondary,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "EFFECTIVE ${_formatDate(futureDate).toUpperCase()}",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(
-                    height: 32,
-                    child: ElevatedButton(
-                      onPressed: _revokeFutureSalary,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(
-                          0xFFFF453A,
-                        ).withValues(alpha: 0.1),
-                        foregroundColor: const Color(0xFFFF453A),
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: const Color(
-                              0xFFFF453A,
-                            ).withValues(alpha: 0.2),
-                          ),
-                        ),
-                      ),
-                      child: Text(
-                        "Cancel Update",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+        return Padding(
+          padding: const EdgeInsets.only(top: 24),
+          child: RxCard(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    RxPill(
+                      label: 'Scheduled · ${_formatDate(futureDate)}',
+                      dot: true,
+                      foreground: rx.warning,
+                      background: rx.warningSoft,
                     ),
-                  ),
-                ],
-              ),
-              Divider(color: context.borderColor, height: 32),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    currentAmountFormatted,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textTertiary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      decoration: TextDecoration.lineThrough,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Icon(
-                    Icons.arrow_forward,
-                    color: context.textTertiary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    amountFormatted,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                reason,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 13,
-                  height: 1.4,
+                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Text(
+                      _formatCurrency(widget.currentSalary),
+                      style: RxText.amount(context, color: rx.textSecondary),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: HugeIcon(
+                        icon: HugeIcons.strokeRoundedArrowRight02,
+                        color: rx.textTertiary,
+                        size: 16,
+                        strokeWidth: 2,
+                      ),
+                    ),
+                    Text(
+                      _formatCurrency(next),
+                      style: RxText.value(
+                        context,
+                        size: 20,
+                        color: up ? rx.positive : rx.negative,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(reason, style: RxText.caption(context)),
+                const SizedBox(height: 14),
+                RxButton(
+                  label: 'Cancel scheduled change',
+                  height: 44,
+                  style: RxButtonStyle.secondary,
+                  loading: _isRevoking,
+                  onTap: _revokeFutureSalary,
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -414,6 +224,7 @@ class _SalaryHistoryScreenState extends State<SalaryHistoryScreen> {
   }
 
   Widget _buildHistorySection() {
+    final rx = context.rx;
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('members')
@@ -423,142 +234,108 @@ class _SalaryHistoryScreenState extends State<SalaryHistoryScreen> {
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              color: context.textSecondary,
-              strokeWidth: 2,
+          return const RxSkeleton(height: 160, radius: 22);
+        }
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return const RxCard(
+            child: RxEmptyState(
+              icon: HugeIcons.strokeRoundedClock01,
+              title: 'No changes yet',
+              message: 'Raises and adjustments show up here',
             ),
           );
         }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildEmptyState(
-            "No past salary updates found.",
-            Icons.history_outlined,
-          );
-        }
-
-        final docs = snapshot.data!.docs;
 
         return Column(
-          children: docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final prev = (data['previousSalary'] as num?)?.toDouble() ?? 0.0;
-            final current = (data['newSalary'] as num?)?.toDouble() ?? 0.0;
-            final delta =
-                (data['delta'] as num?)?.toDouble() ?? (current - prev);
-            final reason = data['reason'] as String? ?? 'No reason provided';
-            final date = data['effectiveDate'] as Timestamp?;
-
-            bool isIncrease = delta > 0;
-
-            // Dynamic colors based on the data
-            Color deltaColor = isIncrease
-                ? const Color(0xFF30D158)
-                : const Color(0xFFFF453A);
-            String deltaPrefix = isIncrease ? "+" : "";
-
-            // Handle edge case where previous salary was 0 (e.g., initial setup)
-            if (prev == 0 && current > 0) {
-              deltaColor = context.textPrimary;
-              deltaPrefix = "";
-            }
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: context.borderColor),
-                boxShadow: context.cardShadow,
-              ),
+          children: [
+            const RxSectionHeader(title: 'Changes'),
+            RxCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _formatDate(date).toUpperCase(),
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
+                  for (var i = 0; i < docs.length; i++) ...[
+                    if (i > 0) const RxDivider(indent: 52),
+                    () {
+                      final data = docs[i].data() as Map<String, dynamic>;
+                      final prev =
+                          (data['previousSalary'] as num?)?.toDouble() ?? 0.0;
+                      final current =
+                          (data['newSalary'] as num?)?.toDouble() ?? 0.0;
+                      final delta =
+                          (data['delta'] as num?)?.toDouble() ??
+                          (current - prev);
+                      final reason =
+                          data['reason'] as String? ?? 'No reason provided';
+                      final date = data['effectiveDate'] as Timestamp?;
+                      final initial = prev == 0 && current > 0;
+                      final up = delta > 0;
+                      final color = initial
+                          ? rx.textSecondary
+                          : (up ? rx.positive : rx.negative);
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          children: [
+                            RxIconTile(
+                              icon: initial
+                                  ? HugeIcons.strokeRoundedStar
+                                  : up
+                                  ? HugeIcons.strokeRoundedArrowUpRight01
+                                  : HugeIcons.strokeRoundedArrowDownRight01,
+                              size: 40,
+                              iconSize: 19,
+                              background: initial
+                                  ? rx.surfaceMuted
+                                  : (up ? rx.positiveSoft : rx.negativeSoft),
+                              foreground: color,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    reason,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: RxText.body(context),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${_formatDate(date)} · from ${_formatCurrency(prev)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: RxText.caption(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  _formatCurrency(current),
+                                  style: RxText.amount(context),
+                                ),
+                                if (!initial)
+                                  Text(
+                                    '${up ? '+' : '−'}${_formatCurrency(delta.abs())}',
+                                    style: RxText.micro(context, color: color),
+                                  ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: deltaColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: deltaColor.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Text(
-                          prev == 0
-                              ? "Initial"
-                              : "$deltaPrefix${_formatCurrency(delta)}",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: deltaColor,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Divider(color: context.borderColor, height: 32),
-                  Row(
-                    children: [
-                      Text(
-                        _formatCurrency(prev),
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textTertiary,
-                          fontSize: 15,
-                          decoration: TextDecoration.lineThrough,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(
-                        Icons.arrow_forward,
-                        color: context.textTertiary,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        _formatCurrency(current),
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    reason,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                  ),
+                      );
+                    }(),
+                  ],
                 ],
               ),
-            );
-          }).toList(),
+            ),
+          ],
         );
       },
     );

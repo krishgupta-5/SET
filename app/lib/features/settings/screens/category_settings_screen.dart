@@ -1,8 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../../theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class CategorySettingsScreen extends StatefulWidget {
   const CategorySettingsScreen({super.key});
@@ -80,15 +82,7 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
     if (_categories
         .map((e) => e.toLowerCase())
         .contains(newCategory.toLowerCase())) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Category already exists',
-            style: TextStyle(color: context.textPrimary),
-          ),
-          backgroundColor: context.cardBackground,
-        ),
-      );
+      showRxToast(context, 'Category already exists', isError: true);
       return;
     }
 
@@ -181,256 +175,133 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final btnBg = context.isDarkMode ? Colors.white : Colors.black;
-    final btnText = context.isDarkMode ? Colors.black : Colors.white;
+    final rx = context.rx;
+    final lower = _categories.map((e) => e.toLowerCase()).toSet();
+    final suggestions = _allCategories
+        .where((c) => !lower.contains(c.toLowerCase()))
+        .toList();
 
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(),
+              const RxTopBar(title: 'Categories'),
               Expanded(
                 child: _isLoading
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          color: context.iconSecondary,
-                        ),
+                    ? ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                        children: const [
+                          RxSkeleton(height: 52, radius: 14),
+                          SizedBox(height: 28),
+                          RxSkeleton(height: 260, radius: 22),
+                        ],
                       )
-                    : SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 16,
+                    : ListView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(
+                          20,
+                          12,
+                          20,
+                          MediaQuery.paddingOf(context).bottom + 32,
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 16),
-                            Text(
-                              "Expense Categories",
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: context.textPrimary,
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -1.0,
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            Text(
-                              "Manage the categories available when adding expenses.",
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: context.textSecondary,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-
-                            // Add New Category Input
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: context.cardBackground,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: context.borderColor,
-                                      ),
-                                      boxShadow: context.cardShadow,
-                                    ),
-                                    child: TextField(
-                                      controller: _categoryController,
-                                      style: TextStyle(
-                                        fontFamily: 'Satoshi',
-                                        color: context.textPrimary,
-                                        fontSize: 15,
-                                      ),
-                                      cursorColor: context.textPrimary,
-                                      decoration: InputDecoration(
-                                        hintText: "New Category Name",
-                                        hintStyle: TextStyle(
-                                          fontFamily: 'Satoshi',
-                                          color: context.textTertiary,
-                                          fontSize: 15,
-                                        ),
-                                        border: InputBorder.none,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                GestureDetector(
-                                  onTap: _addCategory,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: btnBg,
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Icon(
-                                      Icons.add,
-                                      color: btnText,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            const SizedBox(height: 32),
-
-                            if (_allCategories
-                                .where(
-                                  (c) => !_categories
-                                      .map((e) => e.toLowerCase())
-                                      .contains(c.toLowerCase()),
-                                )
-                                .isNotEmpty) ...[
-                              Text(
-                                "AVAILABLE CATEGORIES",
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textTertiary,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1.5,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Wrap(
-                                spacing: 12,
-                                runSpacing: 12,
-                                children: _allCategories
-                                    .where(
-                                      (c) => !_categories
-                                          .map((e) => e.toLowerCase())
-                                          .contains(c.toLowerCase()),
-                                    )
-                                    .map((cat) {
-                                      return GestureDetector(
-                                        onTap: () =>
-                                            _addPredefinedCategory(cat),
-                                        child: AnimatedContainer(
-                                          duration: const Duration(
-                                            milliseconds: 200,
-                                          ),
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 10,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: context.cardBackground,
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
-                                            border: Border.all(
-                                              color: context.borderColor,
-                                            ),
-                                            boxShadow: context.cardShadow,
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                Icons.add,
-                                                color: context.textPrimary,
-                                                size: 14,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                cat,
-                                                style: TextStyle(
-                                                  fontFamily: 'Satoshi',
-                                                  color: context.textPrimary,
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    })
-                                    .toList(),
-                              ),
-                              const SizedBox(height: 32),
-                            ],
-
-                            Text(
-                              "YOUR CATEGORIES",
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: context.textTertiary,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.5,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            ..._categories.map(
-                              (cat) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
+                        children: [
+                          RxReveal.index(
+                            0,
+                            child: RxTextInput(
+                              controller: _categoryController,
+                              label: 'Add a category',
+                              hint: 'e.g. Research',
+                              icon: HugeIcons.strokeRoundedTag01,
+                              textCapitalization: TextCapitalization.words,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _addCategory(),
+                              suffix: RxPressable(
+                                onTap: _addCategory,
+                                semanticLabel: 'Add category',
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 16,
-                                  ),
+                                  width: 36,
+                                  height: 36,
                                   decoration: BoxDecoration(
-                                    color: context.cardBackground,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: context.borderColor,
-                                    ),
-                                    boxShadow: context.cardShadow,
+                                    color: rx.inverse,
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                  alignment: Alignment.center,
+                                  child: HugeIcon(
+                                    icon: HugeIcons.strokeRoundedAdd01,
+                                    color: rx.onInverse,
+                                    size: 18,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (suggestions.isNotEmpty) ...[
+                            const SizedBox(height: 24),
+                            RxReveal.index(
+                              1,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const RxSectionHeader(title: 'Suggestions'),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
                                     children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.category_outlined,
-                                            color: context.iconSecondary,
-                                            size: 18,
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Text(
-                                            cat,
-                                            style: TextStyle(
-                                              fontFamily: 'Satoshi',
-                                              color: context.textPrimary,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      GestureDetector(
-                                        onTap: () => _removeCategory(cat),
-                                        child: Icon(
-                                          Icons.close,
-                                          color: context.iconSecondary,
-                                          size: 18,
-                                        ),
-                                      ),
+                                      for (final cat in suggestions)
+                                        _suggestionChip(cat),
                                     ],
                                   ),
-                                ),
+                                ],
                               ),
                             ),
                           ],
-                        ),
+                          const SizedBox(height: 28),
+                          RxReveal.index(
+                            2,
+                            child: Column(
+                              children: [
+                                RxSectionHeader(
+                                  title:
+                                      'Your categories · ${_categories.length}',
+                                ),
+                                if (_categories.isEmpty)
+                                  const RxCard(
+                                    child: RxEmptyState(
+                                      icon: HugeIcons.strokeRoundedTag01,
+                                      title: 'No categories yet',
+                                      message:
+                                          'Add one above or tap a suggestion',
+                                    ),
+                                  )
+                                else
+                                  RxCard(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 2,
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        for (
+                                          var i = 0;
+                                          i < _categories.length;
+                                          i++
+                                        ) ...[
+                                          if (i > 0)
+                                            const RxDivider(indent: 50),
+                                          _categoryRow(_categories[i]),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
               ),
             ],
@@ -440,38 +311,74 @@ class _CategorySettingsScreenState extends State<CategorySettingsScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _suggestionChip(String cat) {
+    final rx = context.rx;
+    return RxPressable(
+      onTap: () => _addPredefinedCategory(cat),
+      semanticLabel: 'Add $cat',
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.only(left: 10, right: 14),
+        decoration: BoxDecoration(
+          color: rx.surface,
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(color: rx.hairline),
+          boxShadow: rx.cardShadow,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedAdd01,
+              color: rx.textSecondary,
+              size: 15,
+              strokeWidth: 2,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              cat,
+              style: RxText.label(
+                context,
+                color: rx.textPrimary,
+              ).copyWith(fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryRow(String cat) {
+    final rx = context.rx;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+          RxIconTile(
+            icon: RxCategory.icon(cat),
+            size: 36,
+            iconSize: 18,
+            background: RxCategory.soft(context, cat),
+            foreground: RxCategory.color(context, cat),
+          ),
+          const SizedBox(width: 14),
+          Expanded(child: Text(cat, style: RxText.body(context))),
+          RxPressable(
+            onTap: () => _removeCategory(cat),
+            semanticLabel: 'Remove $cat',
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Center(
+                child: HugeIcon(
+                  icon: HugeIcons.strokeRoundedCancel01,
+                  color: rx.textTertiary,
+                  size: 18,
+                  strokeWidth: 1.9,
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 44),
         ],
       ),
     );

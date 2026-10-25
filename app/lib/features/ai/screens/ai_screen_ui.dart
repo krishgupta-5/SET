@@ -4,16 +4,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:shimmer/shimmer.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
+import 'package:startup_expense_tracker/features/ai/widgets/ai_widgets.dart';
+import 'package:startup_expense_tracker/features/home/screens/chatbot_screen.dart';
+import 'package:startup_expense_tracker/widgets/rx_motion.dart';
+import 'package:startup_expense_tracker/widgets/custom_bottom_nav.dart'
+    show RxTabBar;
 
 import 'package:startup_expense_tracker/services/currency_formatter.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 import 'package:startup_expense_tracker/services/ai_cache_service.dart';
 import 'package:startup_expense_tracker/services/chat_service.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:startup_expense_tracker/features/ai/widgets/main_insight_card.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 extension HexColor on Color {
   static Color fromHex(String hexString, [BuildContext? context]) {
@@ -47,6 +51,10 @@ class _AiScreenState extends State<AiScreen>
   final Map<String, bool> _sectionLoadStates = {};
 
   bool _isLoading = true;
+
+  // Bumped on every fetch; results from an older fetch are dropped, so a
+  // refresh never shows old and new content one after another.
+  int _generation = 0;
   bool _isFetchingMore = false;
   final List<String> _pendingSections = [];
   Map<String, dynamic>? _cachedPayload;
@@ -58,7 +66,7 @@ class _AiScreenState extends State<AiScreen>
   Map<String, dynamic>? _staffingData;
   Map<String, dynamic>? _expenseData;
   Map<String, dynamic>? _subscriptionData;
-  
+
   String _userCountryCode = '+1'; // Default
 
   @override
@@ -74,7 +82,9 @@ class _AiScreenState extends State<AiScreen>
 
   @override
   void dispose() {
-    CurrencyPreferenceService.currencyNotifier.removeListener(_onCurrencyChanged);
+    CurrencyPreferenceService.currencyNotifier.removeListener(
+      _onCurrencyChanged,
+    );
     super.dispose();
   }
 
@@ -85,11 +95,11 @@ class _AiScreenState extends State<AiScreen>
         setState(() {
           _userCountryCode = newCurrency;
         });
-        
+
         // Reset load states so lazy-loaded sections will re-fetch
         _initializeLoadStates();
         _pendingSections.clear();
-        
+
         // Re-fetch insights from backend with new currency
         _fetchAIInsight();
       }
@@ -102,7 +112,7 @@ class _AiScreenState extends State<AiScreen>
     if (mounted && asyncCode != _userCountryCode) {
       setState(() => _userCountryCode = asyncCode);
     }
-    
+
     // Removed unnecessary AIService.syncAICollections() here since _fetchAIInsight fetches data.
 
     await _fetchAIInsight();
@@ -130,7 +140,20 @@ class _AiScreenState extends State<AiScreen>
   }
 
   Future<void> _fetchAIInsight({bool forceRefresh = false}) async {
-    setState(() => _isLoading = true);
+    _generation++;
+    _pendingSections.clear();
+    setState(() {
+      _isLoading = true;
+      if (forceRefresh) {
+        _mainData = null;
+        _keyPointsData = null;
+        _runwayData = null;
+        _burnData = null;
+        _staffingData = null;
+        _expenseData = null;
+        _subscriptionData = null;
+      }
+    });
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -140,7 +163,9 @@ class _AiScreenState extends State<AiScreen>
       if (!forceRefresh) {
         final isValid = await AiCacheService.isCacheValid();
         if (isValid) {
-          final rawCachedState = await AiCacheService.loadSectionCache('full_ui_state');
+          final rawCachedState = await AiCacheService.loadSectionCache(
+            'full_ui_state',
+          );
           if (rawCachedState != null && rawCachedState.isNotEmpty) {
             debugPrint("Loaded UI AI insights from fast local cache!");
             setState(() {
@@ -189,7 +214,8 @@ class _AiScreenState extends State<AiScreen>
           _mainData = {
             "primary_insight": "Welcome to AI Insights",
             "high_impact_summary": "NO DATA",
-            "description": "No expenses recorded yet. Add some expenses to generate your first financial intelligence report.",
+            "description":
+                "No expenses recorded yet. Add some expenses to generate your first financial intelligence report.",
           };
           _isLoading = false;
         });
@@ -243,6 +269,11 @@ class _AiScreenState extends State<AiScreen>
       _processQueue();
     } catch (e) {
       debugPrint("Error fetching data: $e");
+      if (mounted) {
+        setState(
+          () => _mainData = {"error": e.toString(), "code": "fetch_failed"},
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -255,12 +286,15 @@ class _AiScreenState extends State<AiScreen>
 
     setState(() => _isFetchingMore = true);
 
+    final gen = _generation;
     final sectionsToProcess = List<String>.from(_pendingSections);
     _pendingSections.clear();
 
     String baseUrl = ChatService.baseUrl;
 
-    final currencySymbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+    final currencySymbol = CurrencyFormatter.getCurrencySymbol(
+      _userCountryCode,
+    );
     debugPrint("====== AI SCREEN UI DEBUG ======");
     debugPrint("Current _userCountryCode: $_userCountryCode");
     debugPrint("Calculated currencySymbol: $currencySymbol");
@@ -277,26 +311,22 @@ class _AiScreenState extends State<AiScreen>
           "currencySymbol": currencySymbol,
         };
 
-        final res = await _postWithRetry(
-          "$baseUrl/generate-ai-section",
-          {
-            "Content-Type": "application/json",
-            if (token != null) "Authorization": "Bearer $token",
-          },
-          requestBody,
-        );
+        final res = await _postWithRetry("$baseUrl/generate-ai-section", {
+          "Content-Type": "application/json",
+          if (token != null) "Authorization": "Bearer $token",
+        }, requestBody);
 
         if (!mounted) return;
+        if (gen != _generation) break; // A newer refresh started.
 
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body);
           final insight = data["insight"];
 
-          if (!mounted) return;
+          if (!mounted || gen != _generation) break;
 
           // Backend may return HTTP 200 with an error payload inside "insight".
-          if (insight is Map<String, dynamic> &&
-              insight.containsKey('error')) {
+          if (insight is Map<String, dynamic> && insight.containsKey('error')) {
             debugPrint(
               "Backend error for section $sectionKey: "
               "${insight['code'] ?? insight['error']}",
@@ -325,19 +355,22 @@ class _AiScreenState extends State<AiScreen>
               _subscriptionData = insight;
             }
           });
+        } else {
+          // Server error: show the friendly fallback, not an endless loader.
+          _applySectionError(sectionKey, 'HTTP ${res.statusCode}');
         }
       } catch (e) {
         debugPrint("Failed to load AI section $sectionKey: $e");
-        if (mounted) {
+        if (mounted && gen == _generation) {
           _applySectionError(sectionKey, e.toString());
         }
       }
     }
 
     if (mounted) {
-      // Only cache valid results; do not persist error states
+      // Only cache valid, current results; never persist errors.
       final hasError = _mainData != null && _mainData!.containsKey("error");
-      if (!hasError && _mainData != null) {
+      if (!hasError && _mainData != null && gen == _generation) {
         final uiState = {
           "main": _mainData,
           "keyPoints": _keyPointsData,
@@ -350,8 +383,10 @@ class _AiScreenState extends State<AiScreen>
         await AiCacheService.saveSectionCache('full_ui_state', [uiState]);
         await AiCacheService.updateSyncTimestamp();
       }
-      
+
       setState(() => _isFetchingMore = false);
+      // Sections queued while this run was busy (e.g. by a refresh).
+      if (_pendingSections.isNotEmpty) _processQueue();
     }
   }
 
@@ -365,11 +400,9 @@ class _AiScreenState extends State<AiScreen>
   }) async {
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        final r = await http.post(
-          Uri.parse(url),
-          headers: headers,
-          body: jsonEncode(body),
-        ).timeout(const Duration(seconds: 60));
+        final r = await http
+            .post(Uri.parse(url), headers: headers, body: jsonEncode(body))
+            .timeout(const Duration(seconds: 60));
 
         // Accept any response on the final attempt; retry 5xx cold starts.
         if (r.statusCode < 500 || attempt == maxAttempts) {
@@ -401,7 +434,9 @@ class _AiScreenState extends State<AiScreen>
           ],
         };
       } else if (sectionKey == "runway") {
-        _runwayData = {"bullet_points": ["Connection Error: $error"]};
+        _runwayData = {
+          "bullet_points": ["Connection Error: $error"],
+        };
       } else if (sectionKey == "burn") {
         _burnData = {
           "items": [
@@ -456,172 +491,6 @@ class _AiScreenState extends State<AiScreen>
     _processQueue();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: context.isDarkMode
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
-      child: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            _buildHeader(context),
-
-            // Content
-            Expanded(
-              child: _isLoading
-                  ? ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                      itemCount: 5,
-                      separatorBuilder: (_, _) => const SizedBox(height: 32),
-                      itemBuilder: (_, _) => _buildShimmerPlaceholder(height: 140),
-                    )
-                  : RefreshIndicator(
-                      color: context.textPrimary,
-                      backgroundColor: context.cardBackground,
-                      onRefresh: () async {
-                        _initializeLoadStates();
-                        _pendingSections.clear();
-                        await _fetchAIInsight(forceRefresh: true);
-                      },
-                      child: NotificationListener<ScrollNotification>(
-                        onNotification: (scrollInfo) {
-                          if (scrollInfo.metrics.pixels > 200) {
-                            _loadSection('runway');
-                          }
-                          if (scrollInfo.metrics.pixels > 600) {
-                            _loadSection('burn');
-                            _loadSection('staffing');
-                          }
-                          if (scrollInfo.metrics.pixels > 1000) {
-                            _loadSection('expense');
-                            _loadSection('subscription');
-                          }
-                          return false;
-                        },
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.only(
-                            left: 24,
-                            right: 24,
-                            top: 16,
-                            bottom: 120, // Padding for the bottom nav bar
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Main Insight Card
-                              MainInsightCard(mainData: _mainData),
-
-                              // Key Points
-                              if (_sectionLoadStates['keyPoints']!)
-                                _buildKeyPointsSection(),
-
-                              // Runway Recommendations
-                              if (_sectionLoadStates['runway']!)
-                                _buildRunwayRecommendationsSection(),
-
-                              // Burn Optimization
-                              if (_sectionLoadStates['burn']!)
-                                _buildBurnOptimizationSection(),
-
-                              // Staffing Insights
-                              if (_sectionLoadStates['staffing']!)
-                                _buildStaffingInsightsSection(),
-
-                              // Expense Analysis
-                              if (_sectionLoadStates['expense']!)
-                                _buildExpenseAnalysisSection(),
-
-                              // Subscription Insights
-                              if (_sectionLoadStates['subscription']!)
-                                _buildSubscriptionInsightsSection(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildShimmerPlaceholder({double height = 140}) {
-    return Shimmer.fromColors(
-      baseColor: context.isDarkMode ? Colors.grey[800]! : Colors.grey[300]!,
-      highlightColor: context.isDarkMode ? Colors.grey[700]! : Colors.grey[100]!,
-      child: Container(
-        width: double.infinity,
-        height: height,
-        decoration: BoxDecoration(
-          color: context.isDarkMode ? Colors.grey[800] : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "AI Insights",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "Financial Recommendations",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.borderColor),
-              boxShadow: context.cardShadow,
-            ),
-            child: Icon(
-              Icons.auto_awesome,
-              color: context.textPrimary,
-              size: 20,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // MainInsightCard extracted to widgets/main_insight_card.dart
-
   bool _isInsightBlank(String insight) {
     final lower = insight.toLowerCase().trim();
     if (lower.isEmpty) return true;
@@ -632,769 +501,396 @@ class _AiScreenState extends State<AiScreen>
     return false;
   }
 
-  Widget _buildKeyPointsSection() {
-    if (_keyPointsData == null) {
-      return _buildShimmerPlaceholder(height: 160);
-    }
-    final items = _keyPointsData?['items'] as List<dynamic>? ?? [];
+  // --- UI ---
 
-    if (items.isEmpty || (items.length == 1 && _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-        Text(
-          "Key Recommendations",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            children: items.map((item) {
-              return Column(
-                children: [
-                  _buildKeyPoint(
-                    item['title'] ?? '',
-                    item['description'] ?? '',
-                    item['savings'] ?? '',
-                    HexColor.fromHex(item['color'] ?? '#ffffff', context),
-                  ),
-                  const SizedBox(height: 20),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-  Widget _buildKeyPoint(
-    String title,
-    String description,
-    String savings,
-    Color color,
-  ) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: context.isDarkMode
-            ? Colors.white.withValues(alpha: 0.03)
-            : Colors.black.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: color.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  savings,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 12,
-              height: 1.4,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<void> _refresh() async {
+    if (_isLoading) return;
+    HapticFeedback.selectionClick();
+    _initializeLoadStates();
+    _pendingSections.clear();
+    await _fetchAIInsight(forceRefresh: true);
   }
 
-  Widget _buildChart(Map<String, dynamic> data, {String defaultType = 'bar'}) {
-    final chartType = data['chart_type'] as String? ?? defaultType;
-    final chartData = data['chart_data'] as List<dynamic>?;
-    
-    if (chartData == null || chartData.isEmpty) {
-      return const SizedBox.shrink();
-    }
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final rx = context.rx;
+    final busy = _isLoading || _isFetchingMore;
 
-    try {
-      if (chartType == 'pie') {
-        return _buildPieChart(chartData);
-      } else if (chartType == 'bar') {
-        return _buildBarChart(chartData);
-      }
-    } catch (e) {
-      debugPrint("Error building chart: $e");
-    }
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildPieChart(List<dynamic> chartData) {
-    double total = chartData.fold(0.0, (sum, item) {
-      double val = double.tryParse((item as Map<String, dynamic>)['value'].toString()) ?? 0;
-      return sum + val;
-    });
-
-    return Column(
-      children: [
-        Container(
-          height: 200,
-          margin: const EdgeInsets.only(top: 24, bottom: 24),
-          child: PieChart(
-            PieChartData(
-              sectionsSpace: 2,
-              centerSpaceRadius: 60,
-              sections: chartData.map((dynamic dataItem) {
-                final item = dataItem as Map<String, dynamic>;
-                double val = double.tryParse(item['value'].toString()) ?? 0;
-                double percent = total > 0 ? (val / total) * 100 : 0;
-                if (val <= 0) val = 0.0001; // Avoid layout crash if sum is 0
-                final colorHex = item['color']?.toString() ?? '#30D158';
-                final color = HexColor.fromHex(colorHex, context);
-                return PieChartSectionData(
-                  color: color,
-                  value: val,
-                  showTitle: percent >= 5,
-                  title: '${percent.toStringAsFixed(0)}%',
-                  titleStyle: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                  radius: percent >= 5 ? 25 : 20,
-                );
-              }).toList(),
-            ),
-          ),
-        ),
-        Wrap(
-          spacing: 16,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: chartData.map((item) {
-            final data = item as Map<String, dynamic>;
-            final colorHex = data['color']?.toString() ?? '#30D158';
-            final color = HexColor.fromHex(colorHex, context);
-            final label = data['label']?.toString() ?? '';
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildBarChart(List<dynamic> chartData) {
-    final maxVal = chartData.map((e) {
-      if (e is Map) return double.tryParse(e['value'].toString()) ?? 0.0;
-      return 0.0;
-    }).reduce((a, b) => a > b ? a : b);
-    
-    final safeMaxY = maxVal <= 0 ? 100.0 : maxVal * 1.2;
-
-    return Container(
-      height: 200,
-      margin: const EdgeInsets.only(top: 24, bottom: 8),
-      child: BarChart(
-        BarChartData(
-          alignment: BarChartAlignment.spaceAround,
-          maxY: safeMaxY,
-          minY: 0,
-          barTouchData: BarTouchData(enabled: false),
-          titlesData: FlTitlesData(
-            show: true,
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  if (value.toInt() >= 0 && value.toInt() < chartData.length) {
-                    final item = chartData[value.toInt()] as Map<String, dynamic>;
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        item['label']?.toString() ?? '',
-                        style: TextStyle(
-                          color: context.textSecondary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    );
-                  }
-                  return const Text('');
-                },
-              ),
-            ),
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            horizontalInterval: safeMaxY / 4 > 0 ? safeMaxY / 4 : 1, // Safe interval
-            getDrawingHorizontalLine: (value) {
-              return FlLine(
-                color: context.isDarkMode ? Colors.white10 : Colors.black12,
-                strokeWidth: 1,
-              );
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          color: rx.textPrimary,
+          backgroundColor: rx.surface,
+          onRefresh: _refresh,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (scrollInfo) {
+              if (scrollInfo.metrics.pixels > 200) _loadSection('runway');
+              if (scrollInfo.metrics.pixels > 600) {
+                _loadSection('burn');
+                _loadSection('staffing');
+              }
+              if (scrollInfo.metrics.pixels > 1000) {
+                _loadSection('expense');
+                _loadSection('subscription');
+              }
+              return false;
             },
-          ),
-          borderData: FlBorderData(show: false),
-          barGroups: chartData.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final item = entry.value as Map<String, dynamic>;
-            final val = double.tryParse(item['value'].toString()) ?? 0;
-            final colorHex = item['color']?.toString() ?? '#30D158';
-            final color = HexColor.fromHex(colorHex, context);
-            return BarChartGroupData(
-              x: idx,
-              barRods: [
-                BarChartRodData(
-                  toY: val < 0 ? 0 : val,
-                  color: color,
-                  width: 16,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(6),
-                    topRight: Radius.circular(6),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                RxTabBar.reservedHeight(context),
+              ),
+              children: [
+                RxReveal.index(0, child: _buildHeader(busy)),
+                const SizedBox(height: 20),
+                if (_isLoading || _mainData == null)
+                  _centered(const AiThinking())
+                else if (_mainData!.containsKey('error'))
+                  _centered(AiOffline(onRetry: _refresh))
+                else ...[
+                  RxReveal(
+                    key: ValueKey(identityHashCode(_mainData)),
+                    child: MainInsightCard(mainData: _mainData),
                   ),
-                )
+                  ..._section(
+                    'keyPoints',
+                    _keyPointsData,
+                    _buildKeyPointsSection,
+                  ),
+                  ..._section(
+                    'runway',
+                    _runwayData,
+                    _buildRunwayRecommendationsSection,
+                  ),
+                  ..._section('burn', _burnData, _buildBurnOptimizationSection),
+                  ..._section(
+                    'staffing',
+                    _staffingData,
+                    _buildStaffingInsightsSection,
+                  ),
+                  ..._section(
+                    'expense',
+                    _expenseData,
+                    _buildExpenseAnalysisSection,
+                  ),
+                  ..._section(
+                    'subscription',
+                    _subscriptionData,
+                    _buildSubscriptionInsightsSection,
+                  ),
+                  const SizedBox(height: 24),
+                  RxReveal(
+                    delay: const Duration(milliseconds: 200),
+                    child: _buildAskCard(),
+                  ),
+                ],
               ],
-            );
-          }).toList(),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildRunwayRecommendationsSection() {
-    if (_runwayData == null) {
-      return _buildShimmerPlaceholder(height: 140);
-    }
-    final bulletPoints = _runwayData?['bullet_points'] as List<dynamic>? ?? [];
-    
-    if (bulletPoints.isEmpty || (bulletPoints.length == 1 && _isInsightBlank(bulletPoints[0].toString()))) {
-      return const SizedBox.shrink();
-    }
-    
-    final textContent = bulletPoints.map((b) => "• $b").join('\n');
+  static const _sectionNames = {
+    'keyPoints': 'recommendations',
+    'runway': 'your runway',
+    'burn': 'your burn',
+    'staffing': 'staffing',
+    'expense': 'spending',
+    'subscription': 'subscriptions',
+  };
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-        Text(
-          "Runway Optimization",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            border: Border.all(color: context.borderColor),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome,
-                    color: context.textPrimary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "OPTIMIZATION OPPORTUNITIES",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                textContent,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  height: 1.6,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-  Widget _buildBurnOptimizationSection() {
-    if (_burnData == null) {
-      return _buildShimmerPlaceholder(height: 140);
-    }
-    final items = _burnData?['items'] as List<dynamic>? ?? [];
-
-    if (items.isEmpty || (items.length == 1 && _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-        Text(
-          "Burn Optimization",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            border: Border.all(color: context.borderColor),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome,
-                    color: context.textPrimary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "OPTIMIZATION OPPORTUNITIES",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ...items.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: _buildOptimizationItem(
-                    item['title'] ?? '',
-                    item['description'] ?? '',
-                    item['savings'] ?? '',
-                    HexColor.fromHex(item['color'] ?? '#ffffff', context),
-                  ),
-                );
-              }),
-              if (_burnData != null && _burnData!['chart_data'] != null)
-                _buildChart(_burnData!, defaultType: 'bar'),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-  Widget _buildOptimizationItem(
-    String title,
-    String description,
-    String savings,
-    Color color,
+  /// A section in the feed: a small "analyzing" row while the model works,
+  /// then the card, revealed when its data lands. Hidden if it says nothing.
+  List<Widget> _section(
+    String key,
+    Map<String, dynamic>? data,
+    Widget? Function() build,
   ) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: context.isDarkMode
-            ? Colors.white.withValues(alpha: 0.03)
-            : Colors.black.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
+    if (!(_sectionLoadStates[key] ?? false)) return const [];
+    final Widget? body = data == null
+        ? _SectionLoading(label: 'Analyzing ${_sectionNames[key] ?? key}')
+        : build();
+    if (body == null) return const [];
+    return [
+      const SizedBox(height: 14),
+      RxReveal(key: ValueKey('$key-${identityHashCode(data)}'), child: body),
+    ];
+  }
+
+  Widget _buildHeader(bool busy) {
+    return RxTabHeader(
+      label: 'Insights from your numbers',
+      title: 'AI CFO',
+      actions: [
+        RxCircleButton(
+          icon: HugeIcons.strokeRoundedRefresh,
+          semanticLabel: 'Refresh insights',
+          onTap: busy ? null : _refresh,
+        ),
+      ],
+    );
+  }
+
+  /// Places [child] in the middle of the space left under the header, so
+  /// loading and offline states sit centred on screen (still pull-to-refresh).
+  Widget _centered(Widget child) {
+    final mq = MediaQuery.of(context);
+    final h =
+        mq.size.height -
+        mq.padding.top -
+        RxTabBar.reservedHeight(context) -
+        110; // header + spacing
+    return RxReveal(
+      key: ValueKey(child.runtimeType),
+      child: SizedBox(
+        height: h.clamp(320.0, 900.0),
+        child: Center(child: child),
       ),
+    );
+  }
+
+  Widget _buildAskCard() {
+    final rx = context.rx;
+    return RxPressable(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ChatbotScreen()),
+      ),
+      semanticLabel: 'Ask your AI CFO a question',
+      scale: 0.98,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: rx.inverse,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: rx.raisedShadow,
+        ),
+        child: Row(
+          children: [
+            const RxAiBadge(size: 44),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Have a question?',
+                    style: RxText.body(
+                      context,
+                      color: rx.onInverse,
+                    ).copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Ask about runway, hiring or any expense',
+                    style: RxText.caption(
+                      context,
+                      color: rx.onInverse.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedArrowRight01,
+              color: rx.onInverse,
+              size: 20,
+              strokeWidth: 2,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Items reveal one after another inside a section.
+  Widget _staggered(List<Widget> children, {bool dividers = false}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0)
+          dividers
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: RxDivider(indent: 28),
+                )
+              : const SizedBox(height: 10),
+        RxReveal(
+          delay: Duration(milliseconds: 120 + 90 * i),
+          offset: 8,
+          child: children[i],
+        ),
+      ],
+    ],
+  );
+
+  List<Map<String, dynamic>> _items(Map<String, dynamic>? data) {
+    final raw = data?['items'] as List<dynamic>? ?? [];
+    final items = raw
+        .whereType<Map<String, dynamic>>()
+        .where((i) => i['title'] != 'Connection Error')
+        .toList();
+    if (items.isEmpty ||
+        (items.length == 1 &&
+            _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
+      return const [];
+    }
+    return items;
+  }
+
+  Widget? _itemsSection({
+    required Map<String, dynamic>? data,
+    required List<List<dynamic>> icon,
+    required String title,
+    required String subtitle,
+    required AiTone tone,
+    String? chartType,
+  }) {
+    final items = _items(data);
+    if (items.isEmpty) return null;
+    return AiSection(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      tone: tone,
+      child: Column(
+        children: [
+          _staggered([
+            for (var i = 0; i < items.length; i++)
+              AiRecommendation(
+                index: i + 1,
+                title: (items[i]['title'] ?? '').toString(),
+                description: (items[i]['description'] ?? '').toString(),
+                savings: items[i]['savings']?.toString(),
+                tone: tone,
+              ),
+          ], dividers: true),
+        ],
+      ),
+    );
+  }
+
+  Widget? _textSection({
+    required Map<String, dynamic>? data,
+    required List<List<dynamic>> icon,
+    required String title,
+    required String subtitle,
+    required AiTone tone,
+    String? chartType,
+  }) {
+    final insight = data?['insight']?.toString() ?? '';
+    if (_isInsightBlank(insight) || insight.startsWith('Connection Error')) {
+      return null;
+    }
+    final rx = context.rx;
+    return AiSection(
+      icon: icon,
+      title: title,
+      subtitle: subtitle,
+      tone: tone,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: color.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  savings,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 12,
-              height: 1.4,
-              fontWeight: FontWeight.w400,
-            ),
+          AiTypewriter(
+            key: ValueKey(insight),
+            text: insight,
+            wordMs: 70,
+            delay: const Duration(milliseconds: 150),
+            style: RxText.body(
+              context,
+              color: rx.textSecondary,
+            ).copyWith(fontWeight: FontWeight.w400, height: 1.5),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStaffingInsightsSection() {
-    if (_staffingData == null) {
-      return _buildShimmerPlaceholder(height: 140);
-    }
-    final insight = _staffingData?['insight']?.toString() ?? "";
+  Widget? _buildKeyPointsSection() => _itemsSection(
+    data: _keyPointsData,
+    icon: HugeIcons.strokeRoundedIdea01,
+    title: 'Top recommendations',
+    subtitle: 'What to act on first',
+    tone: AiTone.brand,
+  );
 
-    if (_isInsightBlank(insight)) {
-      return const SizedBox.shrink();
-    }
+  Widget? _buildRunwayRecommendationsSection() {
+    final points = (_runwayData?['bullet_points'] as List<dynamic>? ?? [])
+        .map((b) => b.toString())
+        .where((b) => !_isInsightBlank(b) && !b.startsWith('Connection Error'))
+        .toList();
+    if (points.isEmpty) return null;
+    return AiSection(
+      icon: HugeIcons.strokeRoundedAirplaneTakeOff01,
+      title: 'Extend your runway',
+      subtitle: 'Ways to make cash last longer',
+      tone: AiTone.info,
+      child: _staggered([
+        for (final p in points) AiBullet(text: p, tone: AiTone.info),
+      ]),
+    );
+  }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-        Text(
-          "Staffing Analysis",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            border: Border.all(color: context.borderColor),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.auto_awesome,
-                    color: Color(0xFF0A84FF),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "STAFFING INSIGHT",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: const Color(0xFF0A84FF),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                insight,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  height: 1.5,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
+  Widget? _buildBurnOptimizationSection() => _itemsSection(
+    data: _burnData,
+    icon: HugeIcons.strokeRoundedFire,
+    title: 'Cut your burn',
+    subtitle: 'Where monthly spend can drop',
+    tone: AiTone.warning,
+    chartType: 'bar',
+  );
+
+  Widget? _buildStaffingInsightsSection() => _textSection(
+    data: _staffingData,
+    icon: HugeIcons.strokeRoundedUserGroup,
+    title: 'Team and payroll',
+    subtitle: 'How your people costs look',
+    tone: AiTone.info,
+  );
+
+  Widget? _buildExpenseAnalysisSection() => _textSection(
+    data: _expenseData,
+    icon: HugeIcons.strokeRoundedPieChart,
+    title: 'Spending patterns',
+    subtitle: 'Where the money goes',
+    tone: AiTone.negative,
+    chartType: 'pie',
+  );
+
+  Widget? _buildSubscriptionInsightsSection() => _itemsSection(
+    data: _subscriptionData,
+    icon: HugeIcons.strokeRoundedRepeat,
+    title: 'Subscriptions',
+    subtitle: 'Recurring costs worth a look',
+    tone: AiTone.brand,
   );
 }
 
-  Widget _buildExpenseAnalysisSection() {
-    if (_expenseData == null) {
-      return _buildShimmerPlaceholder(height: 140);
-    }
-    final insight = _expenseData?['insight']?.toString() ?? "";
+/// Inline "the AI is working on this" row, shown while a section loads.
+class _SectionLoading extends StatelessWidget {
+  const _SectionLoading({required this.label});
+  final String label;
 
-    if (_isInsightBlank(insight)) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  @override
+  Widget build(BuildContext context) {
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Row(
         children: [
-        Text(
-          "Expense Analysis",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            border: Border.all(color: context.borderColor),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.auto_awesome,
-                    color: Color(0xFFFF453A),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "SPENDING INSIGHT",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: const Color(0xFFFF453A),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                insight,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 14,
-                  height: 1.5,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-              if (_expenseData != null && _expenseData!['chart_data'] != null)
-                _buildChart(_expenseData!, defaultType: 'pie'),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-  Widget _buildSubscriptionInsightsSection() {
-    if (_subscriptionData == null) {
-      return _buildShimmerPlaceholder(height: 160);
-    }
-    final items = _subscriptionData?['items'] as List<dynamic>? ?? [];
-
-    if (items.isEmpty || (items.length == 1 && _isInsightBlank(items[0]['title']?.toString() ?? ''))) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-        Text(
-          "Subscription Analysis",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            border: Border.all(color: context.borderColor),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome,
-                    color: context.textPrimary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    "SUBSCRIPTION OPPORTUNITIES",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              ...items.map((item) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16.0),
-                  child: _buildOptimizationItem(
-                    item['title'] ?? '',
-                    item['description'] ?? '',
-                    item['savings'] ?? '',
-                    HexColor.fromHex(item['color'] ?? '#ffffff', context),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
+          Expanded(child: Text('$label…', style: RxText.label(context))),
+          const AiTypingDots(),
+        ],
+      ),
+    );
+  }
 }

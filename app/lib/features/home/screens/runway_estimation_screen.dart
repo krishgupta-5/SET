@@ -5,9 +5,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
-import '../../../theme/app_theme.dart';
 import '../../../utils/expense_expansion_helper.dart';
-import '../../../shared/widgets/custom_back_button.dart';
+import '../../../widgets/rx_ui.dart';
+import '../../../widgets/rx_motion.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 class RunwayEstimationScreen extends StatefulWidget {
@@ -366,84 +366,64 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
     return "SAFE";
   }
 
-  Color _getHealthStatusColor() {
-    final status = _getHealthStatus();
-    switch (status) {
-      case "CRITICAL":
-      case "DEPLETED":
-        return const Color(0xFFEF4444); // Deep Red
-      case "WARNING":
-        return const Color(0xFFF59E0B); // Amber
+  // --- UI (presentation only) ---
+
+  /// Status pill colours for the value returned by [_getHealthStatus].
+  ({String label, Color fg, Color bg}) _statusStyle() {
+    final rx = context.rx;
+    switch (_getHealthStatus()) {
       case "SAFE":
-        return const Color(0xFF10B981); // Emerald
+        return (label: 'Healthy', fg: rx.positive, bg: rx.positiveSoft);
+      case "WARNING":
+        return (label: 'Watch', fg: rx.warning, bg: rx.warningSoft);
+      case "CRITICAL":
+        return (label: 'Critical', fg: rx.negative, bg: rx.negativeSoft);
+      case "DEPLETED":
+        return (label: 'Depleted', fg: rx.negative, bg: rx.negativeSoft);
+      case "NO EXPENSES":
+        return (
+          label: 'No expenses',
+          fg: rx.textSecondary,
+          bg: rx.surfaceMuted,
+        );
+      case "NO DATA":
+        return (label: 'No data', fg: rx.textSecondary, bg: rx.surfaceMuted);
       default:
-        return context.textSecondary;
+        return (label: 'Updating', fg: rx.textSecondary, bg: rx.surfaceMuted);
     }
   }
 
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
+  String get _zeroMoney =>
+      '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0';
 
-  Widget _buildEmptyState(String text) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
+  /// Big value + small unit for the hero, matching Home's readout.
+  ({String value, String? unit}) _runwayParts() {
+    if (isLoading) return (value: '--', unit: null);
+    final m = runwayMonths ?? 0;
+    if (m <= 0) return (value: '0', unit: 'months');
+    if (m > 120) return (value: '10+', unit: 'years');
+    if (m >= 12) {
+      final v = (m / 12).toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '');
+      return (value: v, unit: v == '1' ? 'year' : 'years');
+    }
+    if (m >= 1) return (value: m.toStringAsFixed(1), unit: 'months');
+    final d = (m * 30).round().clamp(1, 30);
+    return (value: '$d', unit: d == 1 ? 'day' : 'days');
   }
 
   void _showProjectionHint() {
+    final rx = context.rx;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            HugeIcon(
-              icon: HugeIcons.strokeRoundedInformationCircle,
-              color: context.textPrimary,
-              size: 16,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                "Formula: Fund Left ÷ Monthly Expense",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+        content: Text(
+          'Runway = cash left ÷ monthly burn. Assumes this month\'s burn stays flat.',
+          style: RxText.body(context, color: rx.onInverse),
         ),
-        backgroundColor: context.cardBackground,
+        backgroundColor: rx.inverse,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         duration: const Duration(seconds: 4),
         elevation: 0,
       ),
@@ -452,539 +432,532 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rx = context.rx;
 
-    return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: _loadData,
-            color: context.textPrimary,
-            backgroundColor: context.cardBackground,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: Scaffold(
+        backgroundColor: rx.background,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              RxTopBar(
+                title: 'Runway',
+                trailing: RxCircleButton(
+                  icon: HugeIcons.strokeRoundedRefresh,
+                  semanticLabel: 'Refresh',
+                  onTap: isLoading ? null : _loadData,
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(context),
-                  const SizedBox(height: 32),
-                  _buildMainRunwayHero(isDark),
-                  const SizedBox(height: 40),
-                  _buildFinancialMetricsGrid(isDark),
-                  const SizedBox(height: 40),
-                  _buildMonthlyProjectionSection(isDark),
-                  const SizedBox(height: 40),
-                  _buildRiskFactorsSection(isDark),
-                  const SizedBox(height: 80),
-                ],
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _loadData,
+                  color: rx.textPrimary,
+                  backgroundColor: rx.surface,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      12,
+                      20,
+                      MediaQuery.paddingOf(context).bottom + 32,
+                    ),
+                    // Sections rise in once their data lands; ones with
+                    // nothing to show are left out entirely.
+                    children: [
+                      RxReveal(
+                        key: ValueKey('hero-$isLoading'),
+                        child: _buildHero(),
+                      ),
+                      if (isLoading || monthlyProjections.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        RxReveal(
+                          key: ValueKey('chart-$isLoading'),
+                          delay: const Duration(milliseconds: 60),
+                          child: _buildChartCard(),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      RxReveal(
+                        key: ValueKey('stats-$isLoading'),
+                        delay: const Duration(milliseconds: 120),
+                        child: _buildStatsCard(),
+                      ),
+                      if (isLoading || monthlyProjections.isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        RxReveal(
+                          key: ValueKey('proj-$isLoading'),
+                          delay: const Duration(milliseconds: 180),
+                          child: Column(
+                            children: [
+                              RxSectionHeader(
+                                title: 'Cash projection',
+                                actionLabel: 'How it works',
+                                onAction: _showProjectionHint,
+                              ),
+                              _buildProjectionCard(),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (isLoading || _calculateRiskFactors().isNotEmpty) ...[
+                        const SizedBox(height: 28),
+                        RxReveal(
+                          key: ValueKey('risk-$isLoading'),
+                          delay: const Duration(milliseconds: 240),
+                          child: Column(
+                            children: [
+                              const RxSectionHeader(title: 'Signals'),
+                              _buildRiskCard(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  // --- HERO ---
+  Widget _buildHero() {
+    final rx = context.rx;
+    final status = _statusStyle();
+    final parts = _runwayParts();
+    final date = _cashOutLabel;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CustomBackButton(),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        Row(
           children: [
-            Text(
-              "Runway Analysis",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              "Projections",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
+            Text('Estimated runway', style: RxText.label(context)),
+            const SizedBox(width: 8),
+            RxPill(
+              label: status.label,
+              dot: true,
+              foreground: status.fg,
+              background: status.bg,
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(parts.value, style: RxText.hero(context, size: 60)),
+              if (parts.unit != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  parts.unit!,
+                  style: RxText.value(
+                    context,
+                    size: 20,
+                    color: rx.textSecondary,
+                  ).copyWith(fontWeight: FontWeight.w500),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text.rich(
+          TextSpan(
+            style: RxText.label(context),
+            children: [
+              const TextSpan(text: 'Cash runs out '),
+              TextSpan(
+                text: date,
+                style: RxText.label(
+                  context,
+                  color: rx.textPrimary,
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildMainRunwayHero(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              "ESTIMATED RUNWAY",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.5,
-              ),
-            ),
-            Row(
-              children: [
-                Text(
-                  "Updated Today",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _loadData,
-                  child: isLoading
-                      ? SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: context.textSecondary,
-                          ),
-                        )
-                      : HugeIcon(
-                          icon: HugeIcons.strokeRoundedRefresh,
-                          color: context.textSecondary,
-                          size: 14,
-                        ),
-                ),
-              ],
-            ),
-          ],
+  // --- CHART ---
+
+  /// Checkpoint picked by tapping or dragging on the chart. 0 = today,
+  /// k = monthlyProjections[k - 1]. UI state only.
+  int? _scrubIndex;
+
+  /// "832.5" months -> "69.4 years left"; short runways stay in months.
+  String _leftLabel(String monthsLeft) {
+    final m = double.tryParse(monthsLeft) ?? 0;
+    if (m >= 24) return '${(m / 12).toStringAsFixed(1)} years left';
+    return '${m.toStringAsFixed(1)} months left';
+  }
+
+  /// Axis-friendly money: drop a trailing ".00".
+  String _axisMoney(String s) => s.replaceAll(RegExp(r'\.00$'), '');
+
+  /// The date cash hits zero, taken from the same projection the chart
+  /// draws, so the headline and the chart always agree.
+  String get _cashOutLabel {
+    if (isLoading) return '--';
+    if (monthlyProjections.isNotEmpty) {
+      return monthlyProjections.last['month'] as String;
+    }
+    return zeroCashDate ?? '--';
+  }
+
+  Widget _buildChartCard() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (isLoading) {
+      return const RxCard(
+        padding: EdgeInsets.all(18),
+        child: RxSkeleton(height: 190, radius: 12),
+      );
+    }
+    if (monthlyProjections.isEmpty) {
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedChartLineData01,
+          title: 'No projection yet',
+          message: 'Add funding and expenses to see how cash runs down',
         ),
-        const SizedBox(height: 8),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Flexible(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  isLoading
-                      ? "--"
-                      : (runwayMonths?.toStringAsFixed(1) ?? "0.0"),
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 72, // Massive unboxed text
-                    fontWeight: FontWeight.w700,
-                    height: 1.1,
-                    letterSpacing: -3.0,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Text(
-                "months",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "PROJECTED ZERO CASH",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isLoading ? "--" : (zeroCashDate ?? "--"),
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  "RUNWAY HEALTH",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
+      );
+    }
+
+    final n = monthlyProjections.length;
+    final months = [
+      'Now',
+      for (final p in monthlyProjections) p['month'] as String,
+    ];
+    // Long horizons label the axis in years, short ones in months.
+    final firstYear = int.tryParse(months[1].split(' ').last) ?? 0;
+    final lastYear = int.tryParse(months.last.split(' ').last) ?? 0;
+    final useYears = lastYear - firstYear >= 2;
+    final xLabels = [
+      'Now',
+      for (var k = 1; k <= n; k++)
+        useYears ? months[k].split(' ').last : months[k].split(' ').first,
+    ];
+
+    final start = currentBalance ?? _zeroMoney;
+    // Checkpoint k sits at k/n of the runway, so the one at the halfway
+    // mark holds exactly half the cash.
+    final mid = n.isEven && n >= 2
+        ? monthlyProjections[n ~/ 2 - 1]['balance'] as String
+        : null;
+    final yLabels = [
+      _axisMoney(start),
+      if (mid != null) _axisMoney(mid),
+      _axisMoney(_zeroMoney),
+    ];
+
+    final sel = _scrubIndex;
+    final String selValue;
+    final String selWhen;
+    final String selLeft;
+    if (sel == null || sel == 0) {
+      selValue = start;
+      selWhen = 'Today';
+      selLeft = runwayMonths != null
+          ? _leftLabel(runwayMonths!.toStringAsFixed(1))
+          : '';
+    } else {
+      final p = monthlyProjections[sel - 1];
+      selValue = p['balance'] as String;
+      selWhen = p['month'] as String;
+      selLeft = p['isCashOut'] == true
+          ? 'Cash runs out'
+          : _leftLabel(p['monthsLeft'] as String);
+    }
+    final selIsCashOut = sel != null && sel == n;
+
+    const gutter = 58.0;
+
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Readout for the picked checkpoint (today by default).
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: _getHealthStatusColor(),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
+                    Text(selWhen, style: RxText.caption(context)),
+                    const SizedBox(height: 2),
                     Text(
-                      _getHealthStatus(),
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: _getHealthStatusColor(),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                      selValue,
+                      style: RxText.value(
+                        context,
+                        size: 20,
+                        color: selIsCashOut ? rx.negative : null,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFinancialMetricsGrid(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel("FINANCIAL HEALTH"),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                "Current Balance",
-                isLoading
-                    ? '--'
-                    : (currentBalance ??
-                          '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0'),
-                HugeIcons.strokeRoundedWallet01,
-                const Color(0xFF10B981),
-                isDark,
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildMetricCard(
-                "Monthly Burn",
-                isLoading
-                    ? '--'
-                    : (monthlyBurn ??
-                          '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0'),
-                HugeIcons.strokeRoundedFire,
-                const Color(0xFFF59E0B),
-                isDark,
+              Text(
+                selLeft,
+                style: RxText.caption(
+                  context,
+                  color: selIsCashOut ? rx.negative : rx.textSecondary,
+                ).copyWith(fontWeight: FontWeight.w500),
               ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
+            ],
+          ),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              int indexAt(double dx) {
+                final plotW = width - gutter - 8;
+                final t = ((dx - gutter) / plotW).clamp(0.0, 1.0);
+                return (t * n).round().clamp(0, n);
+              }
 
-  Widget _buildMetricCard(
-    String label,
-    String value,
-    dynamic icon,
-    Color iconColor,
-    bool isDark,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
-        boxShadow: isDark
-            ? []
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+              void pick(double dx) {
+                final k = indexAt(dx);
+                if (k != _scrubIndex) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _scrubIndex = k);
+                }
+              }
+
+              return Semantics(
+                label:
+                    'Cash projection from $start today to zero in ${months.last}. Tap or drag to read a checkpoint.',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (d) => pick(d.localPosition.dx),
+                  onHorizontalDragStart: (d) => pick(d.localPosition.dx),
+                  onHorizontalDragUpdate: (d) => pick(d.localPosition.dx),
+                  child: SizedBox(
+                    height: 190,
+                    width: width,
+                    // Line draws itself from today to cash-out on open.
+                    child: RxGrow(
+                      value: 1,
+                      duration: const Duration(milliseconds: 1000),
+                      builder: (context, progress) => CustomPaint(
+                        painter: _RunwayCurvePainter(
+                          progress: progress,
+                          line: rx.textPrimary,
+                          grid: rx.hairline,
+                          label: rx.textTertiary,
+                          labelStrong: rx.textSecondary,
+                          marker: isDark ? rx.accent : rx.inverse,
+                          markerRing: rx.surface,
+                          end: rx.negative,
+                          points: n,
+                          xLabels: xLabels,
+                          yLabels: yLabels,
+                          gutter: gutter,
+                          selected: _scrubIndex,
+                          fontFamily: RxText.family,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: iconColor.withValues(alpha: 0.2)),
-            ),
-            child: HugeIcon(icon: icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(height: 20),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
+              );
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMonthlyProjectionSection(bool isDark) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  // --- CASH + BURN ---
+  Widget _buildStatsCard() {
+    final rx = context.rx;
+
+    Widget half(String label, String value) => Expanded(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionLabel("MONTHLY PROJECTION"),
-            GestureDetector(
-              onTap: _showProjectionHint,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: context.cardSecondaryBackground,
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: context.borderColor),
-                  boxShadow: context.cardShadow,
-                ),
-                child: Row(
-                  children: [
-                    HugeIcon(
-                      icon: HugeIcons.strokeRoundedInformationCircle,
-                      color: context.textPrimary,
-                      size: 12,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      "FORMULA",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 9,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
+            Text(label, style: RxText.label(context)),
+            const SizedBox(height: 8),
+            if (isLoading)
+              const RxSkeleton(width: 90, height: 24)
+            else
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(value, style: RxText.value(context, size: 20)),
               ),
-            ),
           ],
         ),
-        const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          clipBehavior: Clip
-              .antiAlias, // Ensures the zero cash background is clipped perfectly
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: context.borderColor),
-            boxShadow: isDark
-                ? []
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: isLoading
-              ? _buildEmptyState("Loading projections...")
-              : monthlyProjections.isEmpty
-              ? _buildEmptyState("Add expenses to see projections")
-              : Column(
-                  children: [
-                    ...monthlyProjections.map((projection) {
-                      final bool isCashOut = projection['isCashOut'] == true;
-                      return Column(
-                        children: [
-                          _buildProjectionRow(
-                            projection['month'],
-                            projection['balance'],
-                            projection['monthsLeft'],
-                            isCashOut: isCashOut,
-                          ),
-                          if (projection != monthlyProjections.last)
-                            Divider(
-                              height: 1,
-                              thickness: 1,
-                              color: context.borderColor,
-                            ),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
+      ),
+    );
+
+    return RxCard(
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            half('Cash available', currentBalance ?? _zeroMoney),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Container(width: 1, color: rx.hairline),
+            ),
+            half('Monthly burn', monthlyBurn ?? _zeroMoney),
+          ],
         ),
-      ],
+      ),
     );
   }
 
+  // --- PROJECTION TIMELINE ---
+  Widget _buildProjectionCard() {
+    if (isLoading) {
+      return RxCard(
+        child: Column(
+          children: [
+            for (var i = 0; i < 4; i++)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    RxSkeleton(width: 10, height: 10, radius: 100),
+                    SizedBox(width: 14),
+                    Expanded(child: RxSkeleton(height: 14)),
+                    SizedBox(width: 60),
+                    RxSkeleton(width: 70, height: 14),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+
+    if (monthlyProjections.isEmpty) {
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedCalendar03,
+          title: 'Nothing to project',
+          message: 'Checkpoints appear once there is a monthly burn',
+        ),
+      );
+    }
+
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
+      child: Column(
+        children: [
+          for (var i = 0; i < monthlyProjections.length; i++)
+            _buildProjectionRow(
+              monthlyProjections[i]['month'] as String,
+              monthlyProjections[i]['balance'] as String,
+              monthlyProjections[i]['monthsLeft'] as String,
+              isCashOut: monthlyProjections[i]['isCashOut'] == true,
+              isFirst: i == 0,
+              isLast: i == monthlyProjections.length - 1,
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// One checkpoint on a vertical timeline: dot + connector, month, balance.
   Widget _buildProjectionRow(
     String month,
     String balance,
     String monthsLeft, {
     bool isCashOut = false,
+    bool isFirst = false,
+    bool isLast = false,
   }) {
-    const cashOutRed = Color(0xFFEF4444); // Standard Deep Red, not pink
+    final rx = context.rx;
+    final dotColor = isCashOut ? rx.negative : rx.textPrimary;
 
-    return Container(
-      decoration: isCashOut
-          ? BoxDecoration(color: cashOutRed.withValues(alpha: 0.05))
-          : null,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+    return IntrinsicHeight(
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            flex: 2,
+          SizedBox(
+            width: 12,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  month,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isCashOut ? cashOutRed : context.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                Expanded(
+                  child: Container(
+                    width: 1.5,
+                    color: isFirst ? Colors.transparent : rx.hairline,
                   ),
                 ),
-                if (isCashOut) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
+                Container(
+                  width: isCashOut ? 12 : 9,
+                  height: isCashOut ? 12 : 9,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isCashOut ? rx.negative : rx.surface,
+                    border: Border.all(color: dotColor, width: 2),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: 1.5,
+                    color: isLast ? Colors.transparent : rx.hairline,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          month,
+                          style: RxText.body(
+                            context,
+                            color: isCashOut ? rx.negative : rx.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isCashOut ? 'Cash runs out' : _leftLabel(monthsLeft),
+                          style: RxText.caption(
+                            context,
+                            color: isCashOut ? rx.negative : null,
+                          ),
+                        ),
+                      ],
                     ),
-                    decoration: BoxDecoration(
-                      color: cashOutRed.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'ZERO CASH',
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: cashOutRed,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
+                  ),
+                  Text(
+                    balance,
+                    style: RxText.amount(
+                      context,
+                      color: isCashOut ? rx.negative : rx.textPrimary,
                     ),
                   ),
                 ],
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.center,
-              child: Text(
-                balance,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: isCashOut ? cashOutRed : context.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
               ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  monthsLeft,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isCashOut ? cashOutRed : context.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  "mo",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isCashOut
-                        ? cashOutRed.withValues(alpha: 0.6)
-                        : context.textTertiary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -992,56 +965,96 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
     );
   }
 
-  Widget _buildRiskFactorsSection(bool isDark) {
-    final List<Map<String, dynamic>> riskFactors = _calculateRiskFactors();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel("RISK FACTORS"),
-        const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: context.borderColor),
-            boxShadow: isDark
-                ? []
-                : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: isLoading
-              ? _buildEmptyState("Analyzing data...")
-              : riskFactors.isEmpty
-              ? _buildEmptyState("No critical risk factors identified")
-              : Column(
-                  children: riskFactors.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final risk = entry.value;
-                    final isLast = index == riskFactors.length - 1;
-
-                    return Column(
-                      children: [
-                        _buildRiskItem(
-                          risk['title'],
-                          risk['description'],
-                          risk['color'],
-                        ),
-                        if (!isLast)
-                          Divider(color: context.borderColor, height: 32),
-                      ],
-                    );
-                  }).toList(),
-                ),
+  // --- SIGNALS ---
+  Widget _buildRiskCard() {
+    if (isLoading) {
+      return const RxCard(
+        child: Row(
+          children: [
+            RxSkeleton(width: 36, height: 36, radius: 11),
+            SizedBox(width: 12),
+            Expanded(child: RxSkeleton(height: 28)),
+          ],
         ),
-      ],
+      );
+    }
+
+    final riskFactors = _calculateRiskFactors();
+    if (riskFactors.isEmpty) {
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedTick02,
+          title: 'No signals yet',
+          message: 'We flag risks here once there is enough data',
+        ),
+      );
+    }
+
+    return RxCard(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        children: [
+          for (var i = 0; i < riskFactors.length; i++) ...[
+            if (i > 0) const RxDivider(indent: 50),
+            _buildRiskItem(
+              riskFactors[i]['title'] as String,
+              riskFactors[i]['description'] as String,
+              riskFactors[i]['color'] as Color,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiskItem(String title, String description, Color riskColor) {
+    final rx = context.rx;
+    // The logic tags each risk with a colour; map it to the theme palette.
+    final List<List<dynamic>> icon;
+    final Color fg;
+    final Color bg;
+    if (riskColor == const Color(0xFF10B981)) {
+      icon = HugeIcons.strokeRoundedTick02;
+      fg = rx.positive;
+      bg = rx.positiveSoft;
+    } else if (riskColor == const Color(0xFFEF4444)) {
+      icon = HugeIcons.strokeRoundedAlert02;
+      fg = rx.negative;
+      bg = rx.negativeSoft;
+    } else {
+      icon = HugeIcons.strokeRoundedAlert02;
+      fg = rx.warning;
+      bg = rx.warningSoft;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          RxIconTile(
+            icon: icon,
+            size: 38,
+            iconSize: 18,
+            background: bg,
+            foreground: fg,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: RxText.body(context)),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: RxText.caption(context).copyWith(height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1090,58 +1103,185 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
 
     return risks;
   }
+}
 
-  Widget _buildRiskItem(String title, String description, Color riskColor) {
-    // Dynamic icon based on healthy vs warning
-    dynamic iconData = HugeIcons.strokeRoundedAlert01;
-    if (riskColor == const Color(0xFF10B981)) {
-      iconData = HugeIcons.strokeRoundedTick01;
-    } else if (riskColor == const Color(0xFFEF4444)) {
-      iconData = HugeIcons.strokeRoundedAlert01;
+/// Cash run-down chart: value axis on the left (start, halfway, zero),
+/// date labels under each checkpoint, a straight line from today's cash to
+/// zero (the projection assumes a flat monthly burn), and an optional
+/// highlighted checkpoint with a vertical guide.
+class _RunwayCurvePainter extends CustomPainter {
+  _RunwayCurvePainter({
+    this.progress = 1,
+    required this.line,
+    required this.grid,
+    required this.label,
+    required this.labelStrong,
+    required this.marker,
+    required this.markerRing,
+    required this.end,
+    required this.points,
+    required this.xLabels,
+    required this.yLabels,
+    required this.gutter,
+    required this.selected,
+    required this.fontFamily,
+  });
+
+  /// 0..1: how much of the line is drawn (entrance animation).
+  final double progress;
+  final Color line;
+  final Color grid;
+  final Color label;
+  final Color labelStrong;
+  final Color marker;
+  final Color markerRing;
+  final Color end;
+  final int points;
+  final List<String> xLabels; // points + 1 entries, index 0 = today
+  final List<String> yLabels; // top to bottom, evenly spaced
+  final double gutter;
+  final int? selected;
+  final String fontFamily;
+
+  static const _xAxisH = 22.0;
+  static const _topPad = 8.0;
+  static const _rightPad = 8.0;
+
+  TextPainter _text(
+    String s,
+    Color c, {
+    double maxWidth = 200,
+    bool bold = false,
+  }) {
+    return TextPainter(
+      text: TextSpan(
+        text: s,
+        style: TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 11,
+          height: 1,
+          color: c,
+          fontWeight: bold ? FontWeight.w600 : FontWeight.w500,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: maxWidth);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final left = gutter;
+    final right = size.width - _rightPad;
+    final top = _topPad;
+    final bottom = size.height - _xAxisH;
+    final w = right - left;
+    final h = bottom - top;
+    Offset at(double t) => Offset(left + w * t, top + h * t);
+
+    // Y axis: dashed gridlines with right-aligned labels in the gutter.
+    final gridPaint = Paint()
+      ..color = grid
+      ..strokeWidth = 1;
+    for (var i = 0; i < yLabels.length; i++) {
+      final f = yLabels.length == 1 ? 0.0 : i / (yLabels.length - 1);
+      final y = top + h * f;
+      for (double x = left; x < right; x += 7) {
+        canvas.drawLine(
+          Offset(x, y),
+          Offset((x + 3.5).clamp(left, right), y),
+          gridPaint,
+        );
+      }
+      final tp = _text(yLabels[i], label, maxWidth: gutter - 10);
+      tp.paint(canvas, Offset(gutter - 10 - tp.width, y - tp.height / 2));
     }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: riskColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: riskColor.withValues(alpha: 0.2)),
-          ),
-          child: HugeIcon(icon: iconData, color: riskColor, size: 20),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    // Area + line, drawn up to [progress].
+    final pr = progress.clamp(0.0, 1.0);
+    final area = Path()
+      ..moveTo(at(0).dx, at(0).dy)
+      ..lineTo(at(pr).dx, at(pr).dy)
+      ..lineTo(at(pr).dx, at(1).dy)
+      ..lineTo(at(0).dx, at(1).dy)
+      ..close();
+    canvas.drawPath(
+      area,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [line.withValues(alpha: 0.12), line.withValues(alpha: 0)],
+        ).createShader(Rect.fromLTRB(left, top, right, bottom)),
     );
+    canvas.drawLine(
+      at(0),
+      at(pr),
+      Paint()
+        ..color = line
+        ..strokeWidth = 2.5
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Selection guide behind the dots.
+    if (selected != null) {
+      final p = at(selected! / points);
+      canvas.drawLine(
+        Offset(p.dx, top),
+        Offset(p.dx, bottom),
+        Paint()
+          ..color = labelStrong.withValues(alpha: 0.5)
+          ..strokeWidth = 1,
+      );
+    }
+
+    // Checkpoints pop in as the line reaches them.
+    double pop(double t) => ((pr - t) / 0.08 + 1).clamp(0.0, 1.0);
+    final ring = Paint()..color = markerRing;
+    for (var k = 1; k < points; k++) {
+      final s = pop(k / points);
+      if (s <= 0) continue;
+      final p = at(k / points);
+      final isSel = selected == k;
+      canvas.drawCircle(p, (isSel ? 7 : 4.5) * s, ring);
+      canvas.drawCircle(p, (isSel ? 5 : 3) * s, Paint()..color = line);
+    }
+    final isEndSel = selected == points;
+    final se = pop(1);
+    if (se > 0) {
+      canvas.drawCircle(at(1), (isEndSel ? 8 : 6.5) * se, ring);
+      canvas.drawCircle(at(1), (isEndSel ? 6 : 5) * se, Paint()..color = end);
+    }
+    final isTodaySel = selected == 0;
+    canvas.drawCircle(at(0), isTodaySel ? 8.5 : 7, ring);
+    canvas.drawCircle(at(0), isTodaySel ? 7 : 5.5, Paint()..color = marker);
+
+    // X axis labels under each checkpoint; edges stay inside the chart.
+    final slot = w / points;
+    for (var k = 0; k <= points && k < xLabels.length; k++) {
+      final isSel = selected == k;
+      final color = k == points ? end : (isSel ? labelStrong : label);
+      final tp = _text(xLabels[k], color, maxWidth: slot + 6, bold: isSel);
+      final cx = left + w * (k / points);
+      final dx = (cx - tp.width / 2).clamp(left - 4, size.width - tp.width);
+      tp.paint(canvas, Offset(dx, bottom + 8));
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant _RunwayCurvePainter old) =>
+      old.progress != progress ||
+      old.line != line ||
+      old.grid != grid ||
+      old.label != label ||
+      old.marker != marker ||
+      old.markerRing != markerRing ||
+      old.end != end ||
+      old.points != points ||
+      old.selected != selected ||
+      old.gutter != gutter ||
+      old.xLabels.join() != xLabels.join() ||
+      old.yLabels.join() != yLabels.join();
 }

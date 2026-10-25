@@ -2,6 +2,12 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:hugeicons/hugeicons.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
+import 'package:startup_expense_tracker/widgets/rx_charts.dart';
+import 'package:startup_expense_tracker/widgets/rx_motion.dart';
+import 'package:startup_expense_tracker/widgets/rx_pickers.dart'
+    show rxFormatDate;
 import 'package:flutter/services.dart';
 import 'add_expense_screen.dart';
 import 'search_expense_screen.dart';
@@ -13,10 +19,14 @@ import '../../../utils/expense_expansion_helper.dart';
 import '../../../services/financial_calculator.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/currency_formatter.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/custom_bottom_nav.dart' show RxTabBar;
 
 class ExpensesScreen extends StatefulWidget {
-  const ExpensesScreen({super.key});
+  const ExpensesScreen({super.key, this.visit});
+
+  /// Changes each time the Expenses tab is opened (null while hidden), so
+  /// the ring replays its sweep.
+  final int? visit;
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -46,6 +56,17 @@ class _ExpensesScreenState extends State<ExpensesScreen>
 
   @override
   bool get wantKeepAlive => true;
+
+  // Keys the ring; bumping it replays the sweep.
+  int _chartEpoch = 0;
+
+  @override
+  void didUpdateWidget(covariant ExpensesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visit != null && widget.visit != oldWidget.visit) {
+      _chartEpoch++;
+    }
+  }
 
   @override
   void initState() {
@@ -178,48 +199,15 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     }
   }
 
-  // --- PREMIUM SECTION LABEL HELPER ---
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
+  // --- UI (presentation only) ---
 
-  // --- CATEGORY ICON HELPER ---
-  IconData _getCategoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'marketing':
-        return Icons.campaign_outlined;
-      case 'infrastructure':
-        return Icons.dns_outlined;
-      case 'office':
-        return Icons.business_outlined;
-      case 'software':
-        return Icons.code_outlined;
-      case 'hardware':
-        return Icons.computer_outlined;
-      case 'transport':
-        return Icons.directions_car_outlined;
-      case 'design':
-        return Icons.palette_outlined;
-      case 'travel':
-        return Icons.flight_outlined;
-      case 'meals':
-        return Icons.restaurant_outlined;
-      case 'contractors':
-        return Icons.build_outlined;
-      case 'legal':
-        return Icons.gavel_outlined;
-      default:
-        return Icons.receipt_long_outlined;
-    }
+  void _open(Widget screen, {bool reload = true}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => screen),
+    ).then((_) {
+      if (reload) _loadMetricsData();
+    });
   }
 
   @override
@@ -227,133 +215,42 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     super.build(context);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: context.isDarkMode
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
+      value: context.rxOverlayStyle,
       child: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            8,
+            20,
+            RxTabBar.reservedHeight(context),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            // Sections rise in once, 60ms apart, on first open.
             children: [
-              const SizedBox(height: 16),
-
-              // 1. Hero Section (Matches Team Screen)
-              _buildMinimalHeader(),
-
+              RxReveal.index(0, child: _buildMinimalHeader()),
               const SizedBox(height: 28),
-
-              // 2. Metrics (Flat Cards)
-              SizedBox(
-                height: 130,
-                child: _isLoading
-                    ? ListView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const NeverScrollableScrollPhysics(),
-                        clipBehavior: Clip.none,
-                        children: [
-                          _buildSkeletonMetricCard(),
-                          const SizedBox(width: 12),
-                          _buildSkeletonMetricCard(),
-                          const SizedBox(width: 12),
-                          _buildSkeletonMetricCard(),
-                        ],
-                      )
-                    : ListView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        clipBehavior: Clip.none,
-                        children: [
-                          _buildFlatMetric(
-                            "Budget Left",
-                            _formatCurrency(
-                              _totalFunding > 0
-                                  ? (_totalFunding - _totalExpenses)
-                                  : 0,
-                            ),
-                            "${_totalFunding > 0 ? ((_totalFunding - _totalExpenses) / _totalFunding * 100).toStringAsFixed(0) : '0'}%",
-                            const Color(0xFF30D158),
-                          ),
-                          const SizedBox(width: 12),
-                          _buildFlatMetric(
-                            "Spent",
-                            _formatCurrency(_totalExpenses),
-                            "${_totalFunding > 0 ? (_totalExpenses / _totalFunding * 100).toStringAsFixed(1) : '0'}% used",
-                            context.textPrimary,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildFlatMetric(
-                            "Avg. Daily",
-                            _formatCurrency(_avgDaily),
-                            "30-day rolling avg",
-                            context.textSecondary,
-                          ),
-                        ],
-                      ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // 3. Quick Actions Card
-              _buildQuickActionsCard(context),
-
-              const SizedBox(height: 32),
-
-              // 4. Transactions Section
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  _buildSectionLabel("RECENT TRANSACTIONS"),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SearchExpenseScreen(),
-                        ),
-                      ).then((_) => _loadMetricsData());
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.textPrimary,
-                        borderRadius: BorderRadius.circular(100),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            "View All",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.appBackground,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            Icons.arrow_forward,
-                            color: context.appBackground,
-                            size: 12,
-                          ),
-                        ],
-                      ),
+              RxReveal.index(1, child: _buildHero()),
+              const SizedBox(height: 24),
+              RxReveal.index(2, child: _buildStatsCard()),
+              const SizedBox(height: 12),
+              RxReveal.index(3, child: _buildQuickActionsCard(context)),
+              const SizedBox(height: 28),
+              RxReveal.index(
+                4,
+                child: Column(
+                  children: [
+                    RxSectionHeader(
+                      title: 'Recent',
+                      actionLabel: 'View all',
+                      onAction: () => _open(const SearchExpenseScreen()),
                     ),
-                  ),
-                ],
+                    _buildFlatTransactionList(),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-
-              // Firebase Transactions Stream
-              _buildFlatTransactionList(),
-
-              const SizedBox(height: 100), // Bottom padding for navbar
             ],
           ),
         ),
@@ -362,203 +259,216 @@ class _ExpensesScreenState extends State<ExpensesScreen>
   }
 
   Widget _buildMinimalHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              DataHelpers.formatDate(DateTime.now(), format: 'MMMM yyyy'),
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              "Expenses",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 32,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -1.0,
-              ),
-            ),
-          ],
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final now = DateTime.now();
+    return RxTabHeader(
+      label: '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]}',
+      title: 'Expenses',
+      actions: [
+        RxCircleButton(
+          icon: HugeIcons.strokeRoundedSearch01,
+          semanticLabel: 'Search expenses',
+          onTap: () => _open(const SearchExpenseScreen()),
         ),
       ],
     );
   }
 
-  Widget _buildFlatMetric(
-    String label,
-    String value,
-    String badge,
-    Color accent,
-  ) {
-    return Container(
-      width: 140,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.isDarkMode
-            ? []
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: accent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-          ),
-          Column(
+  // Spent to date as the headline; a ring shows how much funding it used.
+  Widget _buildHero() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hasFunding = _totalFunding > 0;
+    final usedRatio = hasFunding ? _totalExpenses / _totalFunding : 0.0;
+    final over = hasFunding && _totalExpenses > _totalFunding;
+    final usedPct = usedRatio * 100;
+    final pctText = usedPct >= 10 || usedPct == 0
+        ? usedPct.toStringAsFixed(0)
+        : usedPct.toStringAsFixed(1);
+    final ringColor = over
+        ? rx.negative
+        : usedRatio >= 0.8
+        ? rx.warning
+        : (isDark ? rx.accent : rx.inverse);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  value,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -1.0,
+              Text('Spent to date', style: RxText.label(context)),
+              const SizedBox(height: 10),
+              if (_isLoading)
+                const RxSkeleton(width: 180, height: 46, radius: 12)
+              else
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _formatCurrency(_totalExpenses),
+                    style: RxText.hero(context, size: 46),
                   ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  badge,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: accent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
+              const SizedBox(height: 10),
+              Text(
+                _isLoading
+                    ? ' '
+                    : hasFunding
+                    ? over
+                          ? 'Over your ${_formatCurrency(_totalFunding)} funding'
+                          : 'of ${_formatCurrency(_totalFunding)} funding'
+                    : 'Add funding to track your budget',
+                maxLines: 2,
+                style: RxText.caption(
+                  context,
+                  color: over ? rx.negative : null,
                 ),
               ),
             ],
           ),
-        ],
+        ),
+        const SizedBox(width: 16),
+        if (_isLoading)
+          const RxSkeleton(width: 96, height: 96, radius: 100)
+        else
+          RxRing(
+            key: ValueKey('used-ring-$_chartEpoch'),
+            size: 96,
+            thickness: 9,
+            value: hasFunding ? usedRatio.clamp(0.0, 1.0) : 0,
+            color: ringColor,
+            trackColor: rx.textPrimary.withValues(alpha: 0.08),
+            semanticLabel: hasFunding
+                ? '$pctText percent of funding used'
+                : 'No funding added',
+            center: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    hasFunding ? '$pctText%' : '--',
+                    style: RxText.value(
+                      context,
+                      size: 18,
+                      color: over ? rx.negative : null,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text('used', style: RxText.micro(context)),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStatsCard() {
+    final rx = context.rx;
+    final left = _totalFunding > 0 ? (_totalFunding - _totalExpenses) : 0.0;
+
+    Widget half(String label, String value, String note, {Color? noteColor}) {
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: RxText.label(context)),
+              const SizedBox(height: 8),
+              if (_isLoading)
+                const RxSkeleton(width: 90, height: 24)
+              else
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(value, style: RxText.value(context, size: 20)),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                note,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: RxText.caption(context, color: noteColor),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return RxCard(
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            half(
+              'Budget left',
+              _formatCurrency(left),
+              _totalFunding > 0
+                  ? '${(left / _totalFunding * 100).toStringAsFixed(0)}% remaining'
+                  : 'No funding yet',
+              noteColor: left < 0 ? rx.negative : rx.positive,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Container(width: 1, color: rx.hairline),
+            ),
+            half('Avg. per day', _formatCurrency(_avgDaily), '30-day average'),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildQuickActionsCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.isDarkMode
-            ? []
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return RxCard(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+      child: Row(
         children: [
-          Text(
-            "QUICK ACTIONS",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textTertiary,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
+          _buildFlatActionButton(
+            "Add",
+            HugeIcons.strokeRoundedAdd01,
+            () => _open(const AddExpenseScreen()),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildFlatActionButton("Add", Icons.add_rounded, () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AddExpenseScreen(),
-                  ),
-                ).then((_) => _loadMetricsData());
-              }),
-              _buildFlatActionButton("Search", Icons.search_rounded, () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const SearchExpenseScreen(),
-                  ),
-                );
-              }),
-              _buildFlatActionButton("Scan", Icons.qr_code_rounded, () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ScanExpenseScreen(),
-                  ),
-                ).then((_) => _loadMetricsData());
-              }),
-              _buildFlatActionButton(
-                "Report",
-                Icons.insert_chart_outlined_rounded,
-                () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ReportExpenseScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
+          _buildFlatActionButton(
+            "Scan",
+            HugeIcons.strokeRoundedCamera01,
+            () => _open(const ScanExpenseScreen()),
+          ),
+          _buildFlatActionButton(
+            "Search",
+            HugeIcons.strokeRoundedSearch01,
+            () => _open(const SearchExpenseScreen(), reload: false),
+          ),
+          _buildFlatActionButton(
+            "Report",
+            HugeIcons.strokeRoundedChartBarLine,
+            () => _open(const ReportExpenseScreen(), reload: false),
           ),
         ],
       ),
@@ -567,35 +477,41 @@ class _ExpensesScreenState extends State<ExpensesScreen>
 
   Widget _buildFlatActionButton(
     String label,
-    IconData icon,
+    List<List<dynamic>> icon,
     VoidCallback onTap,
   ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            height: 52,
-            width: 52,
-            decoration: BoxDecoration(
-              color: context.isDarkMode
-                  ? Colors.white.withValues(alpha: 0.06)
-                  : Colors.black.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(14),
+    final rx = context.rx;
+    return Expanded(
+      child: RxPressable(
+        onTap: onTap,
+        semanticLabel: label,
+        child: Column(
+          children: [
+            Container(
+              height: 48,
+              width: 48,
+              decoration: BoxDecoration(
+                color: rx.surfaceMuted,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              alignment: Alignment.center,
+              child: HugeIcon(
+                icon: icon,
+                color: rx.textPrimary,
+                size: 21,
+                strokeWidth: 1.8,
+              ),
             ),
-            child: Icon(icon, color: context.textPrimary, size: 22),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: RxText.caption(
+                context,
+                color: rx.textPrimary,
+              ).copyWith(fontWeight: FontWeight.w500),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -604,11 +520,10 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20),
-        child: Text(
-          "User not logged in.",
-          style: TextStyle(fontFamily: 'Satoshi', color: context.textSecondary),
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedUser,
+          title: 'Not signed in',
         ),
       );
     }
@@ -620,23 +535,22 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Column(
-            children: [
-              _buildSkeletonTransaction(),
-              _buildSkeletonTransaction(),
-              _buildSkeletonTransaction(),
-              _buildSkeletonTransaction(),
-            ],
+          return RxCard(
+            child: Column(
+              children: [
+                for (var i = 0; i < 4; i++) _buildSkeletonTransaction(),
+              ],
+            ),
           );
         }
 
         if (snapshot.hasError) {
           debugPrint("🚨 FIRESTORE ERROR: ${snapshot.error}");
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Text(
-              "Error loading transactions. Check console for Index Link.",
-              style: TextStyle(fontFamily: 'Satoshi', color: Colors.redAccent),
+          return const RxCard(
+            child: RxEmptyState(
+              icon: HugeIcons.strokeRoundedAlert02,
+              title: "Couldn't load transactions",
+              message: 'Pull to refresh or try again later',
             ),
           );
         }
@@ -683,11 +597,20 @@ class _ExpensesScreenState extends State<ExpensesScreen>
           return _buildEmptyTransactionsState();
         }
 
-        return Column(
-          children: top5Expenses.map((data) {
-            final expenseId = data['id'] as String;
-            return _buildTransactionItem(data, expenseId, context);
-          }).toList(),
+        return RxCard(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Column(
+            children: [
+              for (var i = 0; i < top5Expenses.length; i++) ...[
+                if (i > 0) const RxDivider(indent: 52),
+                _buildTransactionItem(
+                  top5Expenses[i],
+                  top5Expenses[i]['id'] as String,
+                  context,
+                ),
+              ],
+            ],
+          ),
         );
       },
     );
@@ -698,6 +621,7 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     String expenseId,
     BuildContext context,
   ) {
+    final rx = context.rx;
     final title = DataHelpers.safeParseString(tx['Title']);
     final amount = DataHelpers.safeParseDouble(tx['Amount']);
     final isFunding = tx['isFunding'] == true;
@@ -709,115 +633,54 @@ class _ExpensesScreenState extends State<ExpensesScreen>
 
     String dateStr = '';
     if (tx['Date'] is Timestamp) {
-      final d = (tx['Date'] as Timestamp).toDate();
-      dateStr = '${d.day}/${d.month}/${d.year}';
+      dateStr = rxFormatDate((tx['Date'] as Timestamp).toDate());
     }
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                ExpenseDetailsScreen(expenseId: expenseId, expenseData: tx),
-          ),
-        ).then((_) => _loadMetricsData());
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: context.borderColor),
-          boxShadow: context.isDarkMode
-              ? []
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-        ),
+    return RxPressable(
+      onTap: () =>
+          _open(ExpenseDetailsScreen(expenseId: expenseId, expenseData: tx)),
+      scale: 0.98,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: context.isDarkMode
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : Colors.black.withValues(alpha: 0.04),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                _getCategoryIcon(rawCategory),
-                color: context.textSecondary,
-                size: 20,
-              ),
+            RxIconTile(
+              icon: RxCategory.icon(rawCategory),
+              size: 40,
+              iconSize: 19,
+              background: RxCategory.soft(context, rawCategory),
+              foreground: RxCategory.color(context, rawCategory),
             ),
-            const SizedBox(width: 14),
-
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: RxText.body(context),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Text(
-                        category,
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      if (dateStr.isNotEmpty) ...[
-                        Text(
-                          ' · $dateStr',
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textTertiary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ],
+                  const SizedBox(height: 2),
+                  Text(
+                    dateStr.isNotEmpty ? '$category · $dateStr' : category,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RxText.caption(context),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 12),
-
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
               child: Text(
                 formattedAmount,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: isFunding
-                      ? const Color(0xFF30D158)
-                      : context.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: [const FontFeature.tabularFigures()],
+                style: RxText.amount(
+                  context,
+                  color: isFunding ? rx.positive : rx.textPrimary,
                 ),
               ),
             ),
@@ -827,145 +690,37 @@ class _ExpensesScreenState extends State<ExpensesScreen>
     );
   }
 
-  Widget _buildShimmerEffect(
-    double width,
-    double height, {
-    double borderRadius = 8,
-  }) {
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        final value = _shimmerController.value;
-        final baseAlpha = context.isDarkMode ? 0.03 : 0.04;
-        final midAlpha = context.isDarkMode ? 0.10 : 0.12;
-
-        return Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(borderRadius),
-            gradient: LinearGradient(
-              begin: Alignment(value - 1, 0),
-              end: Alignment(value, 0),
-              colors: [
-                context.textPrimary.withValues(alpha: baseAlpha),
-                context.textPrimary.withValues(alpha: baseAlpha * 2),
-                context.textPrimary.withValues(alpha: midAlpha),
-                context.textPrimary.withValues(alpha: baseAlpha * 2),
-                context.textPrimary.withValues(alpha: baseAlpha),
-              ],
-              stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSkeletonMetricCard() {
-    return Container(
-      width: 140,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildShimmerEffect(70, 12, borderRadius: 4),
-              _buildShimmerEffect(8, 8, borderRadius: 4),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildShimmerEffect(90, 24, borderRadius: 6),
-              const SizedBox(height: 8),
-              _buildShimmerEffect(40, 12, borderRadius: 4),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSkeletonTransaction() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          _buildShimmerEffect(44, 44, borderRadius: 12),
-          const SizedBox(width: 16),
+          RxSkeleton(width: 40, height: 40, radius: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildShimmerEffect(140, 16, borderRadius: 4),
-                const SizedBox(height: 8),
-                _buildShimmerEffect(80, 12, borderRadius: 4),
+                RxSkeleton(width: 140, height: 14),
+                SizedBox(height: 6),
+                RxSkeleton(width: 90, height: 11),
               ],
             ),
           ),
-          _buildShimmerEffect(60, 16, borderRadius: 4),
+          RxSkeleton(width: 60, height: 14),
         ],
       ),
     );
   }
 
   Widget _buildEmptyTransactionsState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.isDarkMode
-            ? []
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.02),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-      ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.receipt_long_outlined,
-            color: context.textTertiary,
-            size: 40,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "No transactions yet",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "Add your first expense to get started",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textTertiary,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+    return RxCard(
+      child: RxEmptyState(
+        icon: HugeIcons.strokeRoundedInvoice01,
+        title: 'No expenses yet',
+        message: 'Add your first expense or scan a receipt to get started',
+        actionLabel: 'Add expense',
+        onAction: () => _open(const AddExpenseScreen()),
       ),
     );
   }

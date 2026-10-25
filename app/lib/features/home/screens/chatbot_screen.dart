@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../ai/widgets/ai_widgets.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:startup_expense_tracker/theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
 import 'package:startup_expense_tracker/services/chat_service.dart';
 import 'package:startup_expense_tracker/services/ai_context_manager.dart';
 
@@ -19,7 +20,7 @@ class ChatbotScreen extends StatefulWidget {
 class _ChatbotScreenState extends State<ChatbotScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  
+
   bool _isTyping = false;
   bool _isLoadingHistory = true;
 
@@ -36,18 +37,21 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   Future<void> _loadChatHistory() async {
     _prefs = await SharedPreferences.getInstance();
     final String? storedHistory = _prefs.getString(_chatHistoryKey);
-    
+
     if (storedHistory != null) {
       final List<dynamic> decoded = jsonDecode(storedHistory);
       setState(() {
-        _chatMessages = decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+        _chatMessages = decoded
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
         _isLoadingHistory = false;
       });
     } else {
       setState(() {
         _chatMessages.add({
           'role': 'ai',
-          'text': 'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!',
+          'text':
+              'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!',
         });
         _isLoadingHistory = false;
       });
@@ -58,7 +62,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   Future<void> _saveChatHistory() async {
     // Filter out error messages and cap history at 50 messages
-    List<Map<String, dynamic>> messagesToSave = _chatMessages.where((m) => m['role'] != 'error').toList();
+    List<Map<String, dynamic>> messagesToSave = _chatMessages
+        .where((m) => m['role'] != 'error')
+        .toList();
     if (messagesToSave.length > 50) {
       messagesToSave = messagesToSave.sublist(messagesToSave.length - 50);
     }
@@ -79,9 +85,11 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     if (retryText == null) {
       _messageController.clear();
     }
-    
+
     // Remove previous error message if retrying
-    if (retryText != null && _chatMessages.isNotEmpty && _chatMessages.last['role'] == 'error') {
+    if (retryText != null &&
+        _chatMessages.isNotEmpty &&
+        _chatMessages.last['role'] == 'error') {
       setState(() {
         _chatMessages.removeLast();
       });
@@ -100,23 +108,23 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
     try {
       // Pass history (excluding errors AND excluding the newly added current user message)
-      final history = _chatMessages
-          .where((m) => m['role'] != 'error')
-          .toList();
+      final history = _chatMessages.where((m) => m['role'] != 'error').toList();
       if (history.isNotEmpty && history.last['role'] == 'user') {
-        history.removeLast(); // The backend appends the current question manually
+        history
+            .removeLast(); // The backend appends the current question manually
       }
-          
+
       setState(() {
         _chatMessages.add({'role': 'ai', 'text': ''});
       });
 
       final stream = ChatService.streamMessage(text, history);
-      
+
       await for (final chunk in stream) {
         if (!mounted) return;
         setState(() {
-          _chatMessages.last['text'] = (_chatMessages.last['text'] as String) + chunk;
+          _chatMessages.last['text'] =
+              (_chatMessages.last['text'] as String) + chunk;
         });
         _scrollToBottom();
       }
@@ -125,7 +133,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       if (!mounted) return;
       setState(() {
         _chatMessages.add({
-          'role': 'error', 
+          'role': 'error',
           'text': 'Oops! Something went wrong. \n\n${e.toString()}',
           'originalText': text, // Store to allow retry
         });
@@ -153,318 +161,374 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     });
   }
 
+  // --- UI (presentation only) ---
+
+  static const String _welcome =
+      'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!';
+
+  Future<void> _clearChat() async {
+    setState(() {
+      _chatMessages = [
+        {'role': 'ai', 'text': _welcome},
+      ];
+    });
+    await _saveChatHistory();
+    await AiContextManager().invalidate();
+    if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      _toast('Chat and context cleared');
+    }
+  }
+
+  Future<void> _clearCache() async {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    _toast('Clearing cache…');
+    await AiContextManager().invalidate();
+    if (mounted) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      _toast('Cache cleared');
+    }
+  }
+
+  void _toast(String text) {
+    final rx = context.rx;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text, style: RxText.body(context, color: rx.onInverse)),
+        backgroundColor: rx.inverse,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        elevation: 0,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+    final showThinking =
+        _isTyping &&
+        (_chatMessages.isEmpty ||
+            _chatMessages.last['role'] != 'ai' ||
+            (_chatMessages.last['text'] as String).isEmpty);
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: context.isDarkMode
-          ? SystemUiOverlayStyle.light
-          : SystemUiOverlayStyle.dark,
+      value: context.rxOverlayStyle,
       child: Scaffold(
-        backgroundColor: context.appBackground,
-        appBar: AppBar(
-          backgroundColor: context.appBackground,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: context.textPrimary),
-            onPressed: () => Navigator.pop(context),
-          ),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0A84FF).withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.auto_awesome,
-                  color: Color(0xFF0A84FF),
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                "AI CFO",
-                style: GoogleFonts.inter(
-                  color: context.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: Icon(Icons.delete_outline, color: context.textSecondary),
-              tooltip: "Clear Chat",
-              onPressed: () async {
-                setState(() {
-                  _chatMessages = [{
-                    'role': 'ai',
-                    'text': 'Hello! 👋 I am your AI Startup CFO. Ask me anything about your **runway**, **burn rate**, **expenses**, **team efficiency**, or **financial forecasts**. I have full context of your startup\'s data and I\'m ready to help!',
-                  }];
-                });
-                await _saveChatHistory();
-                await AiContextManager().invalidate();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).clearSnackBars();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Chat and context cleared.')),
-                  );
-                }
-              },
-            ),
-            IconButton(
-              icon: Icon(Icons.refresh, color: context.textSecondary),
-              tooltip: "Clear Context Cache",
-              onPressed: () async {
-                ScaffoldMessenger.of(context).clearSnackBars();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Clearing cache...')),
-                );
-                await AiContextManager().invalidate();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).clearSnackBars();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Cache cleared.')),
-                  );
-                }
-              },
-            )
-          ],
-        ),
+        backgroundColor: rx.background,
         body: SafeArea(
           child: Column(
             children: [
+              _buildTopBar(),
               Expanded(
-                child: _isLoadingHistory 
-                  ? Center(child: CircularProgressIndicator(color: context.textPrimary))
-                  : ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(24),
-                  itemCount: _chatMessages.length,
-                  itemBuilder: (context, index) {
-                    final msg = _chatMessages[index];
-                    final isUser = msg['role'] == 'user';
-                    final isError = msg['role'] == 'error';
-
-                    if (!isUser && !isError && (msg['text'] == null || (msg['text'] as String).isEmpty)) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return Align(
-                      alignment:
-                          isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color:
-                              isUser
-                                  ? const Color(0xFF0A84FF)
-                                  : isError
-                                  ? const Color(0xFFFF453A).withValues(alpha: 0.1)
-                                  : context.cardBackground,
-                          borderRadius: BorderRadius.circular(16).copyWith(
-                            bottomRight:
-                                isUser
-                                    ? const Radius.circular(4)
-                                    : const Radius.circular(16),
-                            bottomLeft:
-                                !isUser
-                                    ? const Radius.circular(4)
-                                    : const Radius.circular(16),
-                          ),
-                          border:
-                              isUser
-                                  ? null
-                                  : Border.all(
-                                    color:
-                                        isError
-                                            ? const Color(0xFFFF453A).withValues(alpha: 0.3)
-                                            : context.borderColor,
-                                  ),
-                        ),
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.85,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (isUser || isError)
-                              Text(
-                                msg['text'] ?? "",
-                                style: GoogleFonts.inter(
-                                  color:
-                                      isUser
-                                          ? Colors.white
-                                          : const Color(0xFFFF453A),
-                                  fontSize: 14,
-                                  height: 1.5,
-                                ),
-                              )
-                            else
-                              MarkdownBody(
-                                data: msg['text'] ?? "",
-                                selectable: true,
-                                styleSheet: MarkdownStyleSheet(
-                                  p: GoogleFonts.inter(
-                                    color: context.textPrimary,
-                                    fontSize: 14,
-                                    height: 1.5,
-                                  ),
-                                  strong: GoogleFonts.inter(
-                                    color: context.textPrimary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  listBullet: GoogleFonts.inter(
-                                    color: context.textPrimary,
-                                  ),
-                                ),
-                              ),
-                            if (isError && msg['originalText'] != null) ...[
-                              const SizedBox(height: 12),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  if (!_isTyping) {
-                                    _sendMessage(retryText: msg['originalText']);
-                                  }
-                                },
-                                icon: const Icon(Icons.refresh, size: 16),
-                                label: const Text('Retry'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFFF453A),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              )
-                            ],
-                          ],
-                        ),
+                child: _isLoadingHistory
+                    ? const Center(child: AiBot(size: 100))
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                        itemCount:
+                            _chatMessages.length + (showThinking ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index >= _chatMessages.length) {
+                            return _buildThinking();
+                          }
+                          return _buildMessage(_chatMessages[index]);
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
-              if (_isTyping && (_chatMessages.isEmpty || _chatMessages.last['role'] != 'ai' || (_chatMessages.last['text'] as String).isEmpty))
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.cardBackground,
-                          borderRadius: BorderRadius.circular(16).copyWith(
-                            bottomLeft: const Radius.circular(4),
-                          ),
-                          border: Border.all(color: context.borderColor),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF0A84FF),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              "Thinking...",
-                              style: GoogleFonts.inter(
-                                color: context.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+              _buildComposer(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    final rx = context.rx;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 16, 8, 8),
+      child: Row(
+        children: [
+          RxCircleButton(
+            icon: HugeIcons.strokeRoundedArrowLeft01,
+            semanticLabel: 'Back',
+            onTap: () => Navigator.pop(context),
+          ),
+          const SizedBox(width: 6),
+          const AiBotAvatar(size: 40, animate: false),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI CFO',
+                  style: RxText.title(context).copyWith(fontSize: 20),
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    _isTyping
+                        ? 'Thinking…'
+                        : 'Online · reads your live numbers',
+                    key: ValueKey(_isTyping),
+                    style: RxText.caption(
+                      context,
+                      color: _isTyping ? null : rx.positive,
+                    ),
                   ),
                 ),
-              Container(
-                padding: const EdgeInsets.all(24),
+              ],
+            ),
+          ),
+          RxCircleButton(
+            icon: HugeIcons.strokeRoundedRefresh,
+            semanticLabel: 'Clear context cache',
+            onTap: _clearCache,
+          ),
+          RxCircleButton(
+            icon: HugeIcons.strokeRoundedDelete02,
+            semanticLabel: 'Clear chat',
+            onTap: _clearChat,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessage(Map<String, dynamic> msg) {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isUser = msg['role'] == 'user';
+    final isError = msg['role'] == 'error';
+    final text = (msg['text'] as String?) ?? '';
+
+    // Streaming placeholder: hidden until the first chunk arrives.
+    if (!isUser && !isError && text.isEmpty) return const SizedBox.shrink();
+
+    const r = Radius.circular(20);
+    const tail = Radius.circular(6);
+    final radius = BorderRadius.only(
+      topLeft: r,
+      topRight: r,
+      bottomLeft: isUser ? r : tail,
+      bottomRight: isUser ? tail : r,
+    );
+
+    final bodyStyle = RxText.body(
+      context,
+    ).copyWith(fontWeight: FontWeight.w400, height: 1.45);
+
+    Widget content;
+    if (isUser) {
+      content = Text(text, style: bodyStyle.copyWith(color: rx.onInverse));
+    } else if (isError) {
+      content = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(text, style: bodyStyle.copyWith(color: rx.negative)),
+          if (msg['originalText'] != null) ...[
+            const SizedBox(height: 10),
+            RxPressable(
+              onTap: () {
+                if (!_isTyping) {
+                  _sendMessage(retryText: msg['originalText']);
+                }
+              },
+              semanticLabel: 'Retry',
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
-                  color: context.appBackground,
-                  border: Border(top: BorderSide(color: context.borderColor)),
+                  color: rx.negative,
+                  borderRadius: BorderRadius.circular(100),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: context.cardBackground,
-                          borderRadius: BorderRadius.circular(100),
-                          border: Border.all(color: context.borderColor),
-                        ),
-                        child: TextField(
-                          controller: _messageController,
-                          enabled: !_isTyping,
-                          maxLength: 500,
-                          style: GoogleFonts.inter(
-                            color: context.textPrimary,
-                            fontSize: 14,
-                          ),
-                          decoration: InputDecoration(
-                            counterText: "", // Hide the character counter below the field
-                            hintText: "Ask about your startup's finances...",
-                            hintStyle: GoogleFonts.inter(
-                              color: context.textSecondary,
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 16,
-                            ),
-                          ),
-                          onSubmitted: (_) {
-                            if (!_isTyping) _sendMessage();
-                          },
-                        ),
-                      ),
+                    HugeIcon(
+                      icon: HugeIcons.strokeRoundedRefresh,
+                      color: Colors.white,
+                      size: 14,
+                      strokeWidth: 2,
                     ),
-                    const SizedBox(width: 12),
-                    GestureDetector(
-                      onTap: () {
-                        if (!_isTyping) {
-                          HapticFeedback.lightImpact();
-                          _sendMessage();
-                        }
-                      },
-                      child: Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: _isTyping ? context.textSecondary : const Color(0xFF0A84FF),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.send_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Retry',
+                      style: RxText.caption(
+                        context,
+                        color: Colors.white,
+                      ).copyWith(fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
+          ],
+        ],
+      );
+    } else {
+      content = MarkdownBody(
+        data: text,
+        selectable: true,
+        styleSheet: MarkdownStyleSheet(
+          p: bodyStyle,
+          strong: bodyStyle.copyWith(fontWeight: FontWeight.w600),
+          em: bodyStyle.copyWith(fontStyle: FontStyle.italic),
+          listBullet: bodyStyle,
+          h1: RxText.heading(context).copyWith(fontSize: 18),
+          h2: RxText.heading(context).copyWith(fontSize: 16),
+          h3: RxText.heading(context),
+          code: RxText.caption(
+            context,
+            color: rx.textPrimary,
+          ).copyWith(backgroundColor: rx.surfaceMuted),
+          blockSpacing: 10,
+        ),
+      );
+    }
+
+    final bubble = Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * (isUser ? 0.78 : 0.76),
+      ),
+      decoration: BoxDecoration(
+        color: isUser
+            ? rx.inverse
+            : isError
+            ? rx.negativeSoft
+            : rx.surface,
+        borderRadius: radius,
+        border: Border.all(
+          color: !isUser && !isError && isDark
+              ? rx.hairline
+              : Colors.transparent,
+        ),
+        boxShadow: !isUser && !isError ? rx.cardShadow : null,
+      ),
+      child: content,
+    );
+
+    if (isUser) {
+      return Align(alignment: Alignment.centerRight, child: bubble);
+    }
+    // AI side: the robot sits beside its reply, like a chat profile.
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12, right: 8),
+          child: AiBotAvatar(size: 28),
+        ),
+        Flexible(child: bubble),
+      ],
+    );
+  }
+
+  Widget _buildThinking() {
+    final rx = context.rx;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12, right: 8),
+          child: AiBotAvatar(size: 28, thinking: true),
+        ),
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: rx.surface,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomRight: Radius.circular(20),
+              bottomLeft: Radius.circular(6),
+            ),
+            boxShadow: rx.cardShadow,
           ),
+          child: const AiTypingDots(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildComposer() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(18, 5, 5, 5),
+        decoration: BoxDecoration(
+          color: rx.surface,
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(color: isDark ? rx.hairline : Colors.transparent),
+          boxShadow: rx.cardShadow,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _messageController,
+                enabled: !_isTyping,
+                maxLength: 500,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                cursorColor: rx.textPrimary,
+                style: RxText.body(
+                  context,
+                ).copyWith(fontWeight: FontWeight.w400),
+                decoration: InputDecoration(
+                  counterText: "",
+                  isDense: true,
+                  hintText: 'Ask about your numbers…',
+                  hintStyle: RxText.body(
+                    context,
+                    color: rx.textTertiary,
+                  ).copyWith(fontWeight: FontWeight.w400),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onSubmitted: (_) {
+                  if (!_isTyping) _sendMessage();
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            RxPressable(
+              onTap: _isTyping
+                  ? null
+                  : () {
+                      HapticFeedback.lightImpact();
+                      _sendMessage();
+                    },
+              semanticLabel: 'Send',
+              haptic: false,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _isTyping ? rx.surfaceMuted : rx.inverse,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: HugeIcon(
+                  icon: HugeIcons.strokeRoundedArrowUp02,
+                  color: _isTyping ? rx.textTertiary : rx.onInverse,
+                  size: 18,
+                  strokeWidth: 2.2,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

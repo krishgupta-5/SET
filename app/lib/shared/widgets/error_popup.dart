@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:hugeicons/hugeicons.dart';
+
+import '../../widgets/rx_ui.dart';
 
 enum ErrorType {
   validation,
@@ -168,114 +171,194 @@ class _ErrorPopupWidget extends StatefulWidget {
   State<_ErrorPopupWidget> createState() => _ErrorPopupWidgetState();
 }
 
+/// Top banner: themed card with a tinted icon badge, title, message, a
+/// close button and a thin bar that runs down until it auto-dismisses.
+/// Slides down + fades in; tap, swipe up or press x to dismiss.
 class _ErrorPopupWidgetState extends State<_ErrorPopupWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _fadeAnimation;
+    with TickerProviderStateMixin {
+  late final AnimationController _in = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+    reverseDuration: const Duration(milliseconds: 200),
+  );
+  late final AnimationController _timer = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+  );
+  late final Animation<double> _curve = CurvedAnimation(
+    parent: _in,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeIn,
+  );
+
+  bool _dismissing = false;
+  double _drag = 0;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: Curves.easeOutBack,
-          ),
-        );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
-    );
-
-    _animationController.forward();
-
-    // Auto dismiss after duration
+    _in.forward();
     if (widget.duration.inMilliseconds > 0) {
-      Future.delayed(widget.duration, () {
-        if (mounted) {
-          _dismiss();
-        }
+      _timer.forward().whenComplete(() {
+        if (mounted) _dismiss();
       });
     }
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _in.dispose();
+    _timer.dispose();
     super.dispose();
   }
 
   void _dismiss() {
-    _animationController.reverse().then((_) {
-      widget.onDismiss();
-    });
+    if (_dismissing) return;
+    _dismissing = true;
+    _timer.stop();
+    _in.reverse().then((_) => widget.onDismiss());
   }
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final reduce = MediaQuery.disableAnimationsOf(context);
+    final (fg, bg, icon) = _style(rx);
+
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 16,
-      left: 24,
-      right: 24,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Material(
-            color: Colors.transparent,
+      top: MediaQuery.of(context).padding.top + 10,
+      left: 16,
+      right: 16,
+      child: AnimatedBuilder(
+        animation: _curve,
+        builder: (context, child) {
+          final v = _curve.value;
+          return Opacity(
+            opacity: v.clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, reduce ? 0 : (-24 * (1 - v)) + _drag),
+              child: child,
+            ),
+          );
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: Semantics(
+            liveRegion: true,
+            label: '${widget.title}. ${widget.message}',
             child: GestureDetector(
               onTap: _dismiss,
+              // Swipe up to dismiss.
+              onVerticalDragUpdate: (d) {
+                if (d.delta.dy < 0 || _drag < 0) {
+                  setState(() => _drag = (_drag + d.delta.dy).clamp(-80, 0));
+                }
+              },
+              onVerticalDragEnd: (_) {
+                if (_drag < -24) {
+                  _dismiss();
+                } else {
+                  setState(() => _drag = 0);
+                }
+              },
               child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF141416),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    width: 1,
-                  ),
+                  color: rx.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: rx.hairline),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
+                      color: Colors.black.withValues(alpha: dark ? 0.45 : 0.07),
+                      blurRadius: 24,
+                      spreadRadius: -4,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
+                clipBehavior: Clip.antiAlias,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      widget.title,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: _getStatusColor(),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: bg,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            alignment: Alignment.center,
+                            child: HugeIcon(
+                              icon: icon,
+                              color: fg,
+                              size: 19,
+                              strokeWidth: 1.9,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 1),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _title(),
+                                    style: RxText.heading(
+                                      context,
+                                    ).copyWith(fontSize: 14.5),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    widget.message,
+                                    style: RxText.caption(
+                                      context,
+                                    ).copyWith(fontSize: 13, height: 1.4),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Semantics(
+                            button: true,
+                            label: 'Dismiss',
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _dismiss,
+                              child: SizedBox(
+                                width: 36,
+                                height: 36,
+                                child: Center(
+                                  child: HugeIcon(
+                                    icon: HugeIcons.strokeRoundedCancel01,
+                                    color: rx.textTertiary,
+                                    size: 16,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.message,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                        height: 1.4,
+                    // Time left before auto-dismiss.
+                    AnimatedBuilder(
+                      animation: _timer,
+                      builder: (_, _) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: 1 - _timer.value,
+                          child: Container(
+                            height: 3,
+                            color: fg.withValues(alpha: 0.55),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -288,20 +371,50 @@ class _ErrorPopupWidgetState extends State<_ErrorPopupWidget>
     );
   }
 
-  Color _getStatusColor() {
+  /// Sentence-case titles ("Authentication Error" -> "Authentication error").
+  String _title() {
+    final t = widget.title;
+    if (t.isEmpty) return t;
+    return t[0].toUpperCase() + t.substring(1).toLowerCase();
+  }
+
+  (Color, Color, List<List<dynamic>>) _style(RxColors rx) {
     switch (widget.type) {
       case ErrorType.success:
-        return Colors.greenAccent; // FIXED: Green for success
+        return (
+          rx.positive,
+          rx.positiveSoft,
+          HugeIcons.strokeRoundedCheckmarkCircle02,
+        );
       case ErrorType.warning:
-        return Colors.orangeAccent;
+        return (rx.warning, rx.warningSoft, HugeIcons.strokeRoundedAlert02);
       case ErrorType.info:
-        return Colors.lightBlueAccent;
-      case ErrorType.validation:
+        return (
+          rx.textPrimary,
+          rx.surfaceMuted,
+          HugeIcons.strokeRoundedInformationCircle,
+        );
       case ErrorType.network:
+        return (
+          rx.negative,
+          rx.negativeSoft,
+          HugeIcons.strokeRoundedWifiDisconnected01,
+        );
       case ErrorType.authentication:
+        return (
+          rx.negative,
+          rx.negativeSoft,
+          HugeIcons.strokeRoundedSquareLock02,
+        );
+      case ErrorType.validation:
+        return (rx.warning, rx.warningSoft, HugeIcons.strokeRoundedEdit02);
       case ErrorType.server:
       case ErrorType.general:
-        return Colors.redAccent; // FIXED: Red for errors
+        return (
+          rx.negative,
+          rx.negativeSoft,
+          HugeIcons.strokeRoundedAlertCircle,
+        );
     }
   }
 }

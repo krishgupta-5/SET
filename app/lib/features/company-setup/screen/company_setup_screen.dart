@@ -7,10 +7,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'dart:developer';
 import '../../../features/navigation/screens/main_navigation_wrapper.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../shared/widgets/error_popup.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_logo.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_pickers.dart';
+import '../../../widgets/rx_ui.dart';
+import '../../auth/widgets/auth_kit.dart';
+import '../widgets/setup_widgets.dart';
 
 class CompanySetupScreen extends StatefulWidget {
   const CompanySetupScreen({super.key});
@@ -512,69 +520,135 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
     );
   }
 
+  // --- UI ---
+  // Everything below is presentation. Validation, the phone check and the
+  // Firestore writes above are unchanged.
+
+  static const _stepNames = [
+    'Identity',
+    'Structure',
+    'Runway',
+    'Banking',
+    'Categories',
+    'Teams',
+  ];
+
+  static const _scenes = [
+    SetupScene(
+      HugeIcons.strokeRoundedUserCircle,
+      "Hi, I'm your AI CFO. Let's start with you and your company.",
+    ),
+    SetupScene(
+      HugeIcons.strokeRoundedBuilding03,
+      "Tell me how you're set up so I read your numbers right.",
+    ),
+    SetupScene(
+      HugeIcons.strokeRoundedCoins01,
+      "How much cash is left? I'll turn it into a runway forecast.",
+    ),
+    SetupScene(
+      HugeIcons.strokeRoundedBank,
+      'Add the accounts money leaves from. Only the last 4 digits are saved.',
+    ),
+    SetupScene(
+      HugeIcons.strokeRoundedTag01,
+      "Pick at least 3. I'll sort every expense into these.",
+    ),
+    SetupScene(
+      HugeIcons.strokeRoundedUserGroup,
+      "Add your departments and I'll track each team's spend.",
+    ),
+  ];
+
+  /// Inline messages for the keys [_validateCurrentStep] puts in [_errors].
+  String? _err(String key) {
+    if (!_errors.contains(key)) return null;
+    if (key.startsWith('bank_name_')) return 'Enter the bank name';
+    if (key.startsWith('bank_num_')) return 'Use 8 to 18 digits';
+    return switch (key) {
+      'owner' => 'Enter your full name',
+      'mobile' => 'Enter a valid mobile number',
+      'country' => 'Pick your country',
+      'company' => 'Enter your company name',
+      'type' => 'Pick a company type',
+      'work' => 'Use at least 15 characters',
+      'address' => 'Use at least 15 characters',
+      'funding' => 'Enter the funds you have left',
+      'runway' => 'Enter a number of months',
+      _ => null,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF09090B),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Checking setup status...',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: Colors.white70,
-                  fontSize: 16,
-                ),
-              ),
-            ],
-          ),
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: context.rxOverlayStyle,
+        child: Scaffold(
+          backgroundColor: rx.background,
+          body: const SetupLoading(),
         ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF09090B),
-      resizeToAvoidBottomInset: true,
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle.light,
-          child: SafeArea(
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(
-                  child: PageView(
-                    controller: _pageController,
-                    physics: const NeverScrollableScrollPhysics(),
-                    onPageChanged: (page) {
-                      FocusScope.of(context).unfocus();
-                      setState(() {
-                        _currentPage = page;
-                        _errors.clear();
-                      });
-                    },
-                    children: [
-                      KeepAliveWrapper(child: _buildStep1Identity()),
-                      KeepAliveWrapper(child: _buildStep2Legal()),
-                      KeepAliveWrapper(child: _buildStep3Financials()),
-                      KeepAliveWrapper(child: _buildStep4Bank()),
-                      KeepAliveWrapper(child: _buildStep5Categories()),
-                      KeepAliveWrapper(child: _buildStep6Team()),
-                    ],
-                  ),
+    final finishing = _isFinishing && _currentPage == _totalPages - 1;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: Scaffold(
+        backgroundColor: rx.background,
+        resizeToAvoidBottomInset: true,
+        body: Stack(
+          children: [
+            GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              behavior: HitTestBehavior.translucent,
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    Expanded(
+                      child: PageView(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        onPageChanged: (page) {
+                          FocusScope.of(context).unfocus();
+                          setState(() {
+                            _currentPage = page;
+                            _errors.clear();
+                          });
+                        },
+                        children: [
+                          KeepAliveWrapper(child: _buildStep1Identity()),
+                          KeepAliveWrapper(child: _buildStep2Legal()),
+                          KeepAliveWrapper(child: _buildStep3Financials()),
+                          KeepAliveWrapper(child: _buildStep4Bank()),
+                          KeepAliveWrapper(child: _buildStep5Categories()),
+                          KeepAliveWrapper(child: _buildStep6Team()),
+                        ],
+                      ),
+                    ),
+                    _buildFooter(),
+                  ],
                 ),
-                _buildFooter(),
-              ],
+              ),
             ),
-          ),
+            // "Building your workspace" while the final save runs.
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !finishing,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: finishing
+                      ? SetupFinishing(companyName: _companyNameController.text)
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -582,64 +656,15 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
 
   /// Shows a confirmation dialog before cancelling setup and signing out.
   Future<void> _confirmCancelSetup() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF141416),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        title: Text(
-          'Cancel Setup?',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
+    final confirmed = await showRxConfirm(
+      context,
+      title: 'Cancel setup?',
+      message:
           'Your progress will not be saved. You will be signed out and returned to the login screen.',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: Colors.white70,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(
-              'Continue Setup',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white54,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF3B30),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              'Sign Out',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
+      confirmLabel: 'Sign out',
+      cancelLabel: 'Keep going',
+      destructive: true,
+      icon: HugeIcons.strokeRoundedLogout03,
     );
 
     if (confirmed == true && mounted) {
@@ -657,82 +682,73 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Column(
         children: [
-          Row(
-            children: List.generate(_totalPages, (index) {
-              return Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  height: 4,
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    color: index <= _currentPage
-                        ? Colors.white
-                        : const Color(0xFF1F1F22),
-                    borderRadius: BorderRadius.circular(2),
+          SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 48,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: _currentPage > 0
+                        ? RxCircleButton(
+                            key: const ValueKey('back'),
+                            icon: HugeIcons.strokeRoundedArrowLeft01,
+                            semanticLabel: 'Previous step',
+                            onTap: () => _pageController.previousPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                            ),
+                          )
+                        : const Center(
+                            key: ValueKey('logo'),
+                            child: RxLogo(size: 28),
+                          ),
                   ),
                 ),
-              );
-            }),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              if (_currentPage > 0)
-                GestureDetector(
-                  onTap: () => _pageController.previousPage(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF141416),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1),
+                // The step name is the page title below, so the bar only
+                // shows where you are.
+                Expanded(
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: Text(
+                        'Step ${_currentPage + 1} of $_totalPages',
+                        key: ValueKey(_currentPage),
+                        style: RxText.label(
+                          context,
+                        ).copyWith(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    child: const Icon(
-                      Icons.arrow_back,
-                      color: Colors.white,
-                      size: 20,
+                  ),
+                ),
+                // Cancel / sign-out, always available.
+                RxPressable(
+                  onTap: _confirmCancelSetup,
+                  semanticLabel: 'Cancel setup',
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 12,
                     ),
-                  ),
-                )
-              else
-                const SizedBox(width: 38, height: 38),
-
-              // Cancel / sign-out button — always visible, top-right
-              GestureDetector(
-                onTap: _confirmCancelSetup,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.1),
-                    ),
-                  ),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: Colors.white54,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                    child: Text(
+                      'Cancel',
+                      style: RxText.label(
+                        context,
+                      ).copyWith(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: SetupProgress(step: _currentPage, total: _totalPages),
           ),
         ],
       ),
@@ -744,133 +760,88 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
     required String subtitle,
     required List<Widget> children,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -1,
-              ),
-            ),
-            const SizedBox(height: 8),
+    final step = _stepNames.indexOf(title).clamp(0, _scenes.length - 1);
+    var i = 0;
+    Widget next(Widget w) => RxReveal.index(i++, child: w);
+
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          next(SetupGuide(scene: _scenes[step], step: step)),
+          const SizedBox(height: 20),
+          next(
+            Text(title, style: RxText.title(context).copyWith(fontSize: 30)),
+          ),
+          const SizedBox(height: 4),
+          next(
             Text(
               subtitle,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white70,
-                fontSize: 16,
-              ),
+              style: RxText.label(context).copyWith(fontSize: 14.5),
             ),
-            const SizedBox(height: 24),
-            ...children,
-            const SizedBox(height: 40),
-          ],
-        ),
+          ),
+          const SizedBox(height: 22),
+          for (final c in children) next(c),
+        ],
       ),
     );
   }
 
   Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFF09090B).withValues(alpha: 0.0),
-            const Color(0xFF09090B),
-          ],
-        ),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _isFinishing
-              ? null
-              : () async {
-                  FocusScope.of(context).unfocus();
+    final last = _currentPage == _totalPages - 1;
+    return RxBottomBar(
+      child: AuthPrimaryButton(
+        label: last ? 'Finish setup' : 'Continue',
+        icon: last
+            ? HugeIcons.strokeRoundedTick02
+            : HugeIcons.strokeRoundedArrowRight02,
+        loading: _isFinishing,
+        onTap: _isFinishing
+            ? null
+            : () async {
+                FocusScope.of(context).unfocus();
 
-                  if (_currentPage < _totalPages - 1) {
-                    // 1. Run local synchronous validations first
-                    if (!_validateCurrentStep()) {
-                      _showValidationErrorDialog(); // Ensure popup shows if they miss fields like Country
-                      return;
-                    }
-
-                    // 2. Run API validation specifically on Step 0
-                    if (_currentPage == 0) {
-                      setState(() => _isFinishing = true);
-
-                      final isValidPhone = await _verifyPhoneNumber(
-                        _selectedCountryCode,
-                        _mobileController.text.trim(),
-                      );
-
-                      if (!mounted) return;
-                      setState(() => _isFinishing = false);
-
-                      if (!isValidPhone) {
-                        setState(() => _errors.add('mobile'));
-                        HapticFeedback.heavyImpact();
-                        ErrorPopup.showValidation(
-                          context: context,
-                          message:
-                              "Please enter a valid, active mobile number.",
-                        );
-                        return; // Stop them from advancing
-                      }
-                    }
-
-                    // 3. Advance to the next page
-                    _pageController.nextPage(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                    );
-                  } else {
-                    _submitSetup();
+                if (_currentPage < _totalPages - 1) {
+                  // 1. Run local synchronous validations first
+                  if (!_validateCurrentStep()) {
+                    _showValidationErrorDialog(); // Ensure popup shows if they miss fields like Country
+                    return;
                   }
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.white,
-            disabledBackgroundColor: Colors.white70,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            elevation: 0,
-          ),
-          child: _isFinishing
-              ? const SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
-                  ),
-                )
-              : Text(
-                  _currentPage == _totalPages - 1
-                      ? "Finish Setup"
-                      : "Next Step",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-        ),
+
+                  // 2. Run API validation specifically on Step 0
+                  if (_currentPage == 0) {
+                    setState(() => _isFinishing = true);
+
+                    final isValidPhone = await _verifyPhoneNumber(
+                      _selectedCountryCode,
+                      _mobileController.text.trim(),
+                    );
+
+                    if (!mounted) return;
+                    setState(() => _isFinishing = false);
+
+                    if (!isValidPhone) {
+                      setState(() => _errors.add('mobile'));
+                      HapticFeedback.heavyImpact();
+                      ErrorPopup.showValidation(
+                        context: context,
+                        message: "Please enter a valid, active mobile number.",
+                      );
+                      return; // Stop them from advancing
+                    }
+                  }
+
+                  // 3. Advance to the next page
+                  _pageController.nextPage(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                  );
+                } else {
+                  _submitSetup();
+                }
+              },
       ),
     );
   }
@@ -881,177 +852,140 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
       title: "Identity",
       subtitle: "Let's start with the basics.",
       children: [
-        _buildLabel("OWNER NAME"),
         _buildInputField(
           _ownerNameController,
-          "Your Full Name",
+          "Your full name",
           "owner",
-          icon: Icons.person_outline,
+          label: 'Owner name',
+          icon: HugeIcons.strokeRoundedUser,
           textCapitalization: TextCapitalization.words,
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
           ],
         ),
-        const SizedBox(height: 24),
-        _buildLabel("MOBILE NUMBER"),
+        const SizedBox(height: 16),
         _buildPhoneInputField(_mobileController, "98765 43210", "mobile"),
-        const SizedBox(height: 24),
-
-        _buildLabel("COUNTRY LOCATION"),
+        const SizedBox(height: 16),
         ShakeWidget(
           shake: _errors.contains('country'),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: double.infinity),
-            child: ShadSelect<String>(
-              placeholder: Text(
-                'Select your country',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: _errors.contains('country')
-                      ? const Color(0xFFFF453A).withValues(alpha: 0.6)
-                      : Colors.white60,
-                  fontSize: 15,
-                ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RxSelectField<String>(
+                label: 'Country',
+                sheetTitle: 'Where is your company based?',
+                placeholder: 'Select your country',
+                icon: HugeIcons.strokeRoundedGlobe02,
+                value: _selectedCountryLocation,
+                options: [
+                  for (final c in _countryCodes)
+                    RxOption(c["name"]!, "${c["flag"]}  ${c["name"]}"),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedCountryLocation = value;
+                    _clearError('country');
+                  });
+                },
               ),
-              decoration: ShadDecoration(
-                color: const Color(0xFF141416),
-                border: ShadBorder.all(
-                  color: _errors.contains('country')
-                      ? const Color(0xFFFF453A)
-                      : Colors.white.withValues(alpha: 0.1),
-                  width: 1,
-                ),
-              ),
-              options: [
-                ..._countryCodes.map(
-                  (country) => ShadOption(
-                    value: country["name"]!,
-                    child: Text(
-                      "${country["flag"]}  ${country["name"]}",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              selectedOptionBuilder: (context, value) {
-                final country = _countryCodes.firstWhere(
-                  (c) => c["name"] == value,
-                );
-                return Text(
-                  "${country["flag"]}  ${country["name"]}",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: Colors.white,
-                    fontSize: 15,
-                  ),
-                );
-              },
-              onChanged: (value) {
-                setState(() {
-                  _selectedCountryLocation = value;
-                  _clearError('country');
-                });
-              },
-            ),
+              AuthFieldError(text: _err('country')),
+            ],
           ),
         ),
-
-        const SizedBox(height: 24),
-        _buildLabel("COMPANY NAME"),
+        const SizedBox(height: 16),
         _buildInputField(
           _companyNameController,
-          "Startup Name",
+          "Startup name",
           "company",
-          icon: Icons.business,
+          label: 'Company name',
+          icon: HugeIcons.strokeRoundedBuilding03,
           textCapitalization: TextCapitalization.words,
         ),
       ],
     );
   }
 
+  static const _typeMeta = {
+    'sole_proprietorship': (HugeIcons.strokeRoundedUser, 'Single owner'),
+    'partnership': (
+      HugeIcons.strokeRoundedUserMultiple,
+      'Two or more partners',
+    ),
+    'llp': (HugeIcons.strokeRoundedShield01, 'Limited liability partners'),
+    'pvt_ltd': (HugeIcons.strokeRoundedBuilding06, 'Private limited company'),
+  };
+
   Widget _buildStep2Legal() {
+    final entries = companyTypes.entries.toList();
+    final typeError = _errors.contains('type');
+
+    Widget card(MapEntry<String, String> e) => SetupChoiceCard(
+      icon: _typeMeta[e.key]?.$1 ?? HugeIcons.strokeRoundedBuilding03,
+      title: e.value,
+      subtitle: _typeMeta[e.key]?.$2 ?? '',
+      selected: _selectedCompanyType == e.key,
+      error: typeError,
+      onTap: () {
+        setState(() {
+          _selectedCompanyType = e.key;
+          _clearError('type');
+        });
+      },
+    );
+
     return _buildPageContainer(
       title: "Structure",
       subtitle: "Legal details and location.",
       children: [
-        _buildLabel("COMPANY TYPE"),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'Company type',
+            style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
         ShakeWidget(
-          shake: _errors.contains('type'),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: double.infinity),
-            child: ShadSelect<String>(
-              placeholder: Text(
-                'Select company type',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: _errors.contains('type')
-                      ? const Color(0xFFFF453A).withValues(alpha: 0.6)
-                      : Colors.white60,
-                  fontSize: 15,
-                ),
-              ),
-              decoration: ShadDecoration(
-                color: const Color(0xFF141416),
-                border: ShadBorder.all(
-                  color: _errors.contains('type')
-                      ? const Color(0xFFFF453A)
-                      : Colors.white.withValues(alpha: 0.1),
-                  width: 1,
-                ),
-              ),
-              options: [
-                ...companyTypes.entries.map(
-                  (e) => ShadOption(
-                    value: e.key,
-                    child: Text(
-                      e.value,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: Colors.white,
-                        fontSize: 14,
+          shake: typeError,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var r = 0; r < entries.length; r += 2) ...[
+                if (r > 0) const SizedBox(height: 10),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: card(entries[r])),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: r + 1 < entries.length
+                            ? card(entries[r + 1])
+                            : const SizedBox.shrink(),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ],
-              selectedOptionBuilder: (context, value) => Text(
-                companyTypes[value]!,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: Colors.white,
-                  fontSize: 15,
-                ),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _selectedCompanyType = value;
-                  _clearError('type');
-                });
-              },
-            ),
+              AuthFieldError(text: _err('type')),
+            ],
           ),
         ),
-
-        const SizedBox(height: 24),
-        _buildLabel("WHAT IS THE WORK? (Min 15 Chars)"),
+        const SizedBox(height: 18),
         _buildTextArea(
           _workDescController,
-          "e.g. SaaS Platform for managing inventory...",
+          "e.g. SaaS platform for managing inventory",
           "work",
-          icon: Icons.description_outlined,
+          label: 'What does the company do?',
+          icon: HugeIcons.strokeRoundedBriefcase01,
           textCapitalization: TextCapitalization.sentences,
         ),
-        const SizedBox(height: 24),
-        _buildLabel("REGISTERED ADDRESS (Min 15 Chars)"),
+        const SizedBox(height: 16),
         _buildTextArea(
           _addressController,
-          "Full Complete Address...",
+          "Full registered address",
           "address",
-          icon: Icons.location_on_outlined,
+          label: 'Registered address',
+          icon: HugeIcons.strokeRoundedLocation01,
           textCapitalization: TextCapitalization.words,
         ),
       ],
@@ -1059,196 +993,328 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
   }
 
   Widget _buildStep3Financials() {
+    final rx = context.rx;
+    final symbol = _getCurrencySymbol(_selectedCountryCode);
+    final fundingError = _errors.contains('funding');
+
     return _buildPageContainer(
       title: "Runway",
       subtitle: "Current financial health.",
       children: [
         ShakeWidget(
-          shake: _errors.contains('funding'),
-          child: Center(
+          shake: fundingError,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+            decoration: BoxDecoration(
+              color: rx.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: fundingError
+                    ? rx.negative
+                    : Theme.of(context).brightness == Brightness.dark
+                    ? rx.hairline
+                    : Colors.transparent,
+              ),
+              boxShadow: rx.cardShadow,
+            ),
             child: Column(
               children: [
                 Text(
-                  "TOTAL FUNDS LEFT",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: _errors.contains('funding')
-                        ? const Color(0xFFFF453A)
-                        : Colors.white70,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
+                  'Total funds left',
+                  style: RxText.label(
+                    context,
+                    color: fundingError ? rx.negative : null,
                   ),
                 ),
-                const SizedBox(height: 16),
-                IntrinsicWidth(
-                  child: TextField(
-                    controller: _fundingController,
-                    keyboardType: TextInputType.number,
-                    textAlign: TextAlign.center,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(12),
-                    ],
-                    onChanged: (_) => _clearError('funding'),
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: _errors.contains('funding')
-                          ? const Color(0xFFFF453A)
-                          : Colors.white,
-                      fontSize: 48,
-                      fontWeight: FontWeight.w600,
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _fundingController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(12),
+                  ],
+                  onChanged: (_) => setState(() => _clearError('funding')),
+                  onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                  cursorColor: rx.textPrimary,
+                  style: RxText.hero(
+                    context,
+                    size: 44,
+                    color: fundingError ? rx.negative : null,
+                  ),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: '0',
+                    hintStyle: RxText.hero(
+                      context,
+                      size: 44,
+                      color: rx.textTertiary,
                     ),
-                    decoration: InputDecoration(
-                      prefixText:
-                          "${_getCurrencySymbol(_selectedCountryCode)} ",
-                      prefixStyle: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: _errors.contains('funding')
-                            ? const Color(0xFFFF453A)
-                            : Colors.white70,
-                        fontSize: 24,
-                      ),
-                      hintText: "0",
-                      hintStyle: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: _errors.contains('funding')
-                            ? const Color(0xFFFF453A).withValues(alpha: 0.4)
-                            : Colors.white60,
-                        fontSize: 48,
-                      ),
-                      border: InputBorder.none,
+                    prefixText: '$symbol ',
+                    prefixStyle: RxText.value(
+                      context,
+                      size: 24,
+                      color: rx.textSecondary,
                     ),
                   ),
                 ),
+                AuthFieldError(text: _err('funding')),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 32),
-        _buildLabel("TARGET RUNWAY (MONTHS)"),
+        const SizedBox(height: 18),
         _buildInputField(
           _runwayController,
           "e.g. 18",
           "runway",
+          label: 'Target runway (months)',
           isNumber: true,
-          icon: Icons.timeline,
+          icon: HugeIcons.strokeRoundedCalendar03,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
             LengthLimitingTextInputFormatter(3),
           ],
+          onChanged: () => setState(() {}),
         ),
+        const SizedBox(height: 10),
+        // One-tap presets.
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final m in const [6, 12, 18, 24])
+              SetupChip(
+                label: '$m mo',
+                selected: _runwayController.text.trim() == '$m',
+                onTap: () => setState(() {
+                  _runwayController.text = '$m';
+                  _clearError('runway');
+                }),
+              ),
+          ],
+        ),
+        _buildBurnPreview(symbol),
       ],
     );
   }
 
+  /// "That's about X a month to spend." Shown once both numbers are in.
+  Widget _buildBurnPreview(String symbol) {
+    final rx = context.rx;
+    final funds = int.tryParse(_fundingController.text.trim());
+    final months = int.tryParse(_runwayController.text.trim());
+    final show = funds != null && funds > 0 && months != null && months > 0;
+    final perMonth = show ? (funds / months).round() : 0;
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: !show
+          ? const SizedBox(width: double.infinity)
+          : Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: RxReveal(
+                offset: 8,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+                  decoration: BoxDecoration(
+                    color: rx.positiveSoft,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      HugeIcon(
+                        icon: HugeIcons.strokeRoundedSparkles,
+                        color: rx.positive,
+                        size: 18,
+                        strokeWidth: 1.9,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "That's about $symbol${_group(perMonth)} a month to spend.",
+                          style: RxText.caption(
+                            context,
+                            color: rx.positive,
+                          ).copyWith(fontSize: 13.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
+  /// 1234567 -> "1,234,567".
+  String _group(int n) {
+    final s = n.toString();
+    final b = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) b.write(',');
+      b.write(s[i]);
+    }
+    return b.toString();
+  }
+
   Widget _buildStep4Bank() {
+    final rx = context.rx;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+
     return _buildPageContainer(
       title: "Banking",
       subtitle: "Add source accounts for tracking.",
       children: [
         ...List.generate(_bankAccounts.length, (index) {
           return Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "ACCOUNT 0${index + 1}",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: Colors.white70,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              decoration: BoxDecoration(
+                color: rx.surface,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: dark ? rx.hairline : Colors.transparent,
+                ),
+                boxShadow: rx.cardShadow,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const RxIconTile(
+                        icon: HugeIcons.strokeRoundedBank,
+                        size: 32,
+                        iconSize: 16,
                       ),
-                    ),
-                    if (index > 0)
-                      GestureDetector(
-                        onTap: () => _removeBankAccount(index),
+                      const SizedBox(width: 10),
+                      Expanded(
                         child: Text(
-                          "REMOVE",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: const Color(0xFFFF453A),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          'Account ${index + 1}',
+                          style: RxText.heading(context),
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildInputField(
-                  _bankAccounts[index]["name"]!,
-                  "Bank Name (e.g. Chase)",
-                  "bank_name_$index",
-                  icon: Icons.account_balance_outlined,
-                  textCapitalization: TextCapitalization.words,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s\-]')),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildInputField(
-                  _bankAccounts[index]["number"]!,
-                  "Account Number (8-18 digits)",
-                  "bank_num_$index",
-                  icon: Icons.numbers,
-                  isNumber: true,
-                  textCapitalization: TextCapitalization.none,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(18),
-                  ],
-                ),
-              ],
+                      if (index > 0)
+                        RxPressable(
+                          onTap: () => _removeBankAccount(index),
+                          semanticLabel: 'Remove account ${index + 1}',
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: HugeIcon(
+                              icon: HugeIcons.strokeRoundedDelete02,
+                              color: rx.negative,
+                              size: 18,
+                              strokeWidth: 1.9,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInputField(
+                    _bankAccounts[index]["name"]!,
+                    "Bank name (e.g. Chase)",
+                    "bank_name_$index",
+                    icon: HugeIcons.strokeRoundedBank,
+                    textCapitalization: TextCapitalization.words,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'[a-zA-Z\s\-]'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _buildInputField(
+                    _bankAccounts[index]["number"]!,
+                    "Account number (8-18 digits)",
+                    "bank_num_$index",
+                    icon: HugeIcons.strokeRoundedCreditCard,
+                    isNumber: true,
+                    textCapitalization: TextCapitalization.none,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(18),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
         }),
-        GestureDetector(
-          onTap: _addBankAccount,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              borderRadius: BorderRadius.circular(16),
+        SetupDashedButton(label: 'Add another account', onTap: _addBankAccount),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedSquareLock02,
+              color: rx.textTertiary,
+              size: 15,
+              strokeWidth: 1.9,
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.add, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  "Add Another Account",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Only the bank name and last 4 digits are stored.',
+                style: RxText.micro(context).copyWith(fontSize: 12),
+              ),
             ),
-          ),
+          ],
         ),
       ],
     );
   }
 
+  void _addCustomCategory() {
+    if (_customCategoryController.text.trim().isNotEmpty) {
+      setState(() {
+        final newCat = _customCategoryController.text.trim();
+        if (!_allCategories
+            .map((c) => c.toLowerCase())
+            .contains(newCat.toLowerCase())) {
+          _allCategories.add(newCat);
+        }
+        _selectedCategories.add(
+          _allCategories.firstWhere(
+            (c) => c.toLowerCase() == newCat.toLowerCase(),
+            orElse: () => newCat,
+          ),
+        );
+        _customCategoryController.clear();
+        _clearError('categories');
+      });
+    }
+  }
+
   Widget _buildStep5Categories() {
     return _buildPageContainer(
       title: "Categories",
-      subtitle: "Setup default categories",
+      subtitle: "Set up default categories.",
       children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SetupCounter(
+            count: _selectedCategories.length,
+            min: 3,
+            noun: 'categories',
+          ),
+        ),
+        const SizedBox(height: 14),
         Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: 8,
+          runSpacing: 8,
           children: _allCategories.map((cat) {
             final isSelected = _selectedCategories.contains(cat);
-            return GestureDetector(
+            return SetupChip(
+              label: cat,
+              selected: isSelected,
+              error: _errors.contains('categories'),
               onTap: () {
                 setState(() {
                   isSelected
@@ -1257,252 +1323,204 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
                   _clearError('categories');
                 });
               },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: isSelected ? Colors.white : const Color(0xFF141416),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: isSelected
-                        ? Colors.white
-                        : _errors.contains('categories')
-                        ? const Color(0xFFFF453A).withValues(alpha: 0.5)
-                        : Colors.white.withValues(alpha: 0.1),
-                  ),
-                ),
-                child: Text(
-                  cat,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isSelected ? Colors.black : Colors.white70,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 18),
         Row(
           children: [
             Expanded(
               child: _buildInputField(
                 _customCategoryController,
-                "Add Custom Category",
+                "Add a custom category",
                 "custom_category",
-                icon: Icons.add_circle_outline,
+                icon: HugeIcons.strokeRoundedTag01,
                 textCapitalization: TextCapitalization.words,
+                onSubmitted: _addCustomCategory,
               ),
             ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () {
-                if (_customCategoryController.text.trim().isNotEmpty) {
-                  setState(() {
-                    final newCat = _customCategoryController.text.trim();
-                    if (!_allCategories
-                        .map((c) => c.toLowerCase())
-                        .contains(newCat.toLowerCase())) {
-                      _allCategories.add(newCat);
-                    }
-                    _selectedCategories.add(
-                      _allCategories.firstWhere(
-                        (c) => c.toLowerCase() == newCat.toLowerCase(),
-                        orElse: () => newCat,
-                      ),
-                    );
-                    _customCategoryController.clear();
-                    _clearError('categories');
-                  });
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.add, color: Colors.black, size: 20),
-              ),
-            ),
+            const SizedBox(width: 10),
+            SetupAddButton(label: 'Add category', onTap: _addCustomCategory),
           ],
         ),
       ],
     );
   }
 
+  static const _teamSuggestions = [
+    'Sales',
+    'Design',
+    'Operations',
+    'Finance',
+    'Product',
+    'Support',
+  ];
+
+  void _addTeam(String name) {
+    if (name.trim().isNotEmpty) {
+      setState(() {
+        _teams.add({"name": name.trim(), "members": []});
+        _teamController.clear();
+        _clearError('teams');
+      });
+    }
+  }
+
   Widget _buildStep6Team() {
+    final rx = context.rx;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final existing = _teams
+        .map((t) => (t["name"] as String).toLowerCase())
+        .toSet();
+    final suggestions = _teamSuggestions
+        .where((s) => !existing.contains(s.toLowerCase()))
+        .toList();
+
     return _buildPageContainer(
       title: "Teams",
-      subtitle: "Setup initial departments",
+      subtitle: "Set up your first departments.",
       children: [
-        ..._teams.map((team) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF141416),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _errors.contains('teams')
-                      ? const Color(0xFFFF453A)
-                      : Colors.white.withValues(alpha: 0.1),
-                ),
+        if (_teams.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: rx.negativeSoft,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              'Add at least one team to continue.',
+              style: RxText.caption(context, color: rx.negative),
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: rx.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: _errors.contains('teams')
+                    ? rx.negative
+                    : dark
+                    ? rx.hairline
+                    : Colors.transparent,
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.group, color: Colors.white60, size: 18),
-                      const SizedBox(width: 12),
-                      Text(
-                        team["name"],
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: Colors.white,
-                          fontSize: 16,
+              boxShadow: rx.cardShadow,
+            ),
+            child: Column(
+              children: [
+                for (var i = 0; i < _teams.length; i++) ...[
+                  if (i > 0) Divider(height: 1, indent: 60, color: rx.hairline),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                    child: Row(
+                      children: [
+                        const RxIconTile(
+                          icon: HugeIcons.strokeRoundedUserGroup,
+                          size: 34,
+                          iconSize: 17,
                         ),
-                      ),
-                    ],
-                  ),
-                  GestureDetector(
-                    onTap: () => setState(() => _teams.remove(team)),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white38,
-                        size: 18,
-                      ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _teams[i]["name"],
+                            style: RxText.body(context),
+                          ),
+                        ),
+                        Builder(
+                          builder: (_) {
+                            final team = _teams[i];
+                            return RxPressable(
+                              onTap: () => setState(() => _teams.remove(team)),
+                              semanticLabel: 'Remove ${team["name"]}',
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: HugeIcon(
+                                  icon: HugeIcons.strokeRoundedCancel01,
+                                  color: rx.textTertiary,
+                                  size: 16,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
-          );
-        }),
+          ),
         const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
               child: _buildInputField(
                 _teamController,
-                "Add Team (e.g. Sales)",
+                "Add a team (e.g. Sales)",
                 "teams_input",
-                icon: Icons.group_add,
+                icon: HugeIcons.strokeRoundedUserAdd01,
                 textCapitalization: TextCapitalization.words,
+                onSubmitted: () => _addTeam(_teamController.text),
               ),
             ),
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: () {
-                if (_teamController.text.trim().isNotEmpty) {
-                  setState(() {
-                    _teams.add({
-                      "name": _teamController.text.trim(),
-                      "members": [],
-                    });
-                    _teamController.clear();
-                    _clearError('teams');
-                  });
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.add, color: Colors.black, size: 20),
-              ),
+            const SizedBox(width: 10),
+            SetupAddButton(
+              label: 'Add team',
+              onTap: () => _addTeam(_teamController.text),
             ),
           ],
         ),
+        if (suggestions.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final s in suggestions)
+                SetupChip(
+                  label: s,
+                  selected: false,
+                  icon: HugeIcons.strokeRoundedAdd01,
+                  onTap: () => _addTeam(s),
+                ),
+            ],
+          ),
+        ],
       ],
     );
   }
 
   // --- REUSABLE INPUT WIDGETS ---
 
-  Widget _buildLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: Colors.white70,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-
   Widget _buildInputField(
     TextEditingController controller,
     String hint,
     String errorKey, {
+    String? label,
     bool isNumber = false,
-    IconData? icon,
+    List<List<dynamic>>? icon,
     List<TextInputFormatter>? inputFormatters,
     TextCapitalization textCapitalization = TextCapitalization.none,
+    VoidCallback? onChanged,
+    VoidCallback? onSubmitted,
   }) {
-    final hasError = _errors.contains(errorKey);
-
     return ShakeWidget(
-      shake: hasError,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141416),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: hasError
-                ? const Color(0xFFFF453A)
-                : Colors.white.withValues(alpha: 0.1),
-          ),
-        ),
-        child: TextField(
-          controller: controller,
-          keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-          inputFormatters: inputFormatters,
-          textCapitalization: textCapitalization,
-          onChanged: (_) => _clearError(errorKey),
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: Colors.white,
-            fontSize: 15,
-          ),
-          cursorColor: Colors.white,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(
-              fontFamily: 'Satoshi',
-              color: hasError
-                  ? const Color(0xFFFF453A).withValues(alpha: 0.6)
-                  : Colors.white60,
-              fontSize: 15,
-            ),
-            icon: icon != null
-                ? Icon(
-                    icon,
-                    color: hasError ? const Color(0xFFFF453A) : Colors.white60,
-                    size: 20,
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
+      shake: _errors.contains(errorKey),
+      child: RxTextInput(
+        controller: controller,
+        label: label,
+        hint: hint,
+        icon: icon,
+        keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+        inputFormatters: inputFormatters,
+        textCapitalization: textCapitalization,
+        errorText: _err(errorKey),
+        onChanged: (_) {
+          _clearError(errorKey);
+          onChanged?.call();
+        },
+        onSubmitted: onSubmitted == null ? null : (_) => onSubmitted(),
       ),
     );
   }
@@ -1512,252 +1530,151 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
     String hint,
     String errorKey,
   ) {
-    final hasError = _errors.contains(errorKey);
+    final rx = context.rx;
+    final error = _err(errorKey);
 
     return ShakeWidget(
-      shake: hasError,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141416),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: hasError
-                ? const Color(0xFFFF453A)
-                : Colors.white.withValues(alpha: 0.1),
+      shake: _errors.contains(errorKey),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Mobile number',
+              style: RxText.label(
+                context,
+              ).copyWith(fontWeight: FontWeight.w600),
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: _showCountryCodePicker,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                color: Colors.transparent,
-                child: Row(
-                  children: [
-                    Text(
-                      "$_selectedFlag $_selectedCountryCode",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(
-                      Icons.keyboard_arrow_down,
-                      color: Colors.white60,
-                      size: 18,
-                    ),
-                  ],
-                ),
+          Container(
+            height: 52,
+            padding: const EdgeInsets.only(left: 6, right: 14),
+            decoration: BoxDecoration(
+              color: rx.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: error != null
+                    ? rx.negative
+                    : rx.textPrimary.withValues(alpha: 0.12),
               ),
             ),
-            Container(
-              height: 24,
-              width: 1,
-              color: Colors.white.withValues(alpha: 0.1),
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                keyboardType: TextInputType.phone,
-                inputFormatters: [
-                  FilteringTextInputFormatter.digitsOnly,
-                  LengthLimitingTextInputFormatter(15),
-                ],
-                onChanged: (_) => _clearError(errorKey),
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: Colors.white,
-                  fontSize: 15,
-                ),
-                cursorColor: Colors.white,
-                decoration: InputDecoration(
-                  hintText: hint,
-                  hintStyle: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: hasError
-                        ? const Color(0xFFFF453A).withValues(alpha: 0.6)
-                        : Colors.white60,
-                    fontSize: 15,
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showCountryCodePicker() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: const Color(0xFF141416),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
-          ),
-          child: Container(
-            constraints: const BoxConstraints(maxHeight: 400),
-            padding: const EdgeInsets.only(top: 16, bottom: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Select Dial Code",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                RxPressable(
+                  onTap: _showCountryCodePicker,
+                  semanticLabel: 'Dial code $_selectedCountryCode',
+                  child: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: rx.surfaceMuted,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          "$_selectedFlag $_selectedCountryCode",
+                          style: RxText.body(
+                            context,
+                          ).copyWith(fontWeight: FontWeight.w600),
                         ),
-                      ),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(
-                          Icons.close,
-                          color: Colors.white38,
-                          size: 20,
+                        const SizedBox(width: 4),
+                        HugeIcon(
+                          icon: HugeIcons.strokeRoundedArrowDown01,
+                          color: rx.textSecondary,
+                          size: 16,
+                          strokeWidth: 2,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                Divider(color: Colors.white.withValues(alpha: 0.05), height: 1),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: _countryCodes.length,
-                    itemBuilder: (context, index) {
-                      final country = _countryCodes[index];
-                      final isSelected =
-                          _selectedCountryCode == country["code"];
-
-                      return ListTile(
-                        onTap: () {
-                          setState(() {
-                            _selectedCountryCode = country["code"]!;
-                            _selectedFlag = country["flag"]!;
-                          });
-                          Navigator.pop(context);
-                        },
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 4,
-                        ),
-                        leading: Text(
-                          country["flag"]!,
-                          style: const TextStyle(fontSize: 22),
-                        ),
-                        title: Text(
-                          country["name"]!,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: isSelected ? Colors.white : Colors.white70,
-                            fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        trailing: Text(
-                          country["code"]!,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: isSelected ? Colors.white : Colors.white38,
-                            fontSize: 14,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      );
-                    },
+                  child: TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(15),
+                    ],
+                    onChanged: (_) => _clearError(errorKey),
+                    onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                    cursorColor: rx.textPrimary,
+                    style: RxText.body(
+                      context,
+                    ).copyWith(fontWeight: FontWeight.w500),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                      hintText: hint,
+                      hintStyle: RxText.body(
+                        context,
+                        color: rx.textTertiary,
+                      ).copyWith(fontWeight: FontWeight.w400),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+          AuthFieldError(text: error),
+        ],
+      ),
     );
+  }
+
+  Future<void> _showCountryCodePicker() async {
+    FocusScope.of(context).unfocus();
+    final picked = await showRxSelectSheet<String>(
+      context,
+      title: 'Dial code',
+      selected: _selectedCountryCode,
+      options: [
+        for (final c in _countryCodes)
+          RxOption(
+            c["code"]!,
+            "${c["flag"]}  ${c["name"]}",
+            subtitle: c["code"],
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    final country = _countryCodes.firstWhere((c) => c["code"] == picked);
+    setState(() {
+      _selectedCountryCode = country["code"]!;
+      _selectedFlag = country["flag"]!;
+    });
   }
 
   Widget _buildTextArea(
     TextEditingController controller,
     String hint,
     String errorKey, {
-    IconData? icon,
+    String? label,
+    List<List<dynamic>>? icon,
     TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
-    final hasError = _errors.contains(errorKey);
-
     return ShakeWidget(
-      shake: hasError,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFF141416),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: hasError
-                ? const Color(0xFFFF453A)
-                : Colors.white.withValues(alpha: 0.1),
-          ),
-        ),
-        child: TextField(
-          controller: controller,
-          maxLines: 3,
-          textCapitalization: textCapitalization,
-          onChanged: (_) => _clearError(errorKey),
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: Colors.white,
-            fontSize: 15,
-          ),
-          cursorColor: Colors.white,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: TextStyle(
-              fontFamily: 'Satoshi',
-              color: hasError
-                  ? const Color(0xFFFF453A).withValues(alpha: 0.6)
-                  : Colors.white60,
-              fontSize: 15,
-            ),
-            icon: icon != null
-                ? Icon(
-                    icon,
-                    color: hasError ? const Color(0xFFFF453A) : Colors.white60,
-                    size: 20,
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        ),
+      shake: _errors.contains(errorKey),
+      child: RxTextInput(
+        controller: controller,
+        label: label,
+        hint: hint,
+        icon: icon,
+        maxLines: 3,
+        textCapitalization: textCapitalization,
+        errorText: _err(errorKey),
+        onChanged: (_) => _clearError(errorKey),
       ),
     );
   }
 }
 
 // ==========================================
-// UTILITY CLASSES (KeepAlive, ShakeWidget & ErrorPopup)
+// UTILITY CLASSES (KeepAlive & ShakeWidget)
 // ==========================================
 
 class KeepAliveWrapper extends StatefulWidget {
@@ -1837,237 +1754,5 @@ class _ShakeWidgetState extends State<ShakeWidget>
       },
       child: widget.child,
     );
-  }
-}
-
-enum ErrorType {
-  validation,
-  network,
-  authentication,
-  server,
-  general,
-  success,
-  warning,
-  info,
-}
-
-class ErrorPopup {
-  static void show({
-    required BuildContext context,
-    required String title,
-    required String message,
-    required ErrorType type,
-    Duration? duration,
-  }) {
-    final overlay = Overlay.of(context);
-    late OverlayEntry overlayEntry;
-
-    overlayEntry = OverlayEntry(
-      builder: (context) => _ErrorPopupWidget(
-        title: title,
-        message: message,
-        type: type,
-        onDismiss: () => overlayEntry.remove(),
-        duration: duration ?? _getDurationForType(type),
-      ),
-    );
-
-    overlay.insert(overlayEntry);
-  }
-
-  static Duration _getDurationForType(ErrorType type) {
-    switch (type) {
-      case ErrorType.success:
-      case ErrorType.info:
-        return const Duration(seconds: 3);
-      case ErrorType.warning:
-        return const Duration(seconds: 4);
-      case ErrorType.validation:
-      case ErrorType.network:
-      case ErrorType.authentication:
-      case ErrorType.server:
-      case ErrorType.general:
-        return const Duration(seconds: 5);
-    }
-  }
-
-  static void showValidation({
-    required BuildContext context,
-    required String message,
-  }) {
-    show(
-      context: context,
-      title: 'Validation Error',
-      message: message,
-      type: ErrorType.validation,
-    );
-  }
-
-  static void showServer({
-    required BuildContext context,
-    required String message,
-  }) {
-    show(
-      context: context,
-      title: 'Server Error',
-      message: message,
-      type: ErrorType.server,
-    );
-  }
-}
-
-class _ErrorPopupWidget extends StatefulWidget {
-  final String title;
-  final String message;
-  final ErrorType type;
-  final VoidCallback onDismiss;
-  final Duration duration;
-
-  const _ErrorPopupWidget({
-    required this.title,
-    required this.message,
-    required this.type,
-    required this.onDismiss,
-    required this.duration,
-  });
-
-  @override
-  State<_ErrorPopupWidget> createState() => _ErrorPopupWidgetState();
-}
-
-class _ErrorPopupWidgetState extends State<_ErrorPopupWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _fadeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    _slideAnimation =
-        Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(
-          CurvedAnimation(
-            parent: _animationController,
-            curve: Curves.easeOutBack,
-          ),
-        );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
-    );
-
-    _animationController.forward();
-
-    if (widget.duration.inMilliseconds > 0) {
-      Future.delayed(widget.duration, () {
-        if (mounted) {
-          _dismiss();
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-
-  void _dismiss() {
-    _animationController.reverse().then((_) {
-      widget.onDismiss();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: MediaQuery.of(context).padding.top + 16,
-      left: 24,
-      right: 24,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Material(
-            color: Colors.transparent,
-            child: GestureDetector(
-              onTap: _dismiss,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF141416),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: _getStatusColor(),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.message,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Color _getStatusColor() {
-    switch (widget.type) {
-      case ErrorType.success:
-        return Colors.greenAccent;
-      case ErrorType.warning:
-        return Colors.orangeAccent;
-      case ErrorType.info:
-        return Colors.lightBlueAccent;
-      case ErrorType.validation:
-      case ErrorType.network:
-      case ErrorType.authentication:
-      case ErrorType.server:
-      case ErrorType.general:
-        return Colors.redAccent;
-    }
   }
 }

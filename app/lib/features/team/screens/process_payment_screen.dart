@@ -1,14 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../services/bank_account_service.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_pickers.dart';
+import '../../../widgets/rx_ui.dart';
 
 class ProcessPaymentScreen extends StatefulWidget {
   final String memberId;
@@ -32,33 +34,26 @@ class ProcessPaymentScreen extends StatefulWidget {
   State<ProcessPaymentScreen> createState() => _ProcessPaymentScreenState();
 }
 
-class _ProcessPaymentScreenState extends State<ProcessPaymentScreen>
-    with SingleTickerProviderStateMixin {
+class _ProcessPaymentScreenState extends State<ProcessPaymentScreen> {
   late final TextEditingController _amountController;
   late final TextEditingController _reasonController;
 
   bool _isLoading = false;
-  String _userCountryCode = '+1'; // Default
+  String _userCountryCode = '+1';
 
   Map<String, String> _bankAccounts = {};
   String? _selectedBankAccount;
-  String? _selectedPaymentMethod = 'cash'; // Default to cash for instant load
+  String _selectedPaymentMethod = 'cash';
 
   @override
   void initState() {
     super.initState();
-
-    // Get currency preference synchronously for instant display
     _userCountryCode = CurrencyPreferenceService.getCurrencyPreferenceSync();
-    // Listen for currency changes
     CurrencyPreferenceService.currencyNotifier.addListener(_onCurrencyChanged);
-
     _amountController = TextEditingController(
       text: widget.defaultAmount.toStringAsFixed(2),
     );
     _reasonController = TextEditingController();
-
-    // Load bank accounts silently in background
     _fetchBankAccounts();
   }
 
@@ -81,36 +76,30 @@ class _ProcessPaymentScreenState extends State<ProcessPaymentScreen>
     }
   }
 
-  // Fix #3: Use BankAccountService so companyId fallback logic is respected
+  void _error(String message) => showRxToast(context, message, isError: true);
+
   Future<void> _fetchBankAccounts() async {
     try {
       final accounts = await BankAccountService.getBankAccounts();
-      final Map<String, String> loadedBanks = {};
-
+      final Map<String, String> loaded = {};
       for (final acc in accounts) {
         final String name = acc['name'] as String? ?? 'Unknown Bank';
         String last4 = acc['last4'] as String? ?? '';
-
-        // Fallback for newly added accounts if service doesn't parse it
         if (last4.isEmpty || last4 == '****') {
-          final String rawNum = acc['number']?.toString() ?? '';
+          final rawNum = acc['number']?.toString() ?? '';
           if (rawNum.isNotEmpty) {
             last4 = rawNum.length <= 4
                 ? rawNum
                 : rawNum.substring(rawNum.length - 4);
           }
         }
-
-        final String key = "$name-$last4";
-        final String label = last4.isNotEmpty && last4 != '****'
+        loaded["$name-$last4"] = last4.isNotEmpty && last4 != '****'
             ? "$name (****$last4)"
             : name;
-        loadedBanks[key] = label;
       }
-
       if (mounted) {
         setState(() {
-          _bankAccounts = loadedBanks;
+          _bankAccounts = loaded;
           if (_bankAccounts.isNotEmpty) {
             _selectedBankAccount = _bankAccounts.keys.first;
             _selectedPaymentMethod = 'bank';
@@ -122,612 +111,219 @@ class _ProcessPaymentScreenState extends State<ProcessPaymentScreen>
     }
   }
 
+  // --- FIREBASE LOGIC (unchanged) ---
+
   Future<void> _processPayment() async {
     FocusScope.of(context).unfocus();
-
-    final double? amount = CurrencyFormatter.parse(
-      _amountController.text.trim(),
-    );
+    final amount = CurrencyFormatter.parse(_amountController.text.trim());
 
     if (amount == null || amount <= 0) {
-      _showErrorSnackBar("Please enter a valid amount.");
-      return;
+      return _error("Please enter a valid amount.");
     }
-
     if (widget.isAdvance && _reasonController.text.trim().isEmpty) {
-      _showErrorSnackBar("Please provide a reason for the advance.");
-      return;
+      return _error("Please provide a reason for the advance.");
     }
-
     if (_selectedPaymentMethod == 'bank' && _selectedBankAccount == null) {
-      _showErrorSnackBar("Please select a bank account to pay from.");
-      return;
+      return _error("Please select a bank account to pay from.");
     }
 
     setState(() => _isLoading = true);
-
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception("User is not logged in.");
 
       final id = const Uuid().v4();
-      final String expenseTitle = widget.isAdvance
+      final title = widget.isAdvance
           ? "Advance Salary - ${widget.memberName}"
           : "Salary - ${widget.memberName}";
-
-      final String expenseDesc = widget.isAdvance
+      final desc = widget.isAdvance
           ? "Advance reason: ${_reasonController.text.trim()}"
           : "Regular monthly salary payout for ${widget.memberName}";
+      final account = _selectedPaymentMethod == 'bank'
+          ? (_selectedBankAccount ?? 'Cash-')
+          : 'Cash-';
 
-      // 1. Log Expense
       await FirebaseFirestore.instance.collection('expenses').doc(id).set({
         "uid": user.uid,
         "Amount": amount,
-        "Title": expenseTitle,
-        "Description": expenseDesc,
+        "Title": title,
+        "Description": desc,
         "TeamId": widget.teamId,
         "TeamName": widget.teamName,
         "Date": DateTime.now(),
         "Category": "salary",
         "Type": "recurring",
-        // Store the bank account key (BankName-last4) for later lookup,
-        // or 'Cash-' for cash payments
-        "BankAccount": _selectedPaymentMethod == 'bank'
-            ? (_selectedBankAccount ?? 'Cash-')
-            : 'Cash-',
-        "bankAccount": _selectedPaymentMethod == 'bank'
-            ? (_selectedBankAccount ?? 'Cash-')
-            : 'Cash-',
+        // Bank key (BankName-last4) or 'Cash-' for cash payments.
+        "BankAccount": account,
+        "bankAccount": account,
         "PaymentMethod": _selectedPaymentMethod,
         "memberId": widget.memberId,
         "Time": FieldValue.serverTimestamp(),
       });
 
-      // 2. Update Company Total Expenses + Member Total Expenses (Fix #2)
       final batch = FirebaseFirestore.instance.batch();
-
-      // 2a. Look up companyId from user document, fallback to user.uid
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .get();
       final companyId = userDoc.data()?['companyId'] ?? user.uid;
-
-      // Update company's totalExpenses
       final companyDoc = await FirebaseFirestore.instance
           .collection('companies')
           .doc(companyId)
           .get();
-
       if (companyDoc.exists && companyDoc.data() != null) {
-        final data = companyDoc.data()!;
-        final currentTotalExpenses =
-            double.tryParse(data["totalExpenses"]?.toString() ?? "0") ?? 0.0;
-        final newTotalExpenses = currentTotalExpenses + amount;
-
-        final companyRef = FirebaseFirestore.instance
-            .collection('companies')
-            .doc(companyId);
-        batch.update(companyRef, {"totalExpenses": newTotalExpenses});
+        final current =
+            double.tryParse(
+              companyDoc.data()!["totalExpenses"]?.toString() ?? "0",
+            ) ??
+            0.0;
+        batch.update(
+          FirebaseFirestore.instance.collection('companies').doc(companyId),
+          {"totalExpenses": current + amount},
+        );
       }
-
-      // 2b. Increment member's totalExpenses so MemberDetailScreen stays accurate
-      final memberRef = FirebaseFirestore.instance
-          .collection('members')
-          .doc(widget.memberId);
-      batch.update(memberRef, {
-        "totalExpenses": FieldValue.increment(amount),
-        "remainingSalary": FieldValue.increment(-amount),
-      });
-
+      batch.update(
+        FirebaseFirestore.instance.collection('members').doc(widget.memberId),
+        {
+          "totalExpenses": FieldValue.increment(amount),
+          "remainingSalary": FieldValue.increment(-amount),
+        },
+      );
       await batch.commit();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF30D158),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            behavior: SnackBarBehavior.floating,
-            content: Text(
-              widget.isAdvance
-                  ? "Advance recorded!"
-                  : "Salary payment recorded!",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
+        showRxToast(
+          context,
+          widget.isAdvance ? "Advance recorded" : "Salary payment recorded",
         );
-        Navigator.pop(context); // Go back to member detail
+        Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar("Payment failed: $e");
-      }
+      if (mounted) _error("Payment failed: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: Colors.white,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        backgroundColor: const Color(0xFFFF453A),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
+  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+    final symbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+
     return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
+              RxTopBar(title: widget.isAdvance ? 'Advance pay' : 'Pay salary'),
               Expanded(
-                child: GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 16),
-                        Text(
-                          widget.isAdvance ? "Advance Pay" : "Process Salary",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textPrimary,
-                            fontSize: 28, // Compact Hero
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -1.0,
+                child: ListView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  children: [
+                    RxReveal.index(
+                      0,
+                      child: Column(
+                        children: [
+                          RxAmountInput(
+                            controller: _amountController,
+                            symbol: symbol,
+                            label: widget.isAdvance
+                                ? 'Advance amount'
+                                : 'Amount',
                           ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // --- HERO AMOUNT ---
-                        Center(
-                          child: Column(
-                            children: [
-                              _buildSectionLabel("AMOUNT"),
-                              const SizedBox(height: 8),
-                              _buildAmountInput(),
-                            ],
+                          const SizedBox(height: 10),
+                          Text(
+                            'To ${widget.memberName}${widget.teamName.isNotEmpty ? ' · ${widget.teamName}' : ''}',
+                            textAlign: TextAlign.center,
+                            style: RxText.caption(context),
                           ),
-                        ),
-
-                        const SizedBox(height: 40),
-
-                        // --- PAYMENT METHOD ---
-                        _buildPaymentMethodSelector(),
-
-                        const SizedBox(height: 16),
-
-                        // --- BANK ACCOUNT SELECTOR ---
-                        if (_selectedPaymentMethod == 'bank' &&
-                            _bankAccounts.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          _buildSelectField(
-                            label: "Pay From Bank Account",
-                            currentValue: _selectedBankAccount ?? "",
-                            items: _bankAccounts,
-                            icon: Icons.account_balance,
-                            onChanged: (val) {
-                              FocusScope.of(context).unfocus();
-                              setState(() => _selectedBankAccount = val!);
-                            },
-                          ),
-                          const SizedBox(height: 24),
+                          if (widget.isAdvance) ...[
+                            const SizedBox(height: 12),
+                            RxPill(
+                              label: 'Paid before the due date',
+                              dot: true,
+                              foreground: rx.warning,
+                              background: rx.warningSoft,
+                            ),
+                          ],
                         ],
-
-                        // --- REASON FIELD (ADVANCE ONLY) ---
-                        if (widget.isAdvance) ...[
-                          const SizedBox(height: 8),
-                          _buildTextArea("Reason for Advance"),
+                      ),
+                    ),
+                    const SizedBox(height: 36),
+                    RxReveal.index(
+                      1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4, bottom: 8),
+                            child: Text(
+                              'Pay with',
+                              style: RxText.label(
+                                context,
+                              ).copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          RxSegmented<String>(
+                            options: const {'bank': 'Bank', 'cash': 'Cash'},
+                            value: _selectedPaymentMethod,
+                            onChanged: (v) =>
+                                setState(() => _selectedPaymentMethod = v),
+                          ),
+                          if (_selectedPaymentMethod == 'bank') ...[
+                            const SizedBox(height: 16),
+                            if (_bankAccounts.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: Text(
+                                  'No bank accounts yet. Add one in Funds, or pay with cash.',
+                                  style: RxText.caption(context),
+                                ),
+                              )
+                            else
+                              RxSelectField<String>(
+                                label: 'From account',
+                                value: _selectedBankAccount,
+                                icon: HugeIcons.strokeRoundedBank,
+                                options: [
+                                  for (final e in _bankAccounts.entries)
+                                    RxOption(e.key, e.value),
+                                ],
+                                onChanged: (v) =>
+                                    setState(() => _selectedBankAccount = v),
+                              ),
+                          ],
+                          if (widget.isAdvance) ...[
+                            const SizedBox(height: 16),
+                            RxTextInput(
+                              controller: _reasonController,
+                              label: 'Reason for advance',
+                              hint: 'e.g. Medical emergency',
+                              maxLines: 3,
+                            ),
+                          ],
                         ],
-
-                        const SizedBox(height: 40),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-              _buildSubmitButton(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-
-  // Fix #4: Amount is editable for both salary and advance payments.
-  // Salaries can vary month-to-month (deductions, partial months).
-  Widget _buildAmountInput() {
-    return SizedBox(
-      width: double.infinity,
-      child: TextField(
-        controller: _amountController,
-        readOnly: false, // Always editable — salary can differ month-to-month
-        keyboardType: TextInputType.text,
-        textAlign: TextAlign.center,
-        onTapOutside: (event) => FocusScope.of(context).unfocus(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textPrimary,
-          fontSize: 56,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -2,
-        ),
-        cursorColor: widget.isAdvance
-            ? const Color(0xFF5E5CE6)
-            : context.textPrimary,
-        decoration: InputDecoration(
-          prefixText:
-              "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)} ",
-          prefixStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 56,
-            fontWeight: FontWeight.w500,
-            letterSpacing: -2,
-          ),
-          hintText: "0.00",
-          hintStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-            fontSize: 56,
-            fontWeight: FontWeight.w600,
-          ),
-          border: InputBorder.none,
-          contentPadding: EdgeInsets.zero,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPaymentMethodSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel("PAYMENT METHOD"),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
-          child: Column(
-            children: [
-              _buildPaymentOption(
-                value: 'bank',
-                title: 'Bank Transfer',
-                subtitle: 'Pay from registered bank account',
-                icon: Icons.account_balance,
-                isAvailable: _bankAccounts.isNotEmpty,
-              ),
-              if (_bankAccounts.isNotEmpty) const SizedBox(height: 4),
-              _buildPaymentOption(
-                value: 'cash',
-                title: 'Cash / Manual',
-                subtitle: 'Pay with cash or manual transfer',
-                icon: Icons.money,
-                isAvailable: true,
+              RxBottomBar(
+                child: RxButton(
+                  label: widget.isAdvance ? 'Record advance' : 'Record payment',
+                  icon: HugeIcons.strokeRoundedMoneySend01,
+                  loading: _isLoading,
+                  onTap: _processPayment,
+                ),
               ),
             ],
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPaymentOption({
-    required String value,
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required bool isAvailable,
-  }) {
-    final isSelected = _selectedPaymentMethod == value;
-
-    return GestureDetector(
-      onTap: isAvailable
-          ? () {
-              FocusScope.of(context).unfocus();
-              setState(() => _selectedPaymentMethod = value);
-            }
-          : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? context.textPrimary.withValues(alpha: 0.08)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? context.textPrimary.withValues(alpha: 0.15)
-                : Colors.transparent,
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: isAvailable
-                    ? (isSelected
-                          ? context.textPrimary
-                          : context.textPrimary.withValues(alpha: 0.1))
-                    : context.textPrimary.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                icon,
-                color: isAvailable
-                    ? (isSelected ? context.appBackground : context.textPrimary)
-                    : context.textSecondary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: isAvailable
-                          ? (isSelected
-                                ? context.textPrimary
-                                : context.textSecondary)
-                          : context.textTertiary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: isAvailable
-                          ? context.textSecondary
-                          : context.textTertiary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (isSelected)
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  color: context.textPrimary,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.check,
-                  color: context.appBackground,
-                  size: 14,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSelectField({
-    required String label,
-    required String currentValue,
-    required Map<String, String> items,
-    required IconData icon,
-    required Function(String?) onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel(label),
-        const SizedBox(height: 8),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: double.infinity),
-          child: ShadSelect<String>(
-            placeholder: Text(
-              'Select $label',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-                fontSize: 14,
-              ),
-            ),
-            initialValue: currentValue.isNotEmpty ? currentValue : null,
-            options: [
-              ...items.entries.map(
-                (e) => ShadOption(value: e.key, child: Text(e.value)),
-              ),
-            ],
-            selectedOptionBuilder: (context, value) => Text(
-              items[value] ?? "Select",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            onChanged: onChanged,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTextArea(String label) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel(label),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
-          child: TextField(
-            controller: _reasonController,
-            onTapOutside: (event) => FocusScope.of(context).unfocus(),
-            textInputAction: TextInputAction.done,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 15,
-            ),
-            maxLines: 3,
-            minLines: 3,
-            decoration: InputDecoration(
-              hintText: "Enter reason for advance payout...",
-              hintStyle: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-              ),
-              border: InputBorder.none,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _processPayment,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: widget.isAdvance
-                ? const Color(0xFF5E5CE6) // Purple for Advance
-                : const Color(0xFF0A84FF), // Vibrant Blue for Salary Payment
-            foregroundColor: Colors.white,
-            disabledBackgroundColor:
-                (widget.isAdvance
-                        ? const Color(0xFF5E5CE6)
-                        : const Color(0xFF0A84FF))
-                    .withValues(alpha: 0.5),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          child: _isLoading
-              ? const SizedBox(
-                  height: 24,
-                  width: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : Text(
-                  widget.isAdvance ? "PROCESS ADVANCE" : "CONFIRM & PAY SALARY",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
-                  ),
-                ),
         ),
       ),
     );

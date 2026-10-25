@@ -6,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AiCacheService {
   static const String _kLastAiSync = 'last_ai_sync';
-  static const String _kAiInsightsCachePrefix = 'ai_insights_cache_'; // Append section key
+  static const String _kAiInsightsCachePrefix =
+      'ai_insights_cache_'; // Append section key
 
   /// Checks if the cached insights are still valid by comparing the local sync timestamp
   /// with the `lastDataUpdate` timestamp in Firestore.
@@ -17,22 +18,27 @@ class AiCacheService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastSyncMs = prefs.getInt(_kLastAiSync) ?? 0;
-      
+
       if (lastSyncMs == 0) return false; // Never synced before
 
-      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
       if (!doc.exists) return false;
 
       final lastDataUpdate = doc.data()?['lastDataUpdate'] as Timestamp?;
       if (lastDataUpdate == null) {
         // Data has never been explicitly modified since this feature was added
-        return true; 
+        return true;
       }
 
       final lastUpdateMs = lastDataUpdate.millisecondsSinceEpoch;
-      
+
       if (kDebugMode) {
-        print("AI Cache Check: localSync=$lastSyncMs, remoteUpdate=$lastUpdateMs");
+        print(
+          "AI Cache Check: localSync=$lastSyncMs, remoteUpdate=$lastUpdateMs",
+        );
       }
 
       // Cache is valid if local sync happened AFTER or AT THE SAME TIME as the last remote data update
@@ -44,7 +50,10 @@ class AiCacheService {
   }
 
   /// Saves a specific AI section's JSON string to the local cache.
-  static Future<void> saveSectionCache(String sectionKey, List<dynamic> parsedInsights) async {
+  static Future<void> saveSectionCache(
+    String sectionKey,
+    List<dynamic> parsedInsights,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = jsonEncode(parsedInsights);
@@ -53,13 +62,16 @@ class AiCacheService {
       debugPrint("Failed to save AI cache for section $sectionKey: $e");
     }
   }
-  
+
   /// Marks the current time as the latest AI sync time.
   static Future<void> updateSyncTimestamp() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       // Add a slight buffer (1 second) to prevent race conditions where Firestore timestamp is very slightly ahead
-      await prefs.setInt(_kLastAiSync, DateTime.now().millisecondsSinceEpoch + 1000);
+      await prefs.setInt(
+        _kLastAiSync,
+        DateTime.now().millisecondsSinceEpoch + 1000,
+      );
     } catch (e) {
       debugPrint("Failed to update AI sync timestamp: $e");
     }
@@ -79,7 +91,7 @@ class AiCacheService {
     }
     return null;
   }
-  
+
   /// Saves the AI metrics map to the local cache.
   static Future<void> saveMetricsCache(Map<String, dynamic> metrics) async {
     try {
@@ -104,12 +116,17 @@ class AiCacheService {
     }
     return null;
   }
-  
+
   /// Clears the AI cache completely.
   static Future<void> clearCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final keys = prefs.getKeys().where((k) => k.startsWith(_kAiInsightsCachePrefix) || k == _kLastAiSync || k == 'ai_metrics_cache');
+      final keys = prefs.getKeys().where(
+        (k) =>
+            k.startsWith(_kAiInsightsCachePrefix) ||
+            k == _kLastAiSync ||
+            k == 'ai_metrics_cache',
+      );
       for (final key in keys) {
         await prefs.remove(key);
       }

@@ -1,12 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/currency_formatter.dart';
 import 'category_settings_screen.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_pickers.dart';
+import '../../../widgets/rx_ui.dart';
 
 class BudgetSettingsScreen extends StatefulWidget {
   const BudgetSettingsScreen({super.key});
@@ -16,14 +18,12 @@ class BudgetSettingsScreen extends StatefulWidget {
 }
 
 class _BudgetSettingsScreenState extends State<BudgetSettingsScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _budgetController = TextEditingController();
 
   bool _isLoading = false;
   bool _isLoadingData = true;
   String _userCountryCode = '+1'; // Default to USD
   double _currentBudget = 0.0;
-  int _categoryRebuildKey = 0;
 
   Map<String, String> _allCategories = {};
   String _selectedCategory = '';
@@ -127,48 +127,16 @@ class _BudgetSettingsScreenState extends State<BudgetSettingsScreen> {
     }
   }
 
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
-  }
+  void _showMinimalToast(String message, {bool isError = false}) =>
+      showRxToast(context, message, isError: isError);
 
   Future<void> _saveBudget() async {
-    if (!_formKey.currentState!.validate()) return;
+    final raw = _budgetController.text.trim();
+    final parsedAmount = CurrencyFormatter.parse(raw);
+    if (raw.isEmpty || parsedAmount == null || parsedAmount < 0) {
+      _showMinimalToast('Enter a valid amount', isError: true);
+      return;
+    }
 
     FocusScope.of(context).unfocus();
     setState(() => _isLoading = true);
@@ -213,363 +181,133 @@ class _BudgetSettingsScreenState extends State<BudgetSettingsScreen> {
     }
   }
 
+  void _onCategoryPicked(String value) {
+    if (value == 'add_new') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const CategorySettingsScreen()),
+      ).then((_) => _loadCurrentBudget());
+      return;
+    }
+    setState(() {
+      _selectedCategory = value;
+      _budgetController.clear();
+    });
+    _loadCurrentBudget();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currencySymbol = CurrencyFormatter.getCurrencySymbol(
-      _userCountryCode,
-    );
+    final rx = context.rx;
+    final symbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+    final name = _allCategories[_selectedCategory] ?? 'this category';
 
     return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
+              const RxTopBar(title: 'Budgets'),
               Expanded(
                 child: _isLoadingData
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            context.iconSecondary,
-                          ),
-                        ),
+                    ? ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                        children: const [
+                          RxSkeleton(height: 52, radius: 14),
+                          SizedBox(height: 24),
+                          RxSkeleton(height: 120, radius: 22),
+                        ],
                       )
-                    : GestureDetector(
-                        onTap: () => FocusScope.of(context).unfocus(),
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Form(
-                            key: _formKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 16),
-                                Text(
-                                  "Budget Settings",
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: context.textPrimary,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -1.0,
-                                  ),
-                                ),
-                                const SizedBox(height: 32),
-                                _buildSectionLabel("EXPENSE CATEGORY"),
-                                _buildCategorySelector(),
-                                const SizedBox(height: 32),
-                                _buildReadOnlyMetric(
-                                  "CURRENT ALLOCATION",
-                                  CurrencyFormatter.formatByCountryCompact(
-                                    _currentBudget,
-                                    _userCountryCode,
-                                  ),
-                                  highlight: _currentBudget > 0,
-                                ),
-                                const SizedBox(height: 32),
-                                _buildSectionLabel("UPDATE MONTHLY LIMIT"),
-                                _buildAmountInput(currencySymbol),
-                                const SizedBox(height: 100),
+                    : ListView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                        children: [
+                          RxReveal.index(
+                            0,
+                            child: RxSelectField<String>(
+                              label: 'Category',
+                              value: _selectedCategory,
+                              icon: RxCategory.icon(_selectedCategory),
+                              sheetTitle: 'Choose a category',
+                              options: [
+                                for (final e in _allCategories.entries)
+                                  e.key == 'add_new'
+                                      ? const RxOption(
+                                          'add_new',
+                                          'Add a new category',
+                                          icon: HugeIcons.strokeRoundedAdd01,
+                                        )
+                                      : RxOption(
+                                          e.key,
+                                          e.value,
+                                          icon: RxCategory.icon(e.key),
+                                        ),
                               ],
+                              onChanged: _onCategoryPicked,
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 24),
+                          RxReveal.index(
+                            1,
+                            child: RxCard(
+                              padding: const EdgeInsets.fromLTRB(
+                                18,
+                                18,
+                                18,
+                                18,
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    _currentBudget > 0
+                                        ? 'Current limit for $name'
+                                        : 'No limit set for $name',
+                                    textAlign: TextAlign.center,
+                                    style: RxText.label(context),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  RxAmountInput(
+                                    controller: _budgetController,
+                                    symbol: symbol,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    'per month',
+                                    style: RxText.caption(context),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          RxReveal.index(
+                            2,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                              ),
+                              child: Text(
+                                "We'll warn you before an expense takes this category over its limit.",
+                                style: RxText.caption(context),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
               ),
-              if (!_isLoadingData) _buildSubmitButton(),
+              if (!_isLoadingData)
+                RxBottomBar(
+                  child: RxButton(
+                    label: 'Save budget',
+                    loading: _isLoading,
+                    onTap: _selectedCategory == 'add_new' ? null : _saveBudget,
+                  ),
+                ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textTertiary,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCategorySelector() {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: double.infinity),
-      child: ShadSelect<String>(
-        key: ValueKey('${_selectedCategory}_$_categoryRebuildKey'),
-        placeholder: Text(
-          'Select category',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-            fontSize: 15,
-          ),
-        ),
-        initialValue: _selectedCategory,
-        onChanged: (value) {
-          if (value != null) {
-            if (value == 'add_new') {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CategorySettingsScreen(),
-                ),
-              ).then((_) {
-                _loadCurrentBudget();
-                setState(() {
-                  _categoryRebuildKey++;
-                });
-              });
-            } else {
-              setState(() {
-                _selectedCategory = value;
-                _budgetController.clear();
-              });
-              _loadCurrentBudget();
-            }
-          }
-        },
-        selectedOptionBuilder: (context, value) {
-          return Text(
-            _allCategories[value] ?? 'Select category',
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          );
-        },
-        options: _allCategories.entries.map((entry) {
-          return ShadOption(
-            value: entry.key,
-            child: Text(
-              entry.value,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 14,
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildReadOnlyMetric(
-    String label,
-    String value, {
-    bool highlight = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: highlight ? const Color(0xFF30D158) : context.textSecondary,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: highlight
-                  ? const Color(0xFF30D158).withValues(alpha: 0.3)
-                  : context.borderColor,
-            ),
-            boxShadow: context.cardShadow,
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: highlight
-                    ? const Color(0xFF30D158)
-                    : context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAmountInput(String currencySymbol) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            currencySymbol,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextFormField(
-              controller: _budgetController,
-              keyboardType: TextInputType.text,
-              textInputAction: TextInputAction.done,
-              onTapOutside: (event) => FocusScope.of(context).unfocus(),
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-              cursorColor: context.textPrimary,
-              decoration: InputDecoration(
-                hintText: "0.00",
-                hintStyle: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textTertiary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                errorStyle: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: const Color(0xFFFF453A),
-                  fontSize: 11,
-                  height: 0.8,
-                ),
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Amount required';
-                }
-                final parsed = CurrencyFormatter.parse(value.trim());
-                if (parsed == null || parsed < 0) {
-                  return 'Invalid amount';
-                }
-                return null;
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    final btnBg = context.isDarkMode ? Colors.white : Colors.black;
-    final btnText = context.isDarkMode ? Colors.black : Colors.white;
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _saveBudget,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnBg,
-            foregroundColor: btnText,
-            disabledBackgroundColor: context.textTertiary,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          child: _isLoading
-              ? SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: btnText,
-                  ),
-                )
-              : Text(
-                  "Save Budget",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
         ),
       ),
     );

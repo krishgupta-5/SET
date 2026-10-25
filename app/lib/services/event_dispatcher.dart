@@ -27,7 +27,7 @@ class EventDispatcher {
         handler(event);
       }
     }
-    
+
     // Also notify listeners of the base class FinancialEvent if applicable
     if (event is FinancialEvent && T != FinancialEvent) {
       if (_listeners.containsKey(FinancialEvent)) {

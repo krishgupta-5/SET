@@ -76,7 +76,7 @@ class _RateUsScreenState extends State<RateUsScreen> {
                       const SizedBox(height: 24),
 
                       Text(
-                        "Startup Expense Tracker",
+                        "RunwayX",
                         style: TextStyle(
                           fontFamily: 'Satoshi',
                           color: context.textPrimary,
