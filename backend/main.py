@@ -24,8 +24,9 @@ from services.chat_service import process_chat_message, process_chat_message_str
 from services.cache_service import clear_cache
 from services.chat_service import _load_data
 from services.insights_service import generate_section
+from services.files_service import upload_file, fetch_file, scan_receipt
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 
 app = FastAPI(title="RunWayX Backend")
 
@@ -205,6 +206,46 @@ def chat_endpoint_stream(request: ChatRequest, uid: str = Depends(rate_limited_u
         process_chat_message_stream(uid, request.question, request.history, request.sectionData, request.currencySymbol),
         media_type="text/event-stream"
     )
+
+# ---------------------------
+# FILES + RECEIPT OCR (secrets stay server-side)
+# ---------------------------
+class UploadRequest(BaseModel):
+    data: str = Field(..., min_length=4, max_length=28_000_000)  # base64, ~20 MB
+    fileName: str = Field("upload", max_length=200)
+    mimeType: str = Field("application/octet-stream", max_length=100)
+    asPhoto: bool = True
+
+
+class ScanRequest(BaseModel):
+    image: str = Field(..., min_length=4, max_length=14_000_000)  # base64, ~10 MB
+    mimeType: str = Field("image/jpeg", max_length=100)
+
+
+@app.post("/files/upload")
+def files_upload(req: UploadRequest, uid: str = Depends(rate_limited_user)):
+    return upload_file(uid, req.data, req.fileName, req.mimeType, req.asPhoto)
+
+
+@app.get("/files/{file_id}")
+def files_get(file_id: str, uid: str = Depends(verify_token)):
+    content, ctype, name = fetch_file(uid, file_id)
+    safe_name = "".join(c for c in name if c.isalnum() or c in "._-")[:100] or "file"
+    return Response(
+        content=content,
+        media_type=ctype,
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "Content-Disposition": f'inline; filename="{safe_name}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@app.post("/receipts/scan")
+def receipts_scan(req: ScanRequest, uid: str = Depends(rate_limited_user)):
+    return scan_receipt(req.image, req.mimeType)
+
 
 @app.post("/ai/context/invalidate")
 def invalidate_ai_context(uid: str = Depends(verify_token)):

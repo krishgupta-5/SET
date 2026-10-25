@@ -1,7 +1,4 @@
-import 'dart:convert';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -214,46 +211,15 @@ class _CompanySetupScreenState extends State<CompanySetupScreen> {
     }
   }
 
+  /// Length/format check only. The Numverify call needed an API key
+  /// bundled in the app (extractable from the APK) and was already
+  /// fail-open, so it added no real protection.
   Future<bool> _verifyPhoneNumber(
     String countryCode,
     String mobileNumber,
   ) async {
-    try {
-      final apiKey = dotenv.env['APILAYER_ACCESS_KEY'];
-      if (apiKey == null || apiKey.isEmpty) {
-        log('Error: APILAYER_ACCESS_KEY is missing in .env.local');
-        return true; // Bypass validation if env is missing
-      }
-
-      // Remove any spaces or special characters
-      final cleanNumber = "$countryCode$mobileNumber".replaceAll(
-        RegExp(r'\D'),
-        '',
-      );
-
-      // FIXED ENDPOINT: Numverify uses /api/validate
-      final url = Uri.parse(
-        'https://apilayer.net/api/validate?access_key=$apiKey&number=$cleanNumber',
-      );
-
-      log('Calling Numverify API: $url');
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data.containsKey('error')) {
-          log('Numverify API Error Details: ${data['error']}');
-          return true; // Bypass if API limit reached or error occurs so user isn't stuck
-        }
-
-        return data['valid'] == true;
-      }
-      return false;
-    } catch (e) {
-      log('Phone validation exception: $e');
-      return true; // Gracefully fallback on network error
-    }
+    final digits = '$countryCode$mobileNumber'.replaceAll(RegExp(r'\D'), '');
+    return digits.length >= 8 && digits.length <= 15; // E.164 bounds
   }
 
   bool _validateCurrentStep() {

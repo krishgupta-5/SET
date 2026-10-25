@@ -2,11 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../services/telegram_service.dart';
 
 class FileViewerScreen extends StatefulWidget {
   final String fileId;
@@ -39,124 +38,37 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
     _loadFileUrl();
   }
 
+  Uint8List? _bytes;
+
+  /// Loads the file through the authenticated backend proxy; the bot token
+  /// never reaches the app, and only the owner can fetch the file.
   Future<void> _loadFileUrl() async {
     try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found');
-      }
-
-      // Get file info first
-      final fileInfoResponse = await http.get(
-        Uri.parse(
-          "https://api.telegram.org/bot$botToken/getFile?file_id=${widget.fileId}",
-        ),
-      );
-
-      if (fileInfoResponse.statusCode != 200) {
-        throw Exception('Failed to get file info');
-      }
-
-      final fileInfoData = jsonDecode(fileInfoResponse.body);
-      if (!fileInfoData['ok']) {
-        throw Exception('File not found');
-      }
-
-      final fileInfo = fileInfoData['result'];
-      final filePath = fileInfo['file_path'] as String;
-      final fileUrl = "https://api.telegram.org/file/bot$botToken/$filePath";
-
+      final bytes = await TelegramService.downloadBytes(widget.fileId);
       if (_isTextFile(widget.fileName)) {
         try {
-          final textResponse = await http.get(Uri.parse(fileUrl));
-          if (textResponse.statusCode == 200) {
-            _textPreview = textResponse.body;
-          } else {
-            _textLoadError = true;
-          }
+          _textPreview = utf8.decode(bytes, allowMalformed: true);
         } catch (_) {
           _textLoadError = true;
         }
       }
-
-      if (_isWebPreviewSupported(widget.fileName) && mounted) {
-        _webViewController = WebViewController()
-          ..setJavaScriptMode(JavaScriptMode.unrestricted)
-          ..setBackgroundColor(const Color(0x00000000))
-          ..setNavigationDelegate(
-            NavigationDelegate(
-              onPageStarted: (_) {
-                if (mounted) {
-                  setState(() => _isWebViewLoading = true);
-                }
-              },
-              onPageFinished: (_) {
-                if (mounted) {
-                  setState(() => _isWebViewLoading = false);
-                }
-              },
-              onNavigationRequest: (request) {
-                return NavigationDecision.navigate;
-              },
-            ),
-          )
-          ..loadRequest(
-            Uri.parse(
-              'https://docs.google.com/viewer?url=${Uri.encodeComponent(fileUrl)}&embedded=true',
-            ),
-          );
-      }
-
+      // Documents (PDF/Office) can't be previewed in-app without exposing a
+      // public URL; offer "open externally" via a temp file instead.
+      if (!mounted) return;
       setState(() {
-        _fileUrl = fileUrl;
+        _bytes = bytes;
+        _fileUrl = TelegramService.imageUrl(widget.fileId);
         _isLoading = false;
+        _isWebViewLoading = false;
       });
     } catch (e) {
+      debugPrint('File load failed: $e');
+      if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = "This file couldn't be loaded. It may have expired.";
         _isLoading = false;
       });
     }
-  }
-
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError ? context.rx.negative : context.rx.positive,
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Geist',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 3),
-        elevation: 0,
-      ),
-    );
   }
 
   @override
@@ -189,14 +101,7 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
           ),
         ),
         actions: [
-          if (_fileUrl != null)
-            IconButton(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: _fileUrl!));
-                _showMinimalToast("File link copied to clipboard");
-              },
-              icon: Icon(Icons.copy, color: context.textSecondary),
-            ),
+
         ],
       ),
       body: _buildBody(),
@@ -293,11 +198,11 @@ class _FileViewerScreenState extends State<FileViewerScreen> {
               ],
             ),
           ),
-          if (_isImageFile(widget.fileName) && _fileUrl != null)
+          if (_isImageFile(widget.fileName) && _bytes != null)
             Expanded(
               child: Container(
                 color: context.appBackground,
-                child: InteractiveViewer(child: Image.network(_fileUrl!)),
+                child: InteractiveViewer(child: Image.memory(_bytes!)),
               ),
             ),
           if (_isTextFile(widget.fileName))

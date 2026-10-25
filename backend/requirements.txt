@@ -1,6 +1,8 @@
-fastapi
-uvicorn
-requests
-python-dotenv
-pandas
-firebase-admin
+# Pinned to the versions this backend is tested with (backend/venv).
+fastapi==0.143.0
+uvicorn==0.54.0
+requests==2.34.2
+python-dotenv==1.2.4
+pandas==3.0.6
+firebase-admin==7.7.0
+httpx==0.28.1

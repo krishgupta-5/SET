@@ -119,6 +119,87 @@ class Team {
 class TeamMemberService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  /// Firestore allows 500 writes per batch; stay well under it.
+  static const int _batchLimit = 400;
+
+  /// Removes members (and optionally their team) WITHOUT erasing spending.
+  ///
+  /// Salary payments and member/team expenses are real money that left the
+  /// company, so they stay in `expenses` (keeping total spent, burn and
+  /// runway correct). They're only tagged so history screens can show who
+  /// they belonged to. Company `totalExpenses` is not touched.
+  ///
+  /// Expense tagging runs in chunks first; the member/team deletes go in the
+  /// final batch so a partial failure never leaves orphaned members.
+  static Future<int> removeMembersKeepingHistory({
+    required String uid,
+    required List<String> memberIds,
+    String? teamId,
+    required String reason,
+  }) async {
+    final now = FieldValue.serverTimestamp();
+    final tags = <DocumentReference, Map<String, dynamic>>{};
+
+    for (final memberId in memberIds) {
+      final member = await _firestore.collection('members').doc(memberId).get();
+      final name = member.data()?['fullName'] ?? 'Former member';
+      for (final field in const ['memberId', 'TeamMemberId']) {
+        final rows = await _firestore
+            .collection('expenses')
+            .where('uid', isEqualTo: uid)
+            .where(field, isEqualTo: memberId)
+            .get();
+        for (final d in rows.docs) {
+          tags[d.reference] = {
+            'memberRemoved': true,
+            'removedMemberName': name,
+            'TeamMemberName': d.data()['TeamMemberName'] ?? name,
+            'removedAt': now,
+            'removedReason': reason,
+          };
+        }
+      }
+    }
+    if (teamId != null) {
+      final rows = await _firestore
+          .collection('expenses')
+          .where('uid', isEqualTo: uid)
+          .where('TeamId', isEqualTo: teamId)
+          .get();
+      for (final d in rows.docs) {
+        tags.putIfAbsent(d.reference, () => {});
+        tags[d.reference]!.addAll({
+          'teamRemoved': true,
+          'removedAt': now,
+          'removedReason': reason,
+        });
+      }
+    }
+
+    final entries = tags.entries.toList();
+    for (var i = 0; i < entries.length; i += _batchLimit) {
+      final batch = _firestore.batch();
+      for (final e in entries.skip(i).take(_batchLimit)) {
+        batch.update(e.key, e.value);
+      }
+      await batch.commit();
+    }
+
+    // Deletes last, in chunks (a team can have many members).
+    final deletes = [
+      for (final id in memberIds) _firestore.collection('members').doc(id),
+      if (teamId != null) _firestore.collection('teams').doc(teamId),
+    ];
+    for (var i = 0; i < deletes.length; i += _batchLimit) {
+      final batch = _firestore.batch();
+      for (final ref in deletes.skip(i).take(_batchLimit)) {
+        batch.delete(ref);
+      }
+      await batch.commit();
+    }
+    return entries.length;
+  }
+
   static Future<List<Team>> getTeams() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return [];

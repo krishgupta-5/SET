@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:startup_expense_tracker/models/domain_events.dart';
 import 'package:startup_expense_tracker/services/event_dispatcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:startup_expense_tracker/services/app_config.dart';
 
 /// Manages the lifecycle of the AI Context for the user.
 /// Keeps the AI decoupled from raw data operations.
@@ -16,7 +16,7 @@ class AiContextManager {
   AiContextManager._internal();
 
   static String get baseUrl =>
-      dotenv.env['PROD_API_URL'] ?? "https://set-iamf.onrender.com";
+      AppConfig.apiUrl;
 
   bool _initialized = false;
   Timer? _debounce;

@@ -5,6 +5,8 @@ import 'package:hugeicons/hugeicons.dart';
 
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../models/domain_events.dart';
+import '../../../services/event_dispatcher.dart';
 import '../../../widgets/rx_form.dart';
 import '../../../widgets/rx_motion.dart';
 import '../../../widgets/rx_ui.dart';
@@ -79,21 +81,39 @@ class _ManageRecurringPaymentsScreenState
 
       final now = DateTime.now();
 
-      // Calculate how many months have passed since the start date
-      int elapsedMonths =
-          (now.year - startDate.year) * 12 + now.month - startDate.month;
-
-      // If stopped in the same month it started, set to 1 so at least the first occurrence stays,
-      // or 0 if it hasn't even happened yet.
+      // Keep every charge that has already happened and nothing after it.
+      // Tenure is exclusive (N months = charges at months 0..N-1), so the
+      // tenure is "months up to and including the last past charge" + 1.
+      // The old month-diff dropped the current month's charge when it had
+      // already been billed (e.g. started Jan 20, stopped Mar 25 → lost Mar 20).
+      int tenureMonths;
       if (now.isBefore(startDate)) {
-        elapsedMonths = 0;
-      } else if (elapsedMonths <= 0) {
-        elapsedMonths = 1;
+        tenureMonths = 0; // never charged
+      } else {
+        final monthsSince =
+            (now.year - startDate.year) * 12 + now.month - startDate.month;
+        final thisMonthsCharge = DateTime(
+          startDate.year,
+          startDate.month + monthsSince,
+          startDate.day,
+        );
+        tenureMonths = thisMonthsCharge.isAfter(now)
+            ? monthsSince
+            : monthsSince + 1;
       }
 
-      await FirebaseFirestore.instance.collection('expenses').doc(docId).update(
-        {'recurringTenureMonths': elapsedMonths},
-      );
+      // Tenure is month-based, which is too coarse for daily/weekly series,
+      // so always record the exact stop time as well; expansion stops there.
+      final update = <String, dynamic>{
+        'recurringTenureMonths': tenureMonths,
+        'recurringEndDate': Timestamp.fromDate(now),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('expenses')
+          .doc(docId)
+          .update(update);
+      EventDispatcher().dispatch(ExpenseUpdatedEvent(docId));
 
       if (mounted) showRxToast(context, 'Recurring payment stopped');
     } catch (e) {

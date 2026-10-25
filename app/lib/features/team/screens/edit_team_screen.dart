@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../services/team_member_service.dart';
 import '../../../widgets/rx_form.dart';
 import '../../../widgets/rx_motion.dart';
 import '../../../widgets/rx_ui.dart';
@@ -150,66 +151,20 @@ class _EditTeamScreenState extends State<EditTeamScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not authenticated');
 
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final companyId = userDoc.data()?['companyId'] ?? user.uid;
-
       final membersSnapshot = await FirebaseFirestore.instance
           .collection('members')
+          .where('uid', isEqualTo: user.uid)
           .where('teamId', isEqualTo: widget.teamId)
           .get();
 
-      double totalActualPayouts = 0;
-      final batch = FirebaseFirestore.instance.batch();
-      final archiveCollection = FirebaseFirestore.instance.collection(
-        'archived_payments',
+      // Keep payments and team expenses (real spend); remove the records.
+      // Chunked under Firestore's 500-writes-per-batch limit.
+      await TeamMemberService.removeMembersKeepingHistory(
+        uid: user.uid,
+        memberIds: membersSnapshot.docs.map((d) => d.id).toList(),
+        teamId: widget.teamId,
+        reason: 'team_deleted',
       );
-
-      for (var memberDoc in membersSnapshot.docs) {
-        final memberData = memberDoc.data();
-        final memberName = memberData['fullName'] ?? 'Unknown';
-        final memberId = memberDoc.id;
-
-        final expensesSnapshot = await FirebaseFirestore.instance
-            .collection('expenses')
-            .where('uid', isEqualTo: user.uid)
-            .where('memberId', isEqualTo: memberId)
-            .where('Category', isEqualTo: 'salary')
-            .get();
-
-        for (var expenseDoc in expensesSnapshot.docs) {
-          final expenseData = Map<String, dynamic>.from(expenseDoc.data());
-          final paidAmount = (expenseData['Amount'] as num?)?.toDouble() ?? 0.0;
-          totalActualPayouts += paidAmount;
-
-          expenseData['originalMemberId'] = memberId;
-          expenseData['originalMemberName'] = memberName;
-          expenseData['originalTeamId'] = widget.teamId;
-          expenseData['archivedAt'] = FieldValue.serverTimestamp();
-          expenseData['archiveReason'] = 'team_deleted';
-
-          batch.set(archiveCollection.doc(), expenseData);
-          batch.delete(expenseDoc.reference);
-        }
-        batch.delete(memberDoc.reference);
-      }
-
-      batch.delete(
-        FirebaseFirestore.instance.collection('teams').doc(widget.teamId),
-      );
-
-      if (totalActualPayouts > 0) {
-        final companyRef = FirebaseFirestore.instance
-            .collection('companies')
-            .doc(companyId);
-        batch.update(companyRef, {
-          "totalExpenses": FieldValue.increment(-totalActualPayouts),
-        });
-      }
-
-      await batch.commit();
 
       if (mounted) {
         Navigator.of(context).pop(); // edit screen
@@ -218,6 +173,9 @@ class _EditTeamScreenState extends State<EditTeamScreen> {
       }
     } on FirebaseException catch (e) {
       if (mounted) _toast(e.message ?? 'Failed to delete team', isError: true);
+    } catch (e) {
+      debugPrint('Failed to delete team: $e');
+      if (mounted) _toast('Failed to delete team', isError: true);
     } finally {
       if (mounted) setState(() => _isDeleting = false);
     }
@@ -261,7 +219,7 @@ class _EditTeamScreenState extends State<EditTeamScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'This removes the team and all its members. Their salary payments are archived. This can\'t be undone.',
+                    'This removes the team and all its members. Their past payments stay in your expenses, so totals and runway remain accurate. This can\'t be undone.',
                     style: RxText.caption(
                       dialogContext,
                     ).copyWith(fontSize: 14, height: 1.45),

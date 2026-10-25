@@ -11,7 +11,7 @@ import 'process_payment_screen.dart';
 import 'transaction_details_screen.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
-import '../../../utils/data_helpers.dart';
+import '../../../services/team_member_service.dart';
 import '../../../utils/expense_expansion_helper.dart';
 import '../../../widgets/rx_form.dart';
 import '../../../widgets/rx_motion.dart';
@@ -737,7 +737,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       context,
       title: 'Remove $memberName?',
       message:
-          'They are removed from the team and their payment history is archived.',
+          'They are removed from the team. Their past salary payments stay in your expenses, so totals and runway remain accurate.',
       confirmLabel: 'Remove',
       destructive: true,
     );
@@ -747,60 +747,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw Exception('User not authenticated');
 
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      final companyId = userDoc.data()?['companyId'];
-      if (companyId == null) throw Exception('Company not found');
-
-      final memberDoc = await FirebaseFirestore.instance
-          .collection('members')
-          .doc(widget.memberId)
-          .get();
-      if (!memberDoc.exists) throw Exception('Member not found');
-
-      final memberData = memberDoc.data()!;
-      final memberSalary = DataHelpers.safeParseDouble(
-        memberData['monthlyCost'] ?? 0,
+      // Keep their payments (real spend); only the member record goes.
+      await TeamMemberService.removeMembersKeepingHistory(
+        uid: user.uid,
+        memberIds: [widget.memberId],
+        reason: 'member_deleted',
       );
-      final name = memberData['fullName'] ?? 'Unknown';
-
-      final batch = FirebaseFirestore.instance.batch();
-
-      // Salary payments live in 'expenses' (Category = salary). Archive them
-      // before deletion so history is preserved.
-      final paymentsSnapshot = await FirebaseFirestore.instance
-          .collection('expenses')
-          .where('uid', isEqualTo: user.uid)
-          .where('memberId', isEqualTo: widget.memberId)
-          .where('Category', isEqualTo: 'salary')
-          .get();
-      final archive = FirebaseFirestore.instance.collection(
-        'archived_payments',
-      );
-      for (var paymentDoc in paymentsSnapshot.docs) {
-        final paymentData = paymentDoc.data();
-        paymentData['originalMemberId'] = widget.memberId;
-        paymentData['originalMemberName'] = name;
-        paymentData['archivedAt'] = FieldValue.serverTimestamp();
-        paymentData['archiveReason'] = 'member_deleted';
-        batch.set(archive.doc(), paymentData);
-        batch.delete(paymentDoc.reference);
-      }
-
-      batch.delete(
-        FirebaseFirestore.instance.collection('members').doc(widget.memberId),
-      );
-      batch.update(
-        FirebaseFirestore.instance.collection('companies').doc(companyId),
-        {"totalExpenses": FieldValue.increment(-memberSalary)},
-      );
-      await batch.commit();
 
       if (mounted) {
         Navigator.pop(context);
-        showRxToast(context, 'Member removed, payments archived');
+        showRxToast(context, 'Member removed. Payment history kept.');
       }
     } catch (e) {
       debugPrint("Failed to delete member: $e");

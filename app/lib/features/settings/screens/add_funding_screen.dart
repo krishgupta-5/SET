@@ -264,6 +264,23 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
                 0.0)
           : null;
 
+      // Customer revenue isn't funding: store it as revenue so funding raised
+      // stays accurate and net burn / runway subtract it.
+      if (_selectedSource == 'revenue') {
+        await ExpenseService().recordRevenue(
+          uid: user.uid,
+          companyId: user.uid,
+          amount: amount,
+          source: sourceLabel,
+          notes: _notesController.text.trim(),
+        );
+        if (mounted) {
+          _showMinimalToast("Revenue recorded");
+          Navigator.pop(context, true);
+        }
+        return;
+      }
+
       // Funding transaction, funding row, optional EMI schedule and the
       // company total are written in a single atomic batch.
       await ExpenseService().recordFunding(
@@ -297,9 +314,10 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
         Navigator.pop(context, true);
       }
     } catch (e) {
+      debugPrint('Add funding failed: $e');
       if (mounted) {
         _showMinimalToast(
-          "Error adding funding: ${e.toString()}",
+          "Couldn't save. Please try again.",
           isError: true,
         );
       }
@@ -418,9 +436,13 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
                                     ),
                                   ),
                                   _metric(
-                                    'New total',
+                                    _selectedSource == 'revenue'
+                                        ? 'Recorded as revenue'
+                                        : 'New total',
                                     CurrencyFormatter.formatByCountryCompact(
-                                      _currentFunding + _inputAmount,
+                                      _selectedSource == 'revenue'
+                                          ? _inputAmount
+                                          : _currentFunding + _inputAmount,
                                       _userCountryCode,
                                     ),
                                     color: _inputAmount > 0

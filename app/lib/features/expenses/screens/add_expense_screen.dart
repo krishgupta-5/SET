@@ -10,9 +10,6 @@ import 'package:startup_expense_tracker/services/expense_service.dart';
 
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/bank_account_service.dart';
@@ -21,6 +18,7 @@ import '../../../widgets/avatar_widget.dart';
 import '../../../shared/widgets/error_popup.dart';
 import '../../settings/screens/category_settings_screen.dart';
 import '../../../theme/app_theme.dart';
+import '../../../services/telegram_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   // ✅ Accept prefill data from scan screen
@@ -1914,56 +1912,10 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   }
 
   // ✅ Upload file to Telegram
+  /// Uploads via the backend (the bot token never ships in the app).
   Future<String?> uploadToTelegram(String filePath) async {
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      // Check if it's an image or document
-      final isImage =
-          filePath.toLowerCase().endsWith('.jpg') ||
-          filePath.toLowerCase().endsWith('.jpeg') ||
-          filePath.toLowerCase().endsWith('.png') ||
-          filePath.toLowerCase().endsWith('.gif');
-
-      final uri = Uri.parse(
-        "https://api.telegram.org/bot$botToken/${isImage ? 'sendPhoto' : 'sendDocument'}",
-      );
-
-      var request = http.MultipartRequest('POST', uri);
-      request.fields['chat_id'] = '-1003885930746';
-
-      if (isImage) {
-        request.files.add(await http.MultipartFile.fromPath('photo', filePath));
-      } else {
-        request.files.add(
-          await http.MultipartFile.fromPath('document', filePath),
-        );
-      }
-
-      final response = await request.send();
-
-      if (response.statusCode == 200) {
-        final res = await http.Response.fromStream(response);
-        final data = jsonDecode(res.body);
-
-        if (isImage) {
-          // 🔥 IMPORTANT: take highest quality image
-          return data['result']['photo'].last['file_id'];
-        } else {
-          return data['result']['document']['file_id'];
-        }
-      } else {
-        throw Exception("Upload failed: ${response.statusCode}");
-      }
-    } catch (e) {
-      debugPrint('Error uploading to Telegram: $e');
-      return null;
-    }
+    final uploaded = await TelegramService.uploadFile(filePath);
+    return uploaded?.fileId;
   }
 
   // ✅ Upload file and update state

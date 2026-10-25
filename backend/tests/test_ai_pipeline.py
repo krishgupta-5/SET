@@ -226,3 +226,63 @@ def test_sse_error_is_valid_json():
     line = _sse_error('bad "quote"\nnewline')
     assert line.startswith("data: ") and line.endswith("\n\n")
     assert json.loads(line[6:].strip())["error"] == 'bad "quote"\nnewline'
+
+
+# ---------------------------------------------------------------------------
+# Recurring stop date + file/OCR proxy
+# ---------------------------------------------------------------------------
+
+def test_recurring_end_date_stops_series():
+    occ = ms.expand_expenses([{
+        "Amount": 10, "Date": d(2026, 10, 1), "Type": "recurring",
+        "recurrenceFrequency": "weekly", "recurringEndDate": d(2026, 10, 15),
+    }], until=datetime(2026, 12, 31))
+    # Oct 1, 8, 15 kept (stop is inclusive); Oct 22+ dropped.
+    assert [o["_date"].day for o in occ] == [1, 8, 15]
+
+
+def test_receipt_parse_handles_fences_and_bad_category():
+    from services.files_service import _parse_receipt
+    out = _parse_receipt('```json\n{"merchant":"Cafe X","amount":"120.50","date":"01/10/2026",'
+                         '"category":"FOOD","description":"Lunch\\nfor team"}\n```')
+    assert out["merchant"] == "Cafe X"
+    assert out["amount"] == "120.50"
+    assert out["category"] == "others"          # unknown → others
+    assert "\n" not in out["description"]
+
+
+def test_receipt_parse_regex_fallback():
+    from services.files_service import _parse_receipt
+    out = _parse_receipt('{"merchant": "Shop", "amount": "99", "date": "", "category": "office"')
+    assert out["merchant"] == "Shop" and out["category"] == "office"
+
+
+def test_file_download_rejects_non_owner(monkeypatch):
+    from fastapi import HTTPException
+    from services import files_service as fs
+    monkeypatch.setattr(fs, "TELEGRAM_TOKEN", "x")
+    monkeypatch.setattr(fs, "_owns", lambda fid, uid: False)
+    with pytest.raises(HTTPException) as e:
+        fs.fetch_file("attacker", "AgACAgUAAxkBAAIB")
+    assert e.value.status_code == 404
+
+
+def test_file_download_rejects_bad_id(monkeypatch):
+    from fastapi import HTTPException
+    from services import files_service as fs
+    monkeypatch.setattr(fs, "TELEGRAM_TOKEN", "x")
+    with pytest.raises(HTTPException) as e:
+        fs.fetch_file("u", "../../etc/passwd")
+    assert e.value.status_code == 400
+
+
+def test_endpoints_require_auth(monkeypatch):
+    from fastapi.testclient import TestClient
+    from services import auth_service
+    monkeypatch.setattr(auth_service, "initialize_firebase", lambda: None)
+    import main  # load_dotenv() may set DEBUG_MODE from a local .env
+    monkeypatch.delenv("DEBUG_MODE", raising=False)
+    client = TestClient(main.app)
+    assert client.post("/receipts/scan", json={"image": "aGk=", "mimeType": "image/jpeg"}).status_code == 401
+    assert client.post("/files/upload", json={"data": "aGk=", "fileName": "a.jpg"}).status_code == 401
+    assert client.get("/files/AgACAgUAAxkBAAIB").status_code == 401

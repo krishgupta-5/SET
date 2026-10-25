@@ -391,6 +391,30 @@ class ExpenseService {
     await batch.commit();
   }
 
+  /// Records revenue (customer income). Stored in `revenue`, not as funding,
+  /// so total funding raised stays accurate and net burn = burn - revenue.
+  Future<void> recordRevenue({
+    required String uid,
+    required String companyId,
+    required double amount,
+    required String source,
+    required String notes,
+    DateTime? date,
+  }) async {
+    final ref = _db.collection('revenue').doc(const Uuid().v4());
+    await ref.set({
+      'uid': uid,
+      'companyId': companyId,
+      'Amount': amount,
+      'Title': notes.isNotEmpty ? notes : source,
+      'Source': source,
+      'Description': notes,
+      'Date': Timestamp.fromDate(date ?? DateTime.now()),
+      'Time': FieldValue.serverTimestamp(),
+    });
+    EventDispatcher().dispatch(FinancialDataChangedEvent('revenue'));
+  }
+
   /// This month's spend attributed to [teamId]: active members' monthly cost
   /// plus non-salary expenses tagged to the team. Same definition the monthly
   /// burn screen uses for team budget variance.

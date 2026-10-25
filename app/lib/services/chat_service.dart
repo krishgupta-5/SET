@@ -4,12 +4,12 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:startup_expense_tracker/services/app_config.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 
 class ChatService {
   static String get baseUrl =>
-      dotenv.env['PROD_API_URL'] ?? "https://set-iamf.onrender.com";
+      AppConfig.apiUrl;
 
 
   /// Builds the user's financial snapshot on-device so the backend always has

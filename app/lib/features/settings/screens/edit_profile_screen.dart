@@ -3,9 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'dart:developer';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../services/telegram_service.dart';
 import '../../../widgets/rx_form.dart';
@@ -220,37 +217,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<String?> _uploadToTelegram(String filePath) async {
-    try {
-      await dotenv.load(fileName: ".env.local");
-      final botToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-
-      if (botToken == null) {
-        throw Exception('Telegram bot token not found in environment');
-      }
-
-      final uri = Uri.parse("https://api.telegram.org/bot$botToken/sendPhoto");
-
-      var request = http.MultipartRequest('POST', uri);
-      request.fields['chat_id'] = '-1003885930746';
-
-      request.files.add(await http.MultipartFile.fromPath('photo', filePath));
-
-      final response = await request.send();
-
-      if (response.statusCode == 200) {
-        final res = await http.Response.fromStream(response);
-        final data = jsonDecode(res.body);
-
-        return data['result']['photo'].last['file_id'];
-      } else {
-        throw Exception("Upload failed: ${response.statusCode}");
-      }
-    } catch (e) {
-      debugPrint('Error uploading to Telegram: $e');
-      return null;
-    }
-  }
+  Future<String?> _uploadToTelegram(String filePath) =>
+      TelegramService.uploadPhoto(filePath);
 
   @override
   Widget build(BuildContext context) {

@@ -5,9 +5,6 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'edit_expense_screen.dart';
 import 'file_viewer_screen.dart';
 import '../../../utils/data_helpers.dart';
@@ -17,6 +14,7 @@ import '../../../services/expense_service.dart';
 import '../../../services/team_member_service.dart';
 import '../../../services/telegram_service.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/telegram_image.dart';
 
 class ExpenseDetailsScreen extends StatefulWidget {
   final String expenseId;
@@ -73,37 +71,24 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
   // Used so that the Edit sheet always opens with up-to-date values.
   Map<String, dynamic> _currentExpenseData = {};
 
-  // Cache the Telegram bot token so dotenv.load is only called once
-  String? _telegramBotToken;
-
-  Future<String?> _getBotToken() async {
-    if (_telegramBotToken != null) return _telegramBotToken;
-    await dotenv.load(fileName: '.env.local');
-    _telegramBotToken = dotenv.env['TELEGRAM_BOT_TOKEN'];
-    return _telegramBotToken;
-  }
-
   Future<String> getTelegramImageUrl(String fileId) =>
       TelegramService.getImageUrl(fileId);
 
   // ✅ Get Telegram file info (uses cached token)
+  /// File metadata for the attachment preview. The backend proxies the
+  /// file itself; the name (and so the type) comes from the expense doc.
   Future<Map<String, dynamic>?> getTelegramFileInfo(String fileId) async {
-    try {
-      final botToken = await _getBotToken();
-      if (botToken == null) throw Exception('Telegram bot token not found');
-
-      final res = await http.get(
-        Uri.parse(
-          'https://api.telegram.org/bot$botToken/getFile?file_id=$fileId',
-        ),
-      );
-
-      final data = jsonDecode(res.body);
-      return data['result'];
-    } catch (e) {
-      debugPrint('Error getting Telegram file info: $e');
-      return null;
-    }
+    final data = _currentExpenseData.isNotEmpty
+        ? _currentExpenseData
+        : widget.expenseData;
+    final name = (data['AttachmentFileName'] ?? data['attachmentFileName'])
+        ?.toString();
+    return {
+      'file_id': fileId,
+      // Keep an extension so the preview knows how to render it; receipts
+      // uploaded as photos are JPEGs.
+      'file_path': (name != null && name.contains('.')) ? name : '$fileId.jpg',
+    };
   }
 
   // ✅ Check if file is likely an image based on file path
@@ -1709,45 +1694,23 @@ class _ExpenseDetailsScreenState extends State<ExpenseDetailsScreen> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      "https://api.telegram.org/file/bot${dotenv.env['TELEGRAM_BOT_TOKEN']}/$filePath",
+                    child: TelegramImage(
+                      attachmentFileId,
                       height: 200,
                       width: double.infinity,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: context.appBackground,
-                            borderRadius: BorderRadius.circular(16),
+                      error: Container(
+                        height: 200,
+                        color: context.appBackground,
+                        alignment: Alignment.center,
+                        child: Text(
+                          "Failed to load image preview",
+                          style: TextStyle(
+                            color: context.textSecondary,
+                            fontSize: 12,
                           ),
-                          child: Center(
-                            child: Text(
-                              "Failed to load image preview",
-                              style: TextStyle(
-                                color: context.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          height: 200,
-                          decoration: BoxDecoration(
-                            color: context.appBackground,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: context.rx.positive,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
                   ),
                 )

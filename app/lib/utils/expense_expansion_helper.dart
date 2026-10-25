@@ -73,6 +73,15 @@ class ExpenseExpansionHelper {
         );
       }
 
+      // An explicit stop date (set when a series is stopped) also caps it.
+      final stopVal = expense['recurringEndDate'];
+      final stopDate = stopVal is Timestamp
+          ? stopVal.toDate()
+          : (stopVal is DateTime ? stopVal : null);
+      if (stopDate != null && (endDate == null || stopDate.isBefore(endDate))) {
+        endDate = stopDate.add(const Duration(microseconds: 1));
+      }
+
       final upperLimit = (endDate != null && endDate.isBefore(actualLimit))
           ? endDate
           : actualLimit;

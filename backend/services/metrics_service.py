@@ -132,6 +132,11 @@ def expand_expenses(raw: Iterable[dict], until: datetime) -> list[dict]:
             if isinstance(tenure, (int, float)) and not isinstance(tenure, bool)
             else None
         )
+        # Explicit stop time (set when a series is stopped) is inclusive.
+        stop = to_datetime(e.get("recurringEndDate"))
+        if stop is not None:
+            stop_excl = stop + timedelta(microseconds=1)
+            end = stop_excl if end is None or stop_excl < end else end
         skipped = {
             int(i) for i in (e.get("skippedOccurrences") or [])
             if isinstance(i, (int, float))

@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -29,49 +26,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  /// Format check only. The APILayer deliverability check needed an API
+  /// key bundled in the app (extractable from the APK), and it already let
+  /// everything through when unavailable. Firebase email verification is
+  /// what actually proves the address.
   Future<bool> _verifyEmail(String email) async {
-    try {
-      final apiKey = dotenv.env['APILAYER_EMAIL_ACCESS_KEY'];
-      if (apiKey == null || apiKey.isEmpty) {
-        debugPrint('Error: APILAYER_EMAIL_ACCESS_KEY is missing in .env.local');
-        return true;
-      }
-
-      final encodedEmail = Uri.encodeComponent(email);
-      final url = Uri.parse(
-        'https://apilayer.net/api/check?access_key=$apiKey&email=$encodedEmail',
-      );
-
-      final response = await http.get(
-        url,
-        headers: {'Accept': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data.containsKey('error')) {
-          debugPrint('APILayer Error: ${data['error']['info']}');
-          return true;
-        }
-
-        final bool isFormatValid = data['format_valid'] == true;
-        final bool isMxFound = data['mx_found'] == true;
-        final bool isDisposable = data['disposable'] == true;
-        final bool isSmtpValid = data['smtp_check'] == true;
-        final double score = (data['score'] ?? 0.0).toDouble();
-
-        return isFormatValid &&
-            isMxFound &&
-            !isDisposable &&
-            isSmtpValid &&
-            score > 0.6;
-      }
-      return false;
-    } catch (e) {
-      debugPrint('Email validation exception: $e');
-      return true;
-    }
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email.trim());
   }
 
   /// Shown when the email is already registered. Offers the right way back

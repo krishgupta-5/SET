@@ -1,21 +1,28 @@
+import 'dart:io';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:startup_expense_tracker/features/auth/auth_wrapper.dart';
 import 'package:startup_expense_tracker/firebase_options.dart';
 import 'package:startup_expense_tracker/services/ai_context_manager.dart';
+import 'package:startup_expense_tracker/services/file_proxy_http.dart';
 import 'package:startup_expense_tracker/services/user_country_service.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 import 'package:startup_expense_tracker/services/theme_service.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
-  // Must run before any plugin/asset access (dotenv reads from the bundle).
+  // Must run before any plugin access.
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env.local");
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Image.network / NetworkImage for stored files hit the backend file
+  // proxy, which needs the user's Firebase token (the bot token no longer
+  // ships in the app). Attach it automatically.
+  HttpOverrides.global = FileProxyHttpOverrides();
+  FileProxyHttpOverrides.startTokenRefresh();
 
   // Initialize decoupled domain event listeners
   AiContextManager().initListeners();
