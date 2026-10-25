@@ -72,7 +72,7 @@ class AiContextManager {
   Future<void> invalidate() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    
+
     final token = await user.getIdToken();
     if (token == null) return;
 

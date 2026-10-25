@@ -1,34 +1,24 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Smoke test for the brand mark. The full app needs Firebase, so it is not
+// pumped here; screens are covered by their own tests.
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:startup_expense_tracker/main.dart';
+import 'package:startup_expense_tracker/theme/rx_colors.dart';
+import 'package:startup_expense_tracker/widgets/rx_logo.dart';
 
 void main() {
-  testWidgets('Financial Dashboard smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const FinancialDashboardApp());
-
-    // Verify that the dashboard loads with key elements
-    expect(find.text('Financial Health'), findsOneWidget);
-    expect(find.text('overview'), findsOneWidget);
-    expect(find.text('Total Funds'), findsOneWidget);
-    expect(find.text('Monthly Burn'), findsOneWidget);
-    expect(find.text('AI INSIGHTS 🧁'), findsOneWidget);
-    expect(find.text('KEY METRICS'), findsOneWidget);
-    expect(find.text('QUICK ALERTS'), findsOneWidget);
-    expect(find.text('QUICK ACCESS'), findsOneWidget);
-
-    // Verify bottom navigation elements
-    expect(find.text('HOME'), findsOneWidget);
-    expect(find.text('CARDS'), findsOneWidget);
-    expect(find.text('REWARDS'), findsOneWidget);
-    expect(find.text('MORE'), findsOneWidget);
-    expect(find.text('AI'), findsOneWidget);
+  testWidgets('RunwayX wordmark renders in light and dark', (tester) async {
+    for (final ext in const [RxColors.light, RxColors.dark]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(extensions: [ext]),
+          home: const Scaffold(body: Center(child: RxWordmark())),
+        ),
+      );
+      expect(find.text('RunwayX'), findsOneWidget);
+      expect(find.byType(RxLogo), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
   });
 }

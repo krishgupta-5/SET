@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:startup_expense_tracker/widgets/rx_pickers.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:startup_expense_tracker/services/user_country_service.dart';
 import '../../../utils/data_helpers.dart';
@@ -95,196 +97,85 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
-        child: SafeArea(
+    final rx = context.rx;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: Scaffold(
+        backgroundColor: rx.background,
+        body: SafeArea(
+          bottom: false,
           child: Column(
             children: [
               // --- HEADER & SEARCH ---
               _buildHeader(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 14),
 
               // --- FILTERS ---
-              // 1. TOP ROW: Year/Date Controls + Sort
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
+              // 1. Year, exact date and sort, as compact pickers.
+              SizedBox(
+                height: 36,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   children: [
-                    // Year Dropdown
                     _buildDropdownTrigger(
-                      label: "Year: $_selectedYear",
+                      label: _selectedYear,
                       onTap: () => _showYearSelector(),
                     ),
                     const SizedBox(width: 8),
-
-                    // Date Picker Button
-                    GestureDetector(
+                    _buildDropdownTrigger(
+                      label: _exactDate != null
+                          ? rxFormatDate(_exactDate!)
+                          : 'Exact date',
+                      leading: HugeIcons.strokeRoundedCalendar03,
+                      active: _exactDate != null,
                       onTap: () => _showDatePicker(),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: _exactDate != null
-                              ? context.textPrimary
-                              : context.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _exactDate != null
-                                ? context.textPrimary
-                                : context.borderColor,
-                          ),
-                        ),
-                        child: Icon(
-                          Icons.calendar_month,
-                          color: _exactDate != null
-                              ? context.appBackground
-                              : context.textSecondary,
-                          size: 20,
-                        ),
-                      ),
                     ),
-
                     const SizedBox(width: 8),
-
-                    // Sort Dropdown
                     _buildDropdownTrigger(
                       label: _sortOrder == 'newest' ? "Newest" : "Oldest",
+                      leading: HugeIcons.strokeRoundedSorting05,
                       onTap: () => _showSortSelector(),
-                      icon: Icons.sort,
                     ),
                   ],
                 ),
               ),
-
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
 
               // 2. MONTH ROW
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  itemCount: _months.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final key = _months.keys.elementAt(index);
-                    final label = _months[key]!;
-                    final isSelected =
-                        _selectedMonthKey.toLowerCase() == key.toLowerCase() &&
-                        _exactDate == null;
-
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedMonthKey = key;
-                          _exactDate =
-                              null; // Clear exact date if user clicks a month
-                          _lastDocument =
-                              null; // Reset pagination when filter changes
-                        });
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? context.textPrimary
-                              : context.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected
-                                ? context.textPrimary
-                                : context.borderColor,
-                          ),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: isSelected
-                                ? context.appBackground
-                                : context.textSecondary,
-                            fontSize: 12,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+              _buildChipRow(
+                keys: _months.keys.toList(),
+                labelOf: (k) => _months[k]!,
+                isSelected: (k) =>
+                    _selectedMonthKey.toLowerCase() == k.toLowerCase() &&
+                    _exactDate == null,
+                onTap: (key) {
+                  setState(() {
+                    _selectedMonthKey = key;
+                    _exactDate =
+                        null; // Clear exact date if user clicks a month
+                    _lastDocument =
+                        null; // Reset pagination when filter changes
+                  });
+                },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
 
               // 3. CATEGORY ROW
-              SizedBox(
-                height: 36,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  itemCount: _categories.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final key = _categories.keys.elementAt(index);
-                    final label = _categories[key]!;
-                    final isSelected = _selectedCategoryKey == key;
-
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedCategoryKey = key;
-                          _lastDocument = null; // Reset pagination
-                        });
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? context.textPrimary
-                              : context.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected
-                                ? context.textPrimary
-                                : context.borderColor,
-                          ),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: isSelected
-                                ? context.appBackground
-                                : context.textSecondary,
-                            fontSize: 12,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+              _buildChipRow(
+                keys: _categories.keys.toList(),
+                labelOf: (k) => _categories[k]!,
+                isSelected: (k) => _selectedCategoryKey == k,
+                onTap: (key) {
+                  setState(() {
+                    _selectedCategoryKey = key;
+                    _lastDocument = null; // Reset pagination
+                  });
+                },
               ),
-
-              const SizedBox(height: 24),
-              Divider(color: context.borderColor, height: 1),
+              const SizedBox(height: 12),
+              Container(height: 1, color: rx.hairline),
 
               // --- RESULTS LIST (FIREBASE STREAM) ---
               Expanded(
@@ -296,6 +187,64 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Horizontal row of pill filters. Selection is instant (frequent action).
+  Widget _buildChipRow({
+    required List<String> keys,
+    required String Function(String) labelOf,
+    required bool Function(String) isSelected,
+    required ValueChanged<String> onTap,
+  }) {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: keys.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 6),
+        itemBuilder: (context, index) {
+          final key = keys[index];
+          final selected = isSelected(key);
+          return Semantics(
+            button: true,
+            selected: selected,
+            child: GestureDetector(
+              onTap: () => onTap(key),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? rx.inverse : rx.surface,
+                  borderRadius: BorderRadius.circular(100),
+                  border: Border.all(
+                    color: selected || !isDark
+                        ? Colors.transparent
+                        : rx.hairline,
+                  ),
+                  boxShadow: selected ? null : rx.cardShadow,
+                ),
+                child: Text(
+                  labelOf(key),
+                  style:
+                      RxText.label(
+                        context,
+                        color: selected ? rx.onInverse : rx.textSecondary,
+                      ).copyWith(
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                      ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -488,10 +437,16 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
           }
         });
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(24),
+        return ListView.separated(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            4,
+            20,
+            MediaQuery.paddingOf(context).bottom + 24,
+          ),
           physics: const BouncingScrollPhysics(),
           itemCount: searchFiltered.length,
+          separatorBuilder: (context, index) => const RxDivider(indent: 52),
           itemBuilder: (context, index) {
             return _buildTransactionRow(searchFiltered[index]);
           },
@@ -501,94 +456,42 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
   }
 
   Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 8,
-                    horizontal: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.arrow_back,
-                        color: context.textSecondary,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "Back",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 44),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            "Search Expenses",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 28,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1.0,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            height: 52,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+    final rx = context.rx;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const RxTopBar(title: 'Search expenses'),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          child: Container(
+            height: 48,
+            padding: const EdgeInsets.only(left: 14, right: 8),
             decoration: BoxDecoration(
-              color: context.isDarkMode
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.black.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.borderColor),
+              color: rx.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: rx.textPrimary.withValues(alpha: 0.12)),
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.search_rounded,
-                  color: context.textSecondary,
-                  size: 20,
+                HugeIcon(
+                  icon: HugeIcons.strokeRoundedSearch01,
+                  color: rx.textSecondary,
+                  size: 19,
+                  strokeWidth: 1.8,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: TextField(
                     controller: _searchController,
                     onTapOutside: (event) => FocusScope.of(context).unfocus(),
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    cursorColor: context.textPrimary,
+                    style: RxText.body(context),
+                    cursorColor: rx.textPrimary,
                     decoration: InputDecoration(
-                      hintText: "Search title...",
-                      hintStyle: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textTertiary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      hintText: "Search by title",
+                      hintStyle: RxText.body(
+                        context,
+                        color: rx.textTertiary,
+                      ).copyWith(fontWeight: FontWeight.w400),
                       border: InputBorder.none,
                       isDense: true,
                     ),
@@ -602,63 +505,81 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
                   ),
                 ),
                 if (_searchQuery.isNotEmpty)
-                  GestureDetector(
-                    onTap: () {
+                  IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
                       setState(() {
                         _searchQuery = "";
                         _searchController.clear();
                         _lastDocument = null;
                       });
                     },
-                    child: Container(
+                    icon: Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: context.textSecondary.withValues(alpha: 0.2),
+                        color: rx.surfaceMuted,
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        Icons.close_rounded,
-                        color: context.textPrimary,
+                      child: HugeIcon(
+                        icon: HugeIcons.strokeRoundedCancel01,
+                        color: rx.textPrimary,
                         size: 12,
+                        strokeWidth: 2.2,
                       ),
                     ),
                   ),
               ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Widget _buildDropdownTrigger({
     required String label,
     required VoidCallback onTap,
-    IconData icon = Icons.keyboard_arrow_down,
+    List<List<dynamic>>? leading,
+    bool active = false,
   }) {
-    return GestureDetector(
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fg = active ? rx.onInverse : rx.textPrimary;
+    return RxPressable(
       onTap: onTap,
+      semanticLabel: label,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.borderColor),
-          boxShadow: context.cardShadow,
+          color: active ? rx.inverse : rx.surface,
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(
+            color: active || !isDark ? Colors.transparent : rx.hairline,
+          ),
+          boxShadow: active ? null : rx.cardShadow,
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            if (leading != null) ...[
+              HugeIcon(icon: leading, color: fg, size: 15, strokeWidth: 1.9),
+              const SizedBox(width: 6),
+            ],
             Text(
               label,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+              style: RxText.label(
+                context,
+                color: fg,
+              ).copyWith(fontWeight: FontWeight.w600),
             ),
-            const SizedBox(width: 6),
-            Icon(icon, color: context.textSecondary, size: 16),
+            const SizedBox(width: 4),
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedArrowDown01,
+              color: active ? fg : rx.textSecondary,
+              size: 15,
+              strokeWidth: 2,
+            ),
           ],
         ),
       ),
@@ -666,6 +587,7 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
   }
 
   Widget _buildTransactionRow(Map<String, dynamic> data) {
+    final rx = context.rx;
     final id = data['id'] as String? ?? '';
 
     final title = data['Title'] ?? 'Unnamed Expense';
@@ -679,13 +601,10 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
 
     String dateStr = '';
     if (data['Date'] is Timestamp) {
-      final date = (data['Date'] as Timestamp).toDate();
-      final day = date.day.toString().padLeft(2, '0');
-      final month = date.month.toString().padLeft(2, '0');
-      dateStr = "$day/$month/${date.year}";
+      dateStr = rxFormatDate((data['Date'] as Timestamp).toDate());
     }
 
-    return GestureDetector(
+    return RxPressable(
       onTap: () {
         Navigator.push(
           context,
@@ -700,69 +619,43 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
           });
         });
       },
+      scale: 0.98,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 20),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.borderColor),
-                boxShadow: context.cardShadow,
-              ),
-              child: Icon(
-                Icons.receipt_long_outlined,
-                color: context.textSecondary,
-                size: 20,
-              ),
+            RxIconTile(
+              icon: RxCategory.icon(rawCategory),
+              size: 40,
+              iconSize: 19,
+              background: RxCategory.soft(context, rawCategory),
+              foreground: RxCategory.color(context, rawCategory),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: RxText.body(context),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    "$category • $dateStr",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  Text("$category · $dateStr", style: RxText.caption(context)),
                 ],
               ),
             ),
             const SizedBox(width: 12),
-            // FIXED: FITTED BOX FOR LARGE NUMBERS
             FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
               child: Text(
                 "${isFunding ? '+' : ''}${_isLoadingCountry ? CurrencyFormatter.formatByCountryCompact(amount, '+91') : CurrencyFormatter.formatByCountryCompact(amount, _userCountryCode)}",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: isFunding
-                      ? const Color(0xFF30D158)
-                      : context.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  fontFeatures: [const FontFeature.tabularFigures()],
+                style: RxText.amount(
+                  context,
+                  color: isFunding ? rx.positive : rx.textPrimary,
                 ),
               ),
             ),
@@ -802,113 +695,43 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
   }
 
   Widget _buildEmptyState(String message) {
+    final isError =
+        message.startsWith('Failed') || message.contains('not logged');
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-        child: Text(
-          message,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-        ),
+      child: RxEmptyState(
+        icon: isError
+            ? HugeIcons.strokeRoundedAlert02
+            : HugeIcons.strokeRoundedSearchRemove,
+        title: isError ? "Couldn't load expenses" : 'Nothing found',
+        message: isError ? message : '$message. Try another search or filter.',
+        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
       ),
     );
   }
 
-  void _showDatePicker() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: context.appBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: context.borderColor),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Select Date",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: context.textSecondary),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                ShadCalendar(
-                  selected: _exactDate ?? DateTime.now(),
-                  fromMonth: DateTime(int.parse(_selectedYear) - 2, 1),
-                  toMonth: DateTime(int.parse(_selectedYear) + 2, 12),
-                  onChanged: (DateTime? date) {
-                    if (date != null) {
-                      setState(() {
-                        _exactDate = date;
-                        _selectedYear = date.year.toString();
-                        _selectedMonthKey = _months.keys.elementAt(
-                          date.month,
-                        ); // 1 = Jan, etc.
-                        _lastDocument = null;
-                      });
-                      Navigator.pop(context);
-                    }
-                  },
-                ),
-                if (_exactDate != null) ...[
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: TextButton(
-                      onPressed: () {
-                        setState(() => _exactDate = null);
-                        Navigator.pop(context);
-                      },
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFFF453A),
-                        backgroundColor: const Color(
-                          0xFFFF453A,
-                        ).withValues(alpha: 0.1),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        "Clear Exact Date",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
+  Future<void> _showDatePicker() async {
+    final year = int.parse(_selectedYear);
+    final date = await showRxDatePicker(
+      context,
+      initialDate: _exactDate ?? DateTime.now(),
+      firstDate: DateTime(year - 2, 1),
+      lastDate: DateTime(year + 2, 12, 31),
+      title: 'Exact date',
+      onClear: _exactDate == null
+          ? null
+          : () => setState(() => _exactDate = null),
     );
+    if (date != null && mounted) {
+      setState(() {
+        _exactDate = date;
+        _selectedYear = date.year.toString();
+        _selectedMonthKey = _months.keys.elementAt(date.month); // 1 = Jan, etc.
+        _lastDocument = null;
+      });
+    }
   }
 
-  void _showYearSelector() {
+  Future<void> _showYearSelector() async {
     final int currentYear = DateTime.now().year;
     final years = [
       (currentYear + 1).toString(),
@@ -918,178 +741,43 @@ class _SearchExpenseScreenState extends State<SearchExpenseScreen> {
       (currentYear - 3).toString(),
     ];
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: context.appBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: context.borderColor),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Select Year",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: context.textSecondary),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ...years.map(
-                  (year) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedYear = year;
-                          _exactDate = null;
-                          _lastDocument = null;
-                        });
-                        Navigator.pop(context);
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 14,
-                          horizontal: 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _selectedYear == year
-                              ? context.textPrimary
-                              : context.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _selectedYear == year
-                                ? context.textPrimary
-                                : context.borderColor,
-                          ),
-                        ),
-                        child: Text(
-                          year,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: _selectedYear == year
-                                ? context.appBackground
-                                : context.textSecondary,
-                            fontSize: 14,
-                            fontWeight: _selectedYear == year
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final year = await showRxSelectSheet<String>(
+      context,
+      title: 'Year',
+      selected: _selectedYear,
+      options: [for (final y in years) RxOption(y, y)],
     );
+    if (year != null && mounted) {
+      setState(() {
+        _selectedYear = year;
+        _exactDate = null;
+        _lastDocument = null;
+      });
+    }
   }
 
-  void _showSortSelector() {
+  Future<void> _showSortSelector() async {
     final sortOptions = ['Newest', 'Oldest'];
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: context.appBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: context.borderColor),
+    final option = await showRxSelectSheet<String>(
+      context,
+      title: 'Sort order',
+      selected: _sortOrder,
+      options: [
+        for (final o in sortOptions)
+          RxOption(
+            o.toLowerCase(),
+            o,
+            icon: o == 'Newest'
+                ? HugeIcons.strokeRoundedArrowDown01
+                : HugeIcons.strokeRoundedArrowUp01,
           ),
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Sort Order",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: context.textSecondary),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ...sortOptions.map(
-                  (option) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _sortOrder = option.toLowerCase();
-                          _lastDocument = null;
-                        });
-                        Navigator.pop(context);
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 14,
-                          horizontal: 16,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _sortOrder == option.toLowerCase()
-                              ? context.textPrimary
-                              : context.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _sortOrder == option.toLowerCase()
-                                ? context.textPrimary
-                                : context.borderColor,
-                          ),
-                        ),
-                        child: Text(
-                          option,
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: _sortOrder == option.toLowerCase()
-                                ? context.appBackground
-                                : context.textSecondary,
-                            fontSize: 14,
-                            fontWeight: _sortOrder == option.toLowerCase()
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      ],
     );
+    if (option != null && mounted) {
+      setState(() {
+        _sortOrder = option;
+        _lastDocument = null;
+      });
+    }
   }
 }

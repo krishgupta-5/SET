@@ -6,6 +6,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../services/financial_data_service.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
+import '../../../widgets/rx_ui.dart';
+import '../../../widgets/rx_charts.dart';
+import '../../../widgets/rx_motion.dart';
+import 'package:hugeicons/hugeicons.dart';
 
 // --- CUSTOM DOTTED DIVIDER WIDGET ---
 class DottedDivider extends StatelessWidget {
@@ -257,45 +261,6 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
         : CurrencyFormatter.formatByCountryCompact(amount, _userCountryCode);
   }
 
-  // --- THEME / COLORS ---
-  Color _getCategoryColor(String categoryKey) {
-    switch (categoryKey.toLowerCase()) {
-      case 'salaries':
-      case 'salary':
-        return const Color(0xFF10B981);
-      case 'servers':
-      case 'infrastructure':
-        return const Color(0xFF3B82F6);
-      case 'marketing':
-      case 'ads':
-        return const Color(0xFFBF5AF2);
-      case 'office':
-      case 'rent':
-        return const Color(0xFF00BFA5);
-      case 'software':
-      case 'tools':
-        return const Color(0xFFFF375F);
-      case 'legal':
-        return const Color(0xFFFFD60A);
-      case 'meals':
-      case 'food':
-        return const Color(0xFFF59E0B);
-      case 'travel':
-      case 'transport':
-        return const Color(0xFF32ADE6);
-      default:
-        final colors = [
-          const Color(0xFF3B82F6),
-          const Color(0xFF10B981),
-          const Color(0xFFBF5AF2),
-          const Color(0xFFFF375F),
-          const Color(0xFFF59E0B),
-          const Color(0xFF32ADE6),
-        ];
-        return colors[categoryKey.hashCode % colors.length];
-    }
-  }
-
   String _getCategoryDisplayName(String categoryKey) {
     switch (categoryKey.toLowerCase()) {
       case 'salaries':
@@ -334,245 +299,188 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
     return text[0].toUpperCase() + text.substring(1);
   }
 
-  // --- UI BUILDING ---
+  // --- UI BUILDING (presentation only) ---
 
-  Widget _buildSectionLabel(String text, Color textSecondary) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
+  String get _zeroMoney => _isLoadingCountry
+      ? "₹0"
+      : "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0";
 
-  Widget _buildEmptyState(String text, Color textTertiary) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Center(
-        child: Text(
-          text,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: textTertiary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
+  String _money(double amount) =>
+      amount > 0 ? _formatCurrencyForForecast(amount) : _zeroMoney;
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rx = context.rx;
 
-    final bgColor = isDark ? const Color(0xFF09090B) : const Color(0xFFF9FAFB);
-    final cardColor = isDark
-        ? const Color(0xFF141416)
-        : const Color(0xFFFFFFFF);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
-    final shadowColor = isDark
-        ? Colors.transparent
-        : Colors.black.withValues(alpha: 0.04);
-
-    final textPrimary = isDark ? Colors.white : const Color(0xFF09090B);
-    final textSecondary = isDark ? Colors.white54 : const Color(0xFF71717A);
-    final textTertiary = isDark ? Colors.white38 : const Color(0xFFA1A1AA);
-
-    return Scaffold(
-      backgroundColor: bgColor,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: () async {
-              _loadFinancialData();
-            },
-            color: textPrimary,
-            backgroundColor: cardColor,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: Scaffold(
+        backgroundColor: rx.background,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              RxTopBar(
+                title: 'Monthly burn',
+                trailing: RxCircleButton(
+                  icon: HugeIcons.strokeRoundedRefresh,
+                  semanticLabel: 'Refresh',
+                  onTap: _isRefreshing ? null : _loadFinancialData,
+                ),
               ),
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      _buildHeader(context, textPrimary, textSecondary),
-                      const SizedBox(height: 32),
-
-                      _buildRangeSelector(
-                        textPrimary,
-                        textSecondary,
-                        isDark,
-                        borderColor,
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    _loadFinancialData();
+                  },
+                  color: rx.textPrimary,
+                  backgroundColor: rx.surface,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      8,
+                      20,
+                      MediaQuery.paddingOf(context).bottom + 32,
+                    ),
+                    children: [
+                      RxReveal.index(0, child: _buildRangeSelector()),
+                      const SizedBox(height: 24),
+                      RxReveal(
+                        key: ValueKey('hero-$_mainCardLoaded'),
+                        delay: const Duration(milliseconds: 60),
+                        child: _mainCardLoaded
+                            ? _buildHeroCard()
+                            : _buildSkeletonCard(),
                       ),
-                      const SizedBox(height: 32),
-
-                      _mainCardLoaded
-                          ? _buildHeroCard(
-                              textPrimary,
-                              textSecondary,
-                              cardColor,
-                              borderColor,
-                              shadowColor,
-                            )
-                          : _buildSkeletonCard(cardColor, borderColor),
-                      const SizedBox(height: 32),
-
-                      _trendLoaded
-                          ? _buildBurnTrendCard(
-                              textPrimary,
-                              textSecondary,
-                              textTertiary,
-                              isDark,
-                              cardColor,
-                              borderColor,
-                              shadowColor,
-                            )
-                          : _buildSkeletonCard(cardColor, borderColor),
-                      const SizedBox(height: 32),
-
-                      _categoriesLoaded
-                          ? _buildExpenseCategoriesCard(
-                              textPrimary,
-                              textSecondary,
-                              textTertiary,
-                              cardColor,
-                              borderColor,
-                              shadowColor,
-                            )
-                          : _buildSkeletonCard(cardColor, borderColor),
-                      const SizedBox(height: 32),
-
-                      _teamsLoaded
-                          ? _buildTeamCostCard(
-                              textPrimary,
-                              textSecondary,
-                              textTertiary,
-                              isDark,
-                              cardColor,
-                              borderColor,
-                              shadowColor,
-                            )
-                          : _buildSkeletonCard(cardColor, borderColor),
-                      const SizedBox(height: 32),
-
-                      _forecastLoaded
-                          ? _buildForecastComparisonCard(
-                              textPrimary,
-                              textSecondary,
-                              textTertiary,
-                              isDark,
-                              cardColor,
-                              borderColor,
-                              shadowColor,
-                            )
-                          : _buildSkeletonCard(cardColor, borderColor),
-                      const SizedBox(height: 80),
-                    ]),
+                      // Sections with nothing to show are left out.
+                      ..._section(
+                        2,
+                        _trendTitle(),
+                        _trendLoaded,
+                        _buildBurnTrendCard,
+                      ),
+                      ..._section(
+                        3,
+                        'By category',
+                        _categoriesLoaded,
+                        _buildExpenseCategoriesCard,
+                      ),
+                      ..._section(
+                        4,
+                        'By team',
+                        _teamsLoaded,
+                        _buildTeamCostCard,
+                      ),
+                      ..._section(
+                        5,
+                        'Budget vs actual',
+                        _forecastLoaded,
+                        _buildForecastComparisonCard,
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(
-    BuildContext context,
-    Color textPrimary,
-    Color textSecondary,
+  /// Header + card, revealed when its data lands. Returns nothing when the
+  /// card has no data, so empty boxes never show.
+  List<Widget> _section(
+    int index,
+    String title,
+    bool loaded,
+    Widget? Function() build,
   ) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Row(
-              children: [
-                Icon(Icons.arrow_back, color: textSecondary, size: 16),
-                const SizedBox(width: 4),
-                Text(
-                  "Back",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+    final card = loaded ? build() : _buildSkeletonCard();
+    if (card == null) return const [];
+    return [
+      const SizedBox(height: 28),
+      RxReveal(
+        key: ValueKey('$title-$loaded'),
+        delay: Duration(milliseconds: 60 * index),
+        child: Column(
+          children: [
+            RxSectionHeader(title: title),
+            card,
+          ],
         ),
-        Text(
-          "BURN ANALYSIS",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: textPrimary,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2.0,
-          ),
-        ),
-      ],
-    );
+      ),
+    ];
   }
 
-  Widget _buildRangeSelector(
-    Color textPrimary,
-    Color textSecondary,
-    bool isDark,
-    Color borderColor,
-  ) {
+  String _trendTitle() {
+    final count = _getMonthsCount();
+    if (_selectedRange == "YTD") return 'Year to date';
+    if (_selectedRange == "ALL") return 'All time';
+    return count == 1 ? 'This month' : 'Last $count months';
+  }
+
+  // Segmented control. Switches instantly: it is a frequent action.
+  Widget _buildRangeSelector() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const labels = {
+      "1M": "1M",
+      "3M": "3M",
+      "6M": "6M",
+      "YTD": "YTD",
+      "ALL": "All",
+    };
+
     return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        color: Colors.transparent, // Floating Pill format
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: rx.surfaceMuted,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: _ranges.map((range) {
-          final isSelected = _selectedRange == range;
+          final selected = _selectedRange == range;
           return Expanded(
-            child: GestureDetector(
-              onTap: () => _onRangeChanged(range),
-              behavior: HitTestBehavior.opaque,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? (isDark
-                            ? Colors.white.withValues(alpha: 0.1)
-                            : Colors.black.withValues(alpha: 0.05))
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(100),
-                ),
-                child: Text(
-                  range,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isSelected ? textPrimary : textSecondary,
-                    fontSize: 12,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+            child: Semantics(
+              button: true,
+              selected: selected,
+              label: labels[range] ?? range,
+              excludeSemantics: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _onRangeChanged(range),
+                child: Container(
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    // Inner radius = outer (14) - padding (3).
+                    borderRadius: BorderRadius.circular(11),
+                    color: selected ? rx.surface : Colors.transparent,
+                    boxShadow: selected && !isDark
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x1A000000),
+                              blurRadius: 3,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    labels[range] ?? range,
+                    style:
+                        RxText.label(
+                          context,
+                          color: selected ? rx.textPrimary : rx.textSecondary,
+                        ).copyWith(
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                        ),
                   ),
                 ),
               ),
@@ -583,213 +491,51 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
     );
   }
 
-  // --- REUSABLE WRAPPER FOR CARDS ---
-  Widget _buildSectionCard({
-    required Widget child,
-    required Color cardColor,
-    required Color borderColor,
-    required Color shadowColor,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: borderColor),
-        boxShadow: shadowColor == Colors.transparent
-            ? []
-            : [
-                BoxShadow(
-                  color: shadowColor,
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      child: child,
-    );
-  }
-
-  // --- HERO BENTO CARD ---
-  Widget _buildHeroCard(
-    Color textPrimary,
-    Color textSecondary,
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-  ) {
-    if (_error != null) return _buildErrorState(textSecondary);
+  // --- HERO ---
+  // Flat on the page like Home's runway: one big number, one supporting row.
+  Widget _buildHeroCard() {
+    if (_error != null) return _buildErrorState();
+    final rx = context.rx;
 
     final grossBurn = _toDouble(_financialData?['grossBurn']);
     final netBurn = _toDouble(_financialData?['netBurn']);
-    final greenColor = const Color(0xFF10B981);
-    final redColor = const Color(0xFFEF4444);
 
-    final String grossString = grossBurn > 0
-        ? (_isLoadingCountry
-              ? CurrencyFormatter.formatCompact(grossBurn, countryCode: '+91')
-              : CurrencyFormatter.formatByCountryCompact(
-                  grossBurn,
-                  _userCountryCode,
-                ))
-        : (_isLoadingCountry
-              ? "₹0"
-              : "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0");
-
-    final String netString = netBurn > 0
-        ? (_isLoadingCountry
-              ? CurrencyFormatter.formatCompact(netBurn, countryCode: '+91')
-              : CurrencyFormatter.formatByCountryCompact(
-                  netBurn,
-                  _userCountryCode,
-                ))
-        : (_isLoadingCountry
-              ? "₹0"
-              : "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0");
-
-    return _buildSectionCard(
-      cardColor: cardColor,
-      borderColor: borderColor,
-      shadowColor: shadowColor,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Gross burn per month', style: RxText.label(context)),
+        const SizedBox(height: 10),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(_money(grossBurn), style: RxText.hero(context, size: 52)),
+        ),
+        const SizedBox(height: 18),
+        RxCard(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          child: Row(
             children: [
+              Expanded(child: Text('Net burn', style: RxText.label(context))),
               Text(
-                "GROSS BURN / MONTH",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textSecondary,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.5,
+                _money(netBurn),
+                style: RxText.amount(
+                  context,
+                  color: netBurn > 0 ? rx.negative : rx.textPrimary,
                 ),
               ),
-              GestureDetector(
-                onTap: _loadFinancialData,
-                child: _isRefreshing
-                    ? SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: textSecondary,
-                        ),
-                      )
-                    : Icon(Icons.refresh, color: textSecondary, size: 16),
-              ),
             ],
           ),
-          const SizedBox(height: 8),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              grossString,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 64, // Massive unboxed text
-                fontWeight: FontWeight.w700,
-                letterSpacing: -2.5,
-                height: 1.1,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          DottedDivider(color: borderColor),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "NET BURN",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: textSecondary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    netString,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: redColor,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    "IMPACT STATUS",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: textSecondary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: greenColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      "HEALTHY",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: greenColor,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  // --- BURN TREND CARD ---
-  Widget _buildBurnTrendCard(
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-    bool isDark,
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-  ) {
-    int count = _getMonthsCount();
-    String title = _selectedRange == "YTD" || _selectedRange == "ALL"
-        ? "$_selectedRange BURN TREND"
-        : "$count-MONTH BURN TREND";
-
-    if (_error != null) return _buildErrorState(textSecondary);
+  // --- TREND ---
+  Widget? _buildBurnTrendCard() {
+    if (_error != null) return _buildErrorState();
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final count = _getMonthsCount();
 
     List<Map<String, dynamic>> trendData = List<Map<String, dynamic>>.from(
       _financialData?['trendData'] ?? [],
@@ -807,132 +553,109 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
       }
     }
 
-    final maxAmount = displayData.isEmpty
-        ? 1.0
-        : displayData
-              .map((d) => _toDouble(d['amount']))
-              .reduce((a, b) => a > b ? a : b);
+    final maxAmount = displayData
+        .map((d) => _toDouble(d['amount']))
+        .fold<double>(0, (a, b) => a > b ? a : b);
+    if (displayData.isEmpty || maxAmount <= 0) return null;
+    const chartHeight = 120.0;
+    // Many bars (YTD / All) get thinner gaps and drop the axis labels.
+    final dense = displayData.length > 8;
+    final labelSpace = dense ? 0.0 : 24.0;
+    final activeColor = isDark ? rx.accent : rx.inverse;
 
-    return AnimatedOpacity(
-      opacity: _trendLoaded ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeInOut,
-      child: _buildSectionCard(
-        cardColor: cardColor,
-        borderColor: borderColor,
-        shadowColor: shadowColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+      child: SizedBox(
+        height: chartHeight + labelSpace,
+        child: Stack(
           children: [
-            _buildSectionLabel(title, textSecondary),
-            const SizedBox(height: 24),
-            displayData.isEmpty
-                ? _buildEmptyState(
-                    "Not enough data for trend analysis",
-                    textTertiary,
-                  )
-                : SizedBox(
-                    height: 120, // Compressed bar height
-                    child: Row(
-                      mainAxisAlignment: displayData.length <= 3
-                          ? MainAxisAlignment.spaceEvenly
-                          : MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: displayData.map((data) {
-                        final amount = _toDouble(data['amount']);
-                        final pct = maxAmount > 0 ? amount / maxAmount : 0.0;
-                        return _buildCapsuleBar(
-                          data['month'] as String,
-                          pct,
-                          amount,
-                          textPrimary,
-                          textSecondary,
-                          isDark,
-                          isActive: data['isCurrentMonth'] as bool? ?? false,
+            for (final f in const [0.0, 1 / 3, 2 / 3])
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: labelSpace + chartHeight * f,
+                child: Container(height: 1, color: rx.hairline),
+              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < displayData.length; i++)
+                  Expanded(
+                    child: Builder(
+                      builder: (context) {
+                        final d = displayData[i];
+                        final amount = _toDouble(d['amount']);
+                        final isActive = d['isCurrentMonth'] as bool? ?? false;
+                        final pct = maxAmount > 0
+                            ? (amount / maxAmount).clamp(0.0, 1.0)
+                            : 0.0;
+                        // Spread the cascade over ~420ms however many bars.
+                        final step = 420 ~/ displayData.length.clamp(6, 60);
+                        return Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Center(
+                              // Grows up from the axis; replays per range.
+                              child: RxGrow(
+                                key: ValueKey('bar-$_selectedRange-$i'),
+                                value: pct,
+                                delay: Duration(milliseconds: step * i),
+                                builder: (context, v) => Container(
+                                  width: dense ? null : 26,
+                                  height: (chartHeight * v).clamp(
+                                    dense ? 3.0 : 4.0,
+                                    chartHeight,
+                                  ),
+                                  margin: EdgeInsets.symmetric(
+                                    horizontal: dense ? 1.5 : 0,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isActive
+                                        ? activeColor
+                                        : rx.textPrimary.withValues(
+                                            alpha: 0.08,
+                                          ),
+                                    borderRadius: BorderRadius.circular(
+                                      dense ? 3 : 7,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (!dense)
+                              SizedBox(
+                                height: labelSpace,
+                                child: Center(
+                                  child: Text(
+                                    d['month']?.toString() ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.clip,
+                                    style: RxText.micro(
+                                      context,
+                                      color: isActive
+                                          ? rx.textPrimary
+                                          : rx.textTertiary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         );
-                      }).toList(),
+                      },
                     ),
                   ),
+              ],
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildCapsuleBar(
-    String label,
-    double pct,
-    double amount,
-    Color textPrimary,
-    Color textSecondary,
-    bool isDark, {
-    bool isActive = false,
-  }) {
-    final safePct = pct == 0.0 ? 0.02 : pct.clamp(0.0, 1.0);
-    final inactiveBarColor = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.04);
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Flexible(
-          child: Text(
-            _formatCurrencyForForecast(amount),
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: isActive ? textPrimary : textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Expanded(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: FractionallySizedBox(
-              heightFactor: safePct,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                width: 24, // Thinner bars
-                decoration: BoxDecoration(
-                  color: isActive ? const Color(0xFF3B82F6) : inactiveBarColor,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: isActive ? textPrimary : textSecondary,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
-
-  // --- CATEGORY ANALYSIS CARD (CLASSIC LIST WITH DOTTED DIVIDERS) ---
-  Widget _buildExpenseCategoriesCard(
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-  ) {
-    if (_error != null) return _buildErrorState(textSecondary);
+  // --- CATEGORIES ---
+  Widget? _buildExpenseCategoriesCard() {
+    if (_error != null) return _buildErrorState();
+    final rx = context.rx;
 
     final rawCategories =
         _financialData?['categoryBreakdown'] as Map<String, dynamic>? ?? {};
@@ -970,246 +693,139 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
       (acc, item) => acc + _toDouble(item.value['actual']),
     );
 
-    return AnimatedOpacity(
-      opacity: _categoriesLoaded ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeInOut,
-      child: _buildSectionCard(
-        cardColor: cardColor,
-        borderColor: borderColor,
-        shadowColor: shadowColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionLabel("CATEGORY ANALYSIS", textSecondary),
-            const SizedBox(height: 24),
+    if (combinedData.isEmpty || sortedEntries.isEmpty) return null;
 
-            combinedData.isEmpty
-                ? _buildEmptyState(
-                    "No transaction data available",
-                    textTertiary,
-                  )
-                : Column(
-                    children: sortedEntries.map((entry) {
-                      final categoryData = entry.value;
-                      final budget = _toDouble(categoryData['budget']);
-                      final actual = _toDouble(categoryData['actual']);
-                      final variancePercentage = _toDouble(
-                        categoryData['variancePercentage'],
-                      );
-                      final isOverBudget =
-                          categoryData['isOverBudget'] as bool? ?? false;
-                      final hasBudget =
-                          categoryData['hasBudget'] as bool? ?? false;
-                      final isLast = entry == sortedEntries.last;
-                      final catName = _getCategoryDisplayName(entry.key);
-
-                      final pctString = totalActual > 0
-                          ? '${((actual / totalActual) * 100).toStringAsFixed(1)}%'
-                          : '0%';
-                      final varianceColor = isOverBudget
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFF10B981);
-                      final varianceText = isOverBudget
-                          ? '${variancePercentage.abs().toStringAsFixed(1)}% over'
-                          : '${variancePercentage.abs().toStringAsFixed(1)}% under';
-
-                      return Column(
-                        children: [
-                          _buildLedgerRow(
-                            title: catName,
-                            subtitle: hasBudget
-                                ? "Budget: ${_formatCurrencyForForecast(budget)}"
-                                : "No budget set",
-                            amount: actual,
-                            rightSubtitle: pctString,
-                            varianceText: hasBudget ? varianceText : null,
-                            varianceColor: hasBudget ? varianceColor : null,
-                            dotColor: _getCategoryColor(entry.key),
-                            textPrimary: textPrimary,
-                            textSecondary: textSecondary,
-                          ),
-                          if (!isLast)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              child: DottedDivider(color: borderColor),
-                            ),
-                        ],
-                      );
-                    }).toList(),
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(18, 22, 18, 4),
+      child: Column(
+        children: [
+          // Donut of the period's spend; sweeps in again per range.
+          RxDonut(
+            key: ValueKey('cat-donut-$_selectedRange'),
+            size: 168,
+            thickness: 16,
+            segments: [
+              for (final e in sortedEntries)
+                RxDonutSegment(
+                  value: _toDouble(e.value['actual']),
+                  color: RxCategory.color(context, e.key),
+                ),
+            ],
+            trackColor: rx.textPrimary.withValues(alpha: 0.06),
+            semanticLabel: 'Spending by category',
+            center: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Total', style: RxText.caption(context)),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    _formatCurrencyForForecast(totalActual),
+                    style: RxText.value(context, size: 20),
                   ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${sortedEntries.length} ${sortedEntries.length == 1 ? 'category' : 'categories'}',
+                  style: RxText.micro(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (var i = 0; i < sortedEntries.length; i++) ...[
+            if (i > 0) const RxDivider(indent: 22),
+            Builder(
+              builder: (context) {
+                final entry = sortedEntries[i];
+                final categoryData = entry.value;
+                final budget = _toDouble(categoryData['budget']);
+                final actual = _toDouble(categoryData['actual']);
+                final variancePercentage = _toDouble(
+                  categoryData['variancePercentage'],
+                );
+                final isOverBudget =
+                    categoryData['isOverBudget'] as bool? ?? false;
+                final hasBudget = categoryData['hasBudget'] as bool? ?? false;
+                final share = totalActual > 0 ? actual / totalActual : 0.0;
+
+                return _buildRow(
+                  dot: RxCategory.color(context, entry.key),
+                  title: _getCategoryDisplayName(entry.key),
+                  subtitle: hasBudget
+                      ? 'Budget ${_formatCurrencyForForecast(budget)}'
+                      : '${(share * 100).toStringAsFixed(1)}% of spend',
+                  amount: _formatCurrencyForForecast(actual),
+                  trailingNote: hasBudget
+                      ? '${variancePercentage.abs().toStringAsFixed(1)}% ${isOverBudget ? 'over' : 'under'}'
+                      : null,
+                  trailingNoteColor: hasBudget
+                      ? (isOverBudget ? rx.negative : rx.positive)
+                      : null,
+                  progress: hasBudget && budget > 0
+                      ? (actual / budget).clamp(0.0, 1.0)
+                      : null,
+                  progressColor: isOverBudget ? rx.negative : rx.inverse,
+                );
+              },
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  // --- TEAM COST CARD (DIFFERENT UI: PROGRESS TRACKS, NO DIVIDERS) ---
-  Widget _buildTeamCostCard(
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-    bool isDark,
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-  ) {
-    if (_error != null) return _buildErrorState(textSecondary);
+  // --- TEAMS ---
+  Widget? _buildTeamCostCard() {
+    if (_error != null) return _buildErrorState();
 
     final teamCosts =
         (_teamCostData?['teamCosts'] as List<dynamic>?)
-            ?.cast<Map<String, dynamic>>() ??
+            ?.cast<Map<String, dynamic>>()
+            // Teams with no cost in the period add nothing to the chart.
+            .where((t) => _toDouble(t['cost']) > 0)
+            .toList() ??
         [];
 
-    return AnimatedOpacity(
-      opacity: _teamsLoaded ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeInOut,
-      child: _buildSectionCard(
-        cardColor: cardColor,
-        borderColor: borderColor,
-        shadowColor: shadowColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionLabel("TEAM COST DISTRIBUTION", textSecondary),
-            const SizedBox(height: 24),
+    if (teamCosts.isEmpty) return null;
 
-            teamCosts.isEmpty
-                ? _buildEmptyState("No team data available", textTertiary)
-                : Column(
-                    children: teamCosts.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final team = entry.value;
-                      final amount = _toDouble(team['cost']);
-                      final pct = _toDouble(team['pct']);
-                      final colors = [
-                        const Color(0xFF3B82F6),
-                        const Color(0xFF10B981),
-                        const Color(0xFFF59E0B),
-                        const Color(0xFF8B5CF6),
-                        const Color(0xFFEC4899),
-                        const Color(0xFF14B8A6),
-                      ];
-                      final dotColor = colors[index % colors.length];
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 6,
-                                      height: 6,
-                                      decoration: BoxDecoration(
-                                        color: dotColor,
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      team['name'] as String,
-                                      style: TextStyle(
-                                        fontFamily: 'Satoshi',
-                                        color: textPrimary,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  _formatCurrencyForForecast(amount),
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: textPrimary,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            Stack(
-                              children: [
-                                Container(
-                                  height: 4,
-                                  width: double.infinity,
-                                  decoration: BoxDecoration(
-                                    color: textSecondary.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ),
-                                FractionallySizedBox(
-                                  widthFactor: pct > 0 ? pct : 0.02,
-                                  child: Container(
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: dotColor,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "${(pct * 100).toStringAsFixed(1)}% of total",
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
+    return RxCard(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+      child: Column(
+        children: [
+          for (var i = 0; i < teamCosts.length; i++) ...[
+            if (i > 0) const RxDivider(indent: 22),
+            Builder(
+              builder: (context) {
+                final team = teamCosts[i];
+                final name = team['name']?.toString() ?? 'Team';
+                final amount = _toDouble(team['cost']);
+                final pct = _toDouble(team['pct']);
+                return _buildRow(
+                  dot: RxCategory.color(context, name),
+                  title: name,
+                  subtitle: '${(pct * 100).toStringAsFixed(1)}% of total',
+                  amount: _formatCurrencyForForecast(amount),
+                  progress: pct.clamp(0.0, 1.0),
+                  progressColor: RxCategory.color(context, name),
+                );
+              },
+            ),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  // --- FORECAST COMPARISON CARD (DIFFERENT UI: INNER DATA CARDS, NO DIVIDERS) ---
-  Widget _buildForecastComparisonCard(
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-    bool isDark,
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-  ) {
-    if (_error != null) return _buildErrorState(textSecondary);
+  // --- BUDGET VS ACTUAL ---
+  Widget? _buildForecastComparisonCard() {
+    if (_error != null) return _buildErrorState();
+    final rx = context.rx;
 
     final rawTeamsData = _rawTeamsData ?? [];
 
-    if (rawTeamsData.isEmpty) {
-      return _buildSectionCard(
-        cardColor: cardColor,
-        borderColor: borderColor,
-        shadowColor: shadowColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionLabel("BUDGET VS ACTUAL", textSecondary),
-            const SizedBox(height: 24),
-            _buildEmptyState("No team budget data available", textTertiary),
-          ],
-        ),
-      );
-    }
+    if (rawTeamsData.isEmpty) return null;
 
     double totalBudget = 0;
     double totalActual = 0;
@@ -1249,290 +865,291 @@ class _MonthlyBurnScreenState extends State<MonthlyBurnScreen>
       });
     }
 
-    return AnimatedOpacity(
-      opacity: _forecastLoaded ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeInOut,
-      child: _buildSectionCard(
-        cardColor: cardColor,
-        borderColor: borderColor,
-        shadowColor: shadowColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionLabel("BUDGET VS ACTUAL", textSecondary),
-            const SizedBox(height: 24),
-            ...comparisonData.map((data) {
-              final isOver = data['isOver'] == true;
-              final varianceColor = isOver
-                  ? const Color(0xFFEF4444)
-                  : const Color(0xFF10B981);
-              final varianceText = isOver
-                  ? "${_formatCurrencyForForecast(_toDouble(data['variance']).abs())} over"
-                  : "${_formatCurrencyForForecast(_toDouble(data['variance']).abs())} under";
-
-              final isLast = data == comparisonData.last;
-
-              return Column(
-                children: [
-                  _buildLedgerRow(
-                    title: data['team']?.toString() ?? 'Unknown',
-                    subtitle:
-                        "Budget: ${_formatCurrencyForForecast(_toDouble(data['budget']))}",
-                    amount: _toDouble(data['actual']),
-                    varianceText: varianceText,
-                    varianceColor: varianceColor,
-                    dotColor: textPrimary,
-                    textPrimary: textPrimary,
-                    textSecondary: textSecondary,
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+      child: Column(
+        children: [
+          for (var i = 0; i < comparisonData.length; i++) ...[
+            if (i > 0) const RxDivider(),
+            Builder(
+              builder: (context) {
+                final data = comparisonData[i];
+                final isOver = data['isOver'] == true;
+                final budget = _toDouble(data['budget']);
+                final actual = _toDouble(data['actual']);
+                final diff = _formatCurrencyForForecast(
+                  _toDouble(data['variance']).abs(),
+                );
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              data['team']?.toString() ?? 'Unknown',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: RxText.body(context),
+                            ),
+                          ),
+                          RxPill(
+                            label: '$diff ${isOver ? 'over' : 'under'}',
+                            foreground: isOver ? rx.negative : rx.positive,
+                            background: isOver
+                                ? rx.negativeSoft
+                                : rx.positiveSoft,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _buildTrack(
+                        budget > 0 ? (actual / budget).clamp(0.0, 1.0) : 0.0,
+                        isOver ? rx.negative : rx.inverse,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text(
+                            '${_formatCurrencyForForecast(actual)} spent',
+                            style: RxText.caption(
+                              context,
+                              color: rx.textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'of ${_formatCurrencyForForecast(budget)}',
+                            style: RxText.caption(context),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
-                  if (!isLast) const SizedBox(height: 16),
-                ],
-              );
-            }),
-            const SizedBox(height: 16),
-            DottedDivider(color: borderColor),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "TOTAL BUDGET",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                Text(
-                  _formatCurrencyForForecast(totalBudget),
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "TOTAL ACTUAL",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                Text(
-                  _formatCurrencyForForecast(totalActual),
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ],
-        ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: rx.surfaceMuted,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Total budget', style: RxText.caption(context)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _formatCurrencyForForecast(totalBudget),
+                        style: RxText.amount(context),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('Total actual', style: RxText.caption(context)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _formatCurrencyForForecast(totalActual),
+                        style: RxText.amount(
+                          context,
+                          color: totalActual > totalBudget && totalBudget > 0
+                              ? rx.negative
+                              : rx.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // --- REUSABLE LIST ROW HELPER ---
-  Widget _buildLedgerRow({
+  // --- SHARED ROW ---
+  // Same dot + name + amount row as Home's "Where it goes".
+  Widget _buildRow({
+    required Color dot,
     required String title,
-    String? subtitle,
-    required double amount,
-    String? rightSubtitle,
-    String? varianceText,
-    Color? varianceColor,
-    Color? dotColor,
-    required Color textPrimary,
-    required Color textSecondary,
+    required String subtitle,
+    required String amount,
+    String? trailingNote,
+    Color? trailingNoteColor,
+    double? progress,
+    Color? progressColor,
   }) {
-    final formattedAmount = _formatCurrencyForForecast(amount);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          margin: const EdgeInsets.only(top: 5),
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: dotColor ?? textPrimary,
-            shape: BoxShape.circle,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: RxText.body(context),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(amount, style: RxText.amount(context)),
+                  ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              if (subtitle != null) ...[
                 const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: RxText.caption(context),
+                      ),
+                    ),
+                    if (trailingNote != null)
+                      Text(
+                        trailingNote,
+                        style: RxText.caption(
+                          context,
+                          color: trailingNoteColor,
+                        ).copyWith(fontWeight: FontWeight.w600),
+                      ),
+                  ],
                 ),
+                if (progress != null) ...[
+                  const SizedBox(height: 10),
+                  _buildTrack(progress, progressColor ?? context.rx.inverse),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrack(double value, Color color) {
+    final rx = context.rx;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(100),
+      child: SizedBox(
+        height: 6,
+        child: Stack(
           children: [
-            Text(
-              formattedAmount,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                fontFeatures: const [FontFeature.tabularFigures()],
+            Container(color: rx.textPrimary.withValues(alpha: 0.07)),
+            // Fills from the left on open and whenever the range changes.
+            RxGrow(
+              key: ValueKey('track-$_selectedRange'),
+              // Keep a sliver visible for tiny values.
+              value: value <= 0 ? 0.02 : value.clamp(0.0, 1.0),
+              delay: const Duration(milliseconds: 120),
+              builder: (context, v) => FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: v,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                ),
               ),
             ),
-            if (rightSubtitle != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                rightSubtitle,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-            if (varianceText != null && varianceColor != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                varianceText,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: varianceColor,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
           ],
         ),
-      ],
+      ),
     );
   }
 
-  Widget _buildErrorState(Color textSecondary) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Failed to load data.",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: const Color(0xFFEF4444),
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
+  Widget _buildErrorState() {
+    final rx = context.rx;
+    return RxCard(
+      child: Row(
+        children: [
+          RxIconTile(
+            icon: HugeIcons.strokeRoundedAlert02,
+            size: 36,
+            iconSize: 18,
+            background: rx.negativeSoft,
+            foreground: rx.negative,
           ),
-        ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _loadFinancialData,
-          child: Text(
-            "Tap to retry",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: textSecondary,
-              fontSize: 13,
-              decoration: TextDecoration.underline,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text("Couldn't load this data", style: RxText.body(context)),
+          ),
+          RxPressable(
+            onTap: _loadFinancialData,
+            semanticLabel: 'Retry',
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+              child: Text(
+                'Retry',
+                style: RxText.body(
+                  context,
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildSkeletonCard(Color cardColor, Color borderColor) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(32),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: borderColor),
-      ),
-      child: AnimatedBuilder(
+  // Calm pulse instead of a sweeping shimmer; static under reduced motion.
+  Widget _buildSkeletonCard() {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    Widget body = const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RxSkeleton(width: 110, height: 14),
+        SizedBox(height: 14),
+        RxSkeleton(width: 180, height: 30),
+        SizedBox(height: 18),
+        RxSkeleton(height: 12),
+        SizedBox(height: 10),
+        RxSkeleton(width: 140, height: 12),
+      ],
+    );
+    if (!reduceMotion) {
+      body = AnimatedBuilder(
         animation: _shimmerController,
         builder: (context, child) {
-          final value = _shimmerController.value;
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          final baseColor = isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.black.withValues(alpha: 0.05);
-          final highlightColor = isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.black.withValues(alpha: 0.1);
-
-          Widget shimmerBox(double width, double height) {
-            return Container(
-              width: width,
-              height: height,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                gradient: LinearGradient(
-                  begin: Alignment(value - 1, 0),
-                  end: Alignment(value, 0),
-                  colors: [baseColor, highlightColor, baseColor],
-                  stops: const [0.0, 0.5, 1.0],
-                ),
-              ),
-            );
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              shimmerBox(100, 24),
-              const SizedBox(height: 32),
-              shimmerBox(200, 48),
-              const SizedBox(height: 32),
-              DottedDivider(color: borderColor),
-              const SizedBox(height: 24),
-              shimmerBox(120, 24),
-            ],
-          );
+          final t = _shimmerController.value;
+          // 1 -> 0.55 -> 1 over the controller's 1.5s loop.
+          final opacity = 0.55 + 0.45 * (1 - (2 * t - 1).abs());
+          return Opacity(opacity: opacity, child: child);
         },
-      ),
-    );
+        child: body,
+      );
+    }
+    return RxCard(padding: const EdgeInsets.all(20), child: body);
   }
 }

@@ -1,48 +1,61 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:startup_expense_tracker/features/team/screens/create_team_screen.dart';
 import 'team_detail_screen.dart';
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/telegram_service.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/custom_bottom_nav.dart' show RxTabBar;
+import '../../../widgets/rx_charts.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
+import '../team_style.dart';
 
 class TeamScreen extends StatefulWidget {
-  const TeamScreen({super.key});
+  const TeamScreen({super.key, this.visit});
+
+  /// Changes each time the Team tab is opened (null while hidden), so the
+  /// charts replay their entrance.
+  final int? visit;
 
   @override
   State<TeamScreen> createState() => _TeamScreenState();
 }
 
 class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
-  // 1. Search State
+  // Search
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = "";
   bool _isSearching = false;
 
-  // 2. Filter State (Defaults)
+  // Sort
   String _selectedSortOption = "Name";
-  String _selectedOrder = "A-Z"; // Default order
+  String _selectedOrder = "A-Z";
 
-  // Refresh state
-  String _userCountryCode = '+1'; // Default to USD
+  String _userCountryCode = '+1';
 
-  // Cache for the last sort future to prevent rebuilding on every stream tick
-  Future<List<Map<String, dynamic>>>? _sortedTeamsFuture;
-  List<Map<String, dynamic>>? _lastTeamsData;
-  String _lastTeamsFingerprint = '';
+  // Live data: teams, all members, and this month's team spend. One
+  // listener each instead of two per card.
+  StreamSubscription<QuerySnapshot>? _teamsSub;
+  StreamSubscription<QuerySnapshot>? _membersSub;
+  StreamSubscription<QuerySnapshot>? _expensesSub;
 
-  String _teamsFingerprint(List<Map<String, dynamic>> teams) => teams
-      .map((t) => '${t['id']}:${t['teamName']}:${t['monthlyBudget']}')
-      .join('|');
+  List<Map<String, dynamic>> _teams = [];
+  final Map<String, List<Map<String, dynamic>>> _membersByTeam = {};
+  final Map<String, double> _payrollByTeam = {};
+  final Map<String, double> _spentByTeam = {};
+  bool _teamsLoaded = false;
+  bool _membersLoaded = false;
+  bool _spendLoaded = false;
+  String? _error;
 
-  void _rebuildSortFuture(List<Map<String, dynamic>> teams) {
-    _lastTeamsData = teams;
-    _lastTeamsFingerprint = _teamsFingerprint(teams);
-    _sortedTeamsFuture = _filterAndSortTeams(teams);
-  }
+  // Keys the charts; bumping it replays their sweep.
+  int _chartEpoch = 0;
 
   @override
   void initState() {
@@ -51,6 +64,15 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
     _userCountryCode = CurrencyPreferenceService.getCurrencyPreferenceSync();
     CurrencyPreferenceService.currencyNotifier.addListener(_onCurrencyChanged);
     _loadUserCountryCode();
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(covariant TeamScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visit != null && widget.visit != oldWidget.visit) {
+      _chartEpoch++;
+    }
   }
 
   @override
@@ -59,6 +81,9 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
     CurrencyPreferenceService.currencyNotifier.removeListener(
       _onCurrencyChanged,
     );
+    _teamsSub?.cancel();
+    _membersSub?.cancel();
+    _expensesSub?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -76,149 +101,172 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
     final currencyCode =
         await CurrencyPreferenceService.getCurrencyPreference();
     if (mounted && currencyCode != _userCountryCode) {
-      setState(() {
-        _userCountryCode = currencyCode;
-      });
+      setState(() => _userCountryCode = currencyCode);
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _refreshData();
-    }
+    if (state == AppLifecycleState.resumed) _refreshData();
   }
 
   void _refreshData() {
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
-  IconData _getIconFromData(Map<String, dynamic> data) {
-    final dynamic cp = data['iconCodePoint'];
-    if (cp != null) {
-      final int codePoint = cp is int ? cp : int.tryParse(cp.toString()) ?? 0;
-      switch (codePoint) {
-        case 0xe3af:
-          return Icons.work;
-        case 0xe0af:
-          return Icons.business;
-        case 0xe7fd:
-          return Icons.group;
-        case 0xe226:
-          return Icons.code;
-        case 0xe86c:
-          return Icons.design_services;
-        case 0xe85d:
-          return Icons.computer;
-        case 0xe53b:
-          return Icons.build;
-        case 0xe251:
-          return Icons.lightbulb;
-        case 0xe7f1:
-          return Icons.trending_up;
-        case 0xe8b6:
-          return Icons.people;
-        default:
-          return Icons.rocket_launch_rounded;
-      }
-    }
-    return Icons.rocket_launch_rounded;
+  double _num(dynamic v) {
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v) ?? 0.0;
+    return 0.0;
   }
 
-  Color _getColorFromName(String colorName) {
-    switch (colorName.toLowerCase()) {
-      case 'blue':
-        return const Color(0xFF0A84FF);
-      case 'orange':
-        return const Color(0xFFFF9F0A);
-      case 'purple':
-        return const Color(0xFFA259FF);
-      case 'green':
-        return const Color(0xFF30D158);
-      case 'red':
-        return const Color(0xFFFF453A);
-      default:
-        return const Color(0xFF0A84FF);
-    }
-  }
+  // --- DATA ---
 
-  Stream<List<Map<String, dynamic>>> _getTeamsStream() {
+  void _listen() {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return Stream.value([]);
+    if (user == null) {
+      _teamsLoaded = _membersLoaded = _spendLoaded = true;
+      return;
+    }
+    final db = FirebaseFirestore.instance;
 
-    return FirebaseFirestore.instance
+    _teamsSub = db
         .collection('teams')
         .where('uid', isEqualTo: user.uid)
         .snapshots()
-        .map((snapshot) {
-          List<Map<String, dynamic>> allTeams = [];
-          for (var doc in snapshot.docs) {
-            final data = doc.data();
-            allTeams.add({...data, 'id': doc.id, 'source': 'teams_collection'});
-          }
-          return allTeams;
-        });
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            setState(() {
+              _teams = [
+                for (final doc in snap.docs)
+                  {...doc.data(), 'id': doc.id, 'source': 'teams_collection'},
+              ];
+              _teamsLoaded = true;
+              _error = null;
+            });
+          },
+          onError: (_) {
+            if (mounted) {
+              setState(() {
+                _teamsLoaded = true;
+                _error = "Couldn't load teams";
+              });
+            }
+          },
+        );
+
+    _membersSub = db
+        .collection('members')
+        .where('uid', isEqualTo: user.uid)
+        .snapshots()
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            _membersByTeam.clear();
+            _payrollByTeam.clear();
+            for (final doc in snap.docs) {
+              final data = doc.data();
+              final teamId = data['teamId'] as String?;
+              if (teamId == null || teamId.isEmpty) continue;
+              final String? tgId = data['telegramFileId'] as String?;
+              final String? url = data['avatarUrl'] as String?;
+              final String? legacyTgId =
+                  (url != null &&
+                      url.isNotEmpty &&
+                      !url.startsWith('http') &&
+                      !url.contains('ui-avatars.com'))
+                  ? url
+                  : null;
+              (_membersByTeam[teamId] ??= []).add({
+                'name': data['fullName'] ?? 'Unnamed',
+                'avatarUrl': url ?? '',
+                'telegramFileId': (tgId != null && tgId.isNotEmpty)
+                    ? tgId
+                    : legacyTgId,
+                'memberId': doc.id,
+              });
+              _payrollByTeam[teamId] =
+                  (_payrollByTeam[teamId] ?? 0) +
+                  _num(data['monthlyCost'] ?? data['salary']);
+            }
+            setState(() => _membersLoaded = true);
+          },
+          onError: (_) {
+            if (mounted) setState(() => _membersLoaded = true);
+          },
+        );
+
+    // Same rule as before: expenses tagged with a team, dated this month.
+    _expensesSub = db
+        .collection('expenses')
+        .where('uid', isEqualTo: user.uid)
+        .snapshots()
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            final now = DateTime.now();
+            _spentByTeam.clear();
+            for (final doc in snap.docs) {
+              final data = doc.data();
+              final teamId = data['TeamId'] as String?;
+              if (teamId == null || teamId.isEmpty) continue;
+              if (data['isFunding'] == true) continue;
+              final date = (data['Date'] as Timestamp?)?.toDate();
+              if (date == null ||
+                  date.month != now.month ||
+                  date.year != now.year) {
+                continue;
+              }
+              _spentByTeam[teamId] =
+                  (_spentByTeam[teamId] ?? 0) + _num(data['Amount']);
+            }
+            setState(() => _spendLoaded = true);
+          },
+          onError: (_) {
+            if (mounted) setState(() => _spendLoaded = true);
+          },
+        );
   }
 
-  Future<List<Map<String, dynamic>>> _filterAndSortTeams(
-    List<Map<String, dynamic>> teams,
-  ) async {
-    List<Map<String, dynamic>> filteredTeams = List.from(teams);
-
+  /// Search + sort, synchronous now that member counts are local.
+  List<Map<String, dynamic>> get _visibleTeams {
+    var list = List<Map<String, dynamic>>.from(_teams);
     if (_searchQuery.isNotEmpty) {
-      filteredTeams = filteredTeams.where((team) {
-        final teamName = (team['teamName'] ?? '').toString().toLowerCase();
-        return teamName.contains(_searchQuery.toLowerCase());
-      }).toList();
+      final q = _searchQuery.toLowerCase();
+      list = list
+          .where(
+            (t) => (t['teamName'] ?? '').toString().toLowerCase().contains(q),
+          )
+          .toList();
     }
-
-    if (_selectedSortOption == "Team Size") {
-      final user = FirebaseAuth.instance.currentUser;
-      final teamSizes = <String, int>{};
-
-      if (user != null) {
-        final allMembersSnap = await FirebaseFirestore.instance
-            .collection('members')
-            .where('uid', isEqualTo: user.uid)
-            .get();
-        for (final doc in allMembersSnap.docs) {
-          final tId = doc.data()['teamId'] as String?;
-          if (tId != null) teamSizes[tId] = (teamSizes[tId] ?? 0) + 1;
-        }
+    final asc = _selectedOrder == "A-Z" || _selectedOrder == "Low-High";
+    int dir(int c) => asc ? c : -c;
+    list.sort((a, b) {
+      switch (_selectedSortOption) {
+        case "Monthly Amount":
+          return dir(
+            _num(a['monthlyBudget']).compareTo(_num(b['monthlyBudget'])),
+          );
+        case "Team Size":
+          return dir(
+            (_membersByTeam[a['id']]?.length ?? 0).compareTo(
+              _membersByTeam[b['id']]?.length ?? 0,
+            ),
+          );
+        default:
+          return dir(
+            (a['teamName'] ?? '').toString().toLowerCase().compareTo(
+              (b['teamName'] ?? '').toString().toLowerCase(),
+            ),
+          );
       }
-
-      filteredTeams.sort((a, b) {
-        final sizeA = teamSizes[a['id'] as String] ?? 0;
-        final sizeB = teamSizes[b['id'] as String] ?? 0;
-        return _selectedOrder == "Low-High"
-            ? sizeA.compareTo(sizeB)
-            : sizeB.compareTo(sizeA);
-      });
-    } else {
-      filteredTeams.sort((a, b) {
-        switch (_selectedSortOption) {
-          case "Name":
-            final nameA = (a['teamName'] ?? '').toString().toLowerCase();
-            final nameB = (b['teamName'] ?? '').toString().toLowerCase();
-            return _selectedOrder == "A-Z"
-                ? nameA.compareTo(nameB)
-                : nameB.compareTo(nameA);
-          case "Monthly Amount":
-            final costA = (a['monthlyBudget'] ?? 0).toDouble();
-            final costB = (b['monthlyBudget'] ?? 0).toDouble();
-            return _selectedOrder == "Low-High"
-                ? costA.compareTo(costB)
-                : costB.compareTo(costA);
-          default:
-            return 0;
-        }
-      });
-    }
-
-    return filteredTeams;
+    });
+    return list;
   }
 
   void _toggleOrder(String option) {
+    HapticFeedback.selectionClick();
     setState(() {
       if (_selectedSortOption == option) {
         if (option == "Name") {
@@ -230,75 +278,120 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
         }
       } else {
         _selectedSortOption = option;
-        if (option == "Name") {
-          _selectedOrder = "A-Z";
-        } else {
-          _selectedOrder = "High-Low";
-        }
-      }
-      if (_lastTeamsData != null) {
-        _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
+        _selectedOrder = option == "Name" ? "A-Z" : "High-Low";
       }
     });
   }
 
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchQuery = "";
+        _searchController.clear();
+      }
+    });
+  }
+
+  void _openCreateTeam() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CreateTeamScreen()),
+    ).then((_) => _refreshData());
+  }
+
+  void _openTeam(Map<String, dynamic> team) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TeamDetailScreen(
+          teamId: team['id'] as String,
+          initialTeamData: team,
+        ),
+      ),
+    ).then((_) => _refreshData());
+  }
+
+  // --- TEAM LOOK ---
+
+  Color _teamColor(Map<String, dynamic> team) =>
+      TeamStyle.color(context, team['color']?.toString());
+
+  String _money(double v) =>
+      CurrencyFormatter.formatByCountryCompact(v, _userCountryCode);
+
+  // --- UI ---
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rx = context.rx;
+    final loading = !_teamsLoaded;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      value: context.rxOverlayStyle,
       child: Scaffold(
-        backgroundColor: context.appBackground,
+        backgroundColor: rx.background,
         body: SafeArea(
+          bottom: false,
           child: RefreshIndicator(
-            onRefresh: () async {
-              _refreshData();
-            },
-            color: context.textPrimary,
-            backgroundColor: context.cardBackground,
-            child: CustomScrollView(
+            onRefresh: () async => _refreshData(),
+            color: rx.textPrimary,
+            backgroundColor: rx.surface,
+            child: ListView(
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      const SizedBox(
-                        height: 16,
-                      ), // Replaced header with some top padding
-
-                      _buildHeroSection(isDark),
-
-                      // Fluid Animated Search Reveal
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
-                        child: _isSearching
-                            ? Padding(
-                                padding: const EdgeInsets.only(top: 16),
-                                child: _buildSearchBar(isDark),
-                              )
-                            : const SizedBox(width: double.infinity, height: 0),
-                      ),
-                      const SizedBox(height: 24),
-
-                      _buildCreateTeamButton(isDark),
-                      const SizedBox(height: 32),
-
-                      if (!_isSearching) _buildFilterChips(isDark),
-                      if (!_isSearching) const SizedBox(height: 24),
-
-                      _buildFirebaseTeamsStream(isDark),
-                      const SizedBox(height: 100),
-                    ]),
-                  ),
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                RxTabBar.reservedHeight(context),
+              ),
+              children: [
+                RxReveal.index(0, child: _buildHeader()),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 250),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: _isSearching
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: _buildSearchBar(),
+                        )
+                      : const SizedBox(width: double.infinity),
                 ),
+                const SizedBox(height: 28),
+                if (loading)
+                  _buildSkeleton()
+                else if (_error != null)
+                  _buildError()
+                else if (_teams.isEmpty)
+                  RxReveal.index(1, child: _buildEmptyTeams())
+                else ...[
+                  RxReveal(
+                    key: const ValueKey('team-hero'),
+                    delay: const Duration(milliseconds: 60),
+                    child: _buildHero(),
+                  ),
+                  const SizedBox(height: 24),
+                  RxReveal(
+                    key: const ValueKey('team-stats'),
+                    delay: const Duration(milliseconds: 120),
+                    child: _buildStatsCard(),
+                  ),
+                  const SizedBox(height: 12),
+                  RxReveal(
+                    key: const ValueKey('team-create'),
+                    delay: const Duration(milliseconds: 180),
+                    child: _buildCreateTeamButton(),
+                  ),
+                  const SizedBox(height: 28),
+                  RxReveal(
+                    key: const ValueKey('team-list'),
+                    delay: const Duration(milliseconds: 240),
+                    child: _buildTeamsSection(),
+                  ),
+                ],
               ],
             ),
           ),
@@ -307,142 +400,151 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
     );
   }
 
-  // Removed _buildHeader
-
-  Widget _buildHeroSection(bool isDark) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          "Teams",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 32,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -1.0,
-          ),
-        ),
-        GestureDetector(
-          onTap: () => setState(() {
-            _isSearching = !_isSearching;
-            if (!_isSearching) {
-              _searchQuery = "";
-              _searchController.clear();
-              if (_lastTeamsData != null) {
-                _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
-              }
-            }
-          }),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 44,
-            width: 44,
-            decoration: BoxDecoration(
-              color: _isSearching
-                  ? context.textPrimary
-                  : context.cardBackground,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: _isSearching ? Colors.transparent : context.borderColor,
-              ),
-              boxShadow: (isDark || _isSearching)
-                  ? []
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-            ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon(
-                _isSearching ? Icons.close_rounded : Icons.search_rounded,
-                key: ValueKey(_isSearching),
-                color: _isSearching
-                    ? context.appBackground
-                    : context.textPrimary,
-                size: 20,
-              ),
-            ),
-          ),
+  Widget _buildHeader() {
+    final count = _teams.length;
+    return RxTabHeader(
+      label: !_teamsLoaded
+          ? 'Your teams'
+          : count == 1
+          ? '1 team'
+          : '$count teams',
+      title: 'Team',
+      actions: [
+        RxCircleButton(
+          icon: _isSearching
+              ? HugeIcons.strokeRoundedCancel01
+              : HugeIcons.strokeRoundedSearch01,
+          semanticLabel: _isSearching ? 'Close search' : 'Search teams',
+          filled: _isSearching,
+          onTap: _toggleSearch,
         ),
       ],
     );
   }
 
-  // UPDATED PREMIUM SEARCH BAR
-  Widget _buildSearchBar(bool isDark) {
+  /// Primary action on the tab: a full-width, high-contrast row placed
+  /// right under the summary, so it's the first thing after the numbers.
+  Widget _buildCreateTeamButton() {
+    final rx = context.rx;
+    return RxPressable(
+      onTap: _openCreateTeam,
+      semanticLabel: 'Create new team',
+      scale: 0.98,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 12, 18, 12),
+        decoration: BoxDecoration(
+          color: rx.inverse,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: rx.raisedShadow,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: rx.onInverse.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              alignment: Alignment.center,
+              child: HugeIcon(
+                icon: HugeIcons.strokeRoundedUserAdd01,
+                color: rx.onInverse,
+                size: 22,
+                strokeWidth: 2,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Create new team',
+                    style: RxText.body(
+                      context,
+                      color: rx.onInverse,
+                    ).copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Group people and set a monthly budget',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RxText.caption(
+                      context,
+                      color: rx.onInverse.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedArrowRight01,
+              color: rx.onInverse,
+              size: 20,
+              strokeWidth: 2,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    final rx = context.rx;
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: 50,
+      padding: const EdgeInsets.only(left: 16, right: 6),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.04)
-            : Colors.black.withValues(alpha: 0.03),
+        color: rx.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
+        border: Border.all(color: rx.hairline),
+        boxShadow: rx.cardShadow,
       ),
       child: Row(
         children: [
-          Icon(Icons.search_rounded, color: context.textSecondary, size: 20),
-          const SizedBox(width: 12),
+          HugeIcon(
+            icon: HugeIcons.strokeRoundedSearch01,
+            color: rx.textTertiary,
+            size: 18,
+            strokeWidth: 1.8,
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: TextField(
               controller: _searchController,
               autofocus: true,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-              cursorColor: context.textPrimary,
+              style: RxText.body(context),
+              cursorColor: rx.textPrimary,
+              textInputAction: TextInputAction.search,
+              onTapOutside: (_) => FocusScope.of(context).unfocus(),
               decoration: InputDecoration(
-                hintText: "Search team name...",
-                hintStyle: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textTertiary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
+                hintText: 'Search teams',
+                hintStyle: RxText.body(context, color: rx.textTertiary),
                 border: InputBorder.none,
                 isDense: true,
               ),
-              onChanged: (val) {
-                setState(() {
-                  _searchQuery = val;
-                  if (_lastTeamsData != null) {
-                    _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
-                  }
-                });
-              },
+              onChanged: (val) => setState(() => _searchQuery = val),
             ),
           ),
           if (_searchQuery.isNotEmpty)
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _searchQuery = "";
-                  _searchController.clear();
-                  if (_lastTeamsData != null) {
-                    _sortedTeamsFuture = _filterAndSortTeams(_lastTeamsData!);
-                  }
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: context.textSecondary.withValues(alpha: 0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.close_rounded,
-                  color: context.textPrimary,
-                  size: 12,
+            RxPressable(
+              onTap: () => setState(() {
+                _searchQuery = "";
+                _searchController.clear();
+              }),
+              semanticLabel: 'Clear search',
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(
+                  child: HugeIcon(
+                    icon: HugeIcons.strokeRoundedCancelCircle,
+                    color: rx.textTertiary,
+                    size: 18,
+                    strokeWidth: 1.8,
+                  ),
                 ),
               ),
             ),
@@ -451,437 +553,407 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildCreateTeamButton(bool isDark) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const CreateTeamScreen()),
-        ).then((_) => _refreshData());
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: context.textPrimary,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: isDark
-              ? []
-              : [
-                  BoxShadow(
-                    color: context.textPrimary.withValues(alpha: 0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+  // Spent this month across all teams, with a ring against total budget.
+  Widget _buildHero() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final spent = _spentByTeam.values.fold<double>(0, (a, b) => a + b);
+    final budget = _teams.fold<double>(
+      0,
+      (a, t) => a + _num(t['monthlyBudget']),
+    );
+    final hasBudget = budget > 0;
+    final ratio = hasBudget ? spent / budget : 0.0;
+    final over = hasBudget && spent > budget;
+    final pct = ratio * 100;
+    final pctText = pct >= 10 || pct == 0
+        ? pct.toStringAsFixed(0)
+        : pct.toStringAsFixed(1);
+    final ringColor = over
+        ? rx.negative
+        : ratio >= 0.8
+        ? rx.warning
+        : (isDark ? rx.accent : rx.inverse);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Team spend this month', style: RxText.label(context)),
+              const SizedBox(height: 10),
+              if (!_spendLoaded)
+                const RxSkeleton(width: 160, height: 44, radius: 12)
+              else
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _money(spent),
+                    style: RxText.hero(context, size: 46),
                   ),
-                ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_rounded, color: context.appBackground, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              "Create New Team",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.appBackground,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
+                ),
+              const SizedBox(height: 10),
+              Text(
+                hasBudget
+                    ? over
+                          ? 'Over the ${_money(budget)} monthly budget'
+                          : 'of ${_money(budget)} monthly budget'
+                    : 'Set team budgets to track spend',
+                maxLines: 2,
+                style: RxText.caption(
+                  context,
+                  color: over ? rx.negative : null,
+                ),
               ),
+            ],
+          ),
+        ),
+        if (hasBudget) ...[
+          const SizedBox(width: 16),
+          RxRing(
+            key: ValueKey('team-ring-$_chartEpoch-$_spendLoaded'),
+            size: 96,
+            thickness: 9,
+            value: ratio.clamp(0.0, 1.0),
+            color: ringColor,
+            trackColor: rx.textPrimary.withValues(alpha: 0.08),
+            semanticLabel: '$pctText percent of team budget used',
+            center: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '$pctText%',
+                    style: RxText.value(
+                      context,
+                      size: 18,
+                      color: over ? rx.negative : null,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text('used', style: RxText.micro(context)),
+              ],
             ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildStatsCard() {
+    final rx = context.rx;
+    final members = _membersByTeam.values.fold<int>(0, (a, l) => a + l.length);
+    final payroll = _payrollByTeam.values.fold<double>(0, (a, b) => a + b);
+
+    Widget half(String label, String value, String note) => Expanded(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: RxText.label(context)),
+            const SizedBox(height: 8),
+            if (!_membersLoaded)
+              const RxSkeleton(width: 80, height: 24)
+            else
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(value, style: RxText.value(context, size: 20)),
+              ),
+            const SizedBox(height: 4),
+            Text(
+              note,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: RxText.caption(context),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return RxCard(
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            half(
+              'People',
+              '$members',
+              members == 1 ? 'member' : 'members across teams',
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Container(width: 1, color: rx.hairline),
+            ),
+            half('Payroll', _money(payroll), 'per month'),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildFilterChips(bool isDark) {
+  Widget _buildTeamsSection() {
+    final teams = _visibleTeams;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const RxSectionHeader(title: 'All teams'),
+        _buildSortChips(),
+        const SizedBox(height: 12),
+        if (teams.isEmpty)
+          RxCard(
+            child: RxEmptyState(
+              icon: HugeIcons.strokeRoundedSearch01,
+              title: 'No matches',
+              message: 'No team is called "$_searchQuery"',
+            ),
+          )
+        else
+          for (var i = 0; i < teams.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: RxReveal.index(
+                i,
+                key: ValueKey('team-card-${teams[i]['id']}'),
+                child: _buildTeamCard(teams[i], i),
+              ),
+            ),
+      ],
+    );
+  }
+
+  Widget _buildSortChips() {
+    Widget chip(String option, String label) {
+      final rx = context.rx;
+      final selected = _selectedSortOption == option;
+      final ascending = _selectedOrder == "A-Z" || _selectedOrder == "Low-High";
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: selected
+              ? 'Sort by $label, ${ascending ? 'ascending' : 'descending'}'
+              : 'Sort by $label',
+          excludeSemantics: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _toggleOrder(option),
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: selected ? rx.inverse : rx.surface,
+                borderRadius: BorderRadius.circular(100),
+                border: Border.all(
+                  color: selected ? Colors.transparent : rx.hairline,
+                ),
+                boxShadow: selected ? null : rx.cardShadow,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: RxText.label(
+                      context,
+                      color: selected ? rx.onInverse : rx.textSecondary,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  if (selected) ...[
+                    const SizedBox(width: 4),
+                    HugeIcon(
+                      icon: ascending
+                          ? HugeIcons.strokeRoundedArrowUp01
+                          : HugeIcons.strokeRoundedArrowDown01,
+                      color: rx.onInverse,
+                      size: 14,
+                      strokeWidth: 2,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       clipBehavior: Clip.none,
       child: Row(
         children: [
-          _buildFilterChip(
-            label: "Name",
-            icon: Icons.sort_by_alpha,
-            isSelected: _selectedSortOption == "Name",
-          ),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-            label: "Monthly Amount",
-            icon: Icons.attach_money,
-            isSelected: _selectedSortOption == "Monthly Amount",
-          ),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-            label: "Team Size",
-            icon: Icons.group_outlined,
-            isSelected: _selectedSortOption == "Team Size",
+          chip("Name", "Name"),
+          chip("Monthly Amount", "Budget"),
+          chip("Team Size", "Size"),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamCard(Map<String, dynamic> team, int index) {
+    final rx = context.rx;
+    final teamId = team['id'] as String;
+    final name = (team['teamName'] ?? 'Unnamed Team').toString();
+    final color = _teamColor(team);
+    final members = _membersByTeam[teamId] ?? const [];
+    final spent = _spentByTeam[teamId] ?? 0.0;
+    final budget = _num(team['monthlyBudget']);
+    final hasBudget = budget > 0;
+    final ratio = hasBudget ? spent / budget : 0.0;
+    final over = hasBudget && spent > budget;
+    final near = hasBudget && !over && ratio >= 0.8;
+
+    final memberLabel = !_membersLoaded
+        ? '…'
+        : members.length == 1
+        ? '1 member'
+        : '${members.length} members';
+
+    return RxCard(
+      onTap: () => _openTeam(team),
+      semanticLabel:
+          '$name, $memberLabel, ${_money(spent)} spent this month${hasBudget ? ' of ${_money(budget)}' : ''}',
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(
+                    alpha: Theme.of(context).brightness == Brightness.dark
+                        ? 0.16
+                        : 0.10,
+                  ),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                alignment: Alignment.center,
+                child: Icon(TeamStyle.icon(team), color: color, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: RxText.body(
+                        context,
+                      ).copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (members.isNotEmpty) ...[
+                          _buildAvatarRow(members.take(3).toList()),
+                          const SizedBox(width: 6),
+                        ],
+                        Flexible(
+                          child: Text(
+                            memberLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: RxText.caption(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _money(spent),
+                    style: RxText.amount(
+                      context,
+                      color: over ? rx.negative : rx.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  // Budget use as text, no bar: amber near the limit,
+                  // red once over.
+                  Text(
+                    !hasBudget
+                        ? 'this month'
+                        : over
+                        ? 'over ${_money(budget)}'
+                        : '${(ratio * 100).round()}% of ${_money(budget)}',
+                    style: RxText.micro(
+                      context,
+                      color: over
+                          ? rx.negative
+                          : near
+                          ? rx.warning
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterChip({
-    required String label,
-    required IconData icon,
-    required bool isSelected,
-  }) {
-    IconData arrowIcon = Icons.arrow_downward;
-    if (isSelected) {
-      arrowIcon =
-          (label == "Name"
-              ? _selectedOrder == "A-Z"
-              : _selectedOrder == "High-Low")
-          ? Icons.arrow_downward
-          : Icons.arrow_upward;
-    }
-
-    return GestureDetector(
-      onTap: () => _toggleOrder(label),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? context.textPrimary : Colors.transparent,
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(
-            color: isSelected ? context.textPrimary : context.borderColor,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? context.appBackground : context.textSecondary,
-              size: 14,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: isSelected
-                    ? context.appBackground
-                    : context.textSecondary,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-              ),
-            ),
-            if (isSelected) ...[
-              const SizedBox(width: 4),
-              Icon(arrowIcon, color: context.appBackground, size: 12),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFirebaseTeamsStream(bool isDark) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return _buildEmptyState("Please log in.");
-
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: _getTeamsStream(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: context.textSecondary,
-              ),
-            ),
-          );
-        }
-
-        if (snapshot.hasError) return _buildEmptyState("Error loading teams.");
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return _buildEmptyState("You don't have any teams yet.");
-        }
-
-        final newTeams = snapshot.data!;
-        final newFingerprint = _teamsFingerprint(newTeams);
-        if (_sortedTeamsFuture == null ||
-            _lastTeamsFingerprint != newFingerprint) {
-          _rebuildSortFuture(newTeams);
-        }
-
-        return FutureBuilder<List<Map<String, dynamic>>>(
-          future: _sortedTeamsFuture,
-          builder: (context, futureSnapshot) {
-            if (futureSnapshot.connectionState == ConnectionState.waiting) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: context.textSecondary,
-                  ),
-                ),
-              );
-            }
-            if (futureSnapshot.hasError) {
-              return _buildEmptyState("Error sorting teams.");
-            }
-
-            final teams = futureSnapshot.data ?? [];
-            if (teams.isEmpty) {
-              return _buildEmptyState("No teams match your search.");
-            }
-
-            return Column(
-              children: teams
-                  .map(
-                    (teamData) =>
-                        _buildCompactTeamCard(context, teamData, isDark),
-                  )
-                  .toList(),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildCompactTeamCard(
-    BuildContext context,
-    Map<String, dynamic> teamData,
-    bool isDark,
-  ) {
-    final String name = teamData['teamName'] ?? 'Unnamed Team';
-    final Color color = _getColorFromName(teamData['color'] ?? 'blue');
-    final String teamId = teamData['id'] as String;
-
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                TeamDetailScreen(teamId: teamId, initialTeamData: teamData),
-          ),
-        ).then((_) => _refreshData());
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: context.borderColor),
-          boxShadow: isDark
-              ? []
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-        ),
-        child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('members')
-              .where('teamId', isEqualTo: teamId)
-              .snapshots(),
-          builder: (context, membersSnapshot) {
-            final membersDocs = membersSnapshot.data?.docs ?? [];
-            final int memberCount = membersDocs.length;
-            final String memberCountStr =
-                membersSnapshot.connectionState == ConnectionState.waiting
-                ? '...'
-                : (memberCount == 1 ? '1 Member' : '$memberCount Members');
-
-            final List<Map<String, dynamic>> avatarInfos = membersDocs
-                .take(3)
-                .map((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final String? tgId = data['telegramFileId'] as String?;
-                  final String? url = data['avatarUrl'] as String?;
-                  final String? legacyTgId =
-                      (url != null &&
-                          url.isNotEmpty &&
-                          !url.startsWith('http') &&
-                          !url.contains('ui-avatars.com'))
-                      ? url
-                      : null;
-                  return <String, dynamic>{
-                    'name': data['fullName'] ?? 'Unnamed',
-                    'avatarUrl': url ?? '',
-                    'telegramFileId': (tgId != null && tgId.isNotEmpty)
-                        ? tgId
-                        : legacyTgId,
-                    'memberId': doc.id,
-                  };
-                })
-                .toList();
-
-            return StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('expenses')
-                  .where('TeamId', isEqualTo: teamId)
-                  .snapshots(),
-              builder: (context, expenseSnap) {
-                double actualSpent = 0.0;
-                if (expenseSnap.hasData) {
-                  final now = DateTime.now();
-                  for (var doc in expenseSnap.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final date = (data['Date'] as Timestamp?)?.toDate();
-                    if (date != null &&
-                        date.month == now.month &&
-                        date.year == now.year) {
-                      actualSpent +=
-                          (data['Amount'] as num?)?.toDouble() ?? 0.0;
-                    }
-                  }
-                }
-
-                final budget = (teamData['monthlyBudget'] ?? 0).toDouble();
-                final isOverBudget = actualSpent > budget && budget > 0;
-                final spentStr = CurrencyFormatter.formatByCountryCompact(
-                  actualSpent,
-                  _userCountryCode,
-                );
-                final budgetStr = CurrencyFormatter.formatByCountryCompact(
-                  budget,
-                  _userCountryCode,
-                );
-
-                double progress = budget > 0 ? (actualSpent / budget) : 0.0;
-                if (progress > 1.0) progress = 1.0;
-
-                return Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            _getIconFromData(teamData),
-                            color: color,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textPrimary,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  Text(
-                                    memberCountStr,
-                                    style: TextStyle(
-                                      fontFamily: 'Satoshi',
-                                      color: context.textSecondary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  if (avatarInfos.isNotEmpty) ...[
-                                    const SizedBox(width: 8),
-                                    _buildAvatarRow(avatarInfos),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              spentStr,
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: isOverBudget
-                                    ? const Color(0xFFFF453A)
-                                    : context.textPrimary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                            ),
-                            if (budget > 0) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                "Budget: $budgetStr",
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: context.textSecondary,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
+  // --- AVATARS ---
 
   Widget _buildAvatarRow(List<Map<String, dynamic>> avatarInfos) {
+    const size = 20.0;
+    const step = 14.0;
     return SizedBox(
-      height: 16,
-      width: (avatarInfos.length * 12.0) + 4.0,
+      height: size,
+      width: (avatarInfos.length - 1) * step + size,
       child: Stack(
-        children: List.generate(avatarInfos.length, (index) {
-          final info = avatarInfos[index];
-          return Positioned(
-            left: index * 12.0,
-            child: _buildMemberAvatarWithTelegram(
-              info['name'] as String,
-              16,
-              info['avatarUrl'] as String,
-              info['telegramFileId'] as String?,
+        children: [
+          for (var i = 0; i < avatarInfos.length; i++)
+            Positioned(
+              left: i * step,
+              child: _buildMemberAvatar(
+                avatarInfos[i]['name'] as String,
+                size,
+                avatarInfos[i]['avatarUrl'] as String,
+                avatarInfos[i]['telegramFileId'] as String?,
+              ),
             ),
-          );
-        }),
+        ],
       ),
     );
   }
 
-  Widget _buildMemberAvatarWithTelegram(
+  Widget _buildMemberAvatar(
     String name,
     double size,
     String avatarUrl,
     String? telegramFileId,
   ) {
+    final rx = context.rx;
+    Widget image(String url) => Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: rx.surface, width: 1.5),
+        image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+      ),
+    );
+
     if (telegramFileId != null && telegramFileId.isNotEmpty) {
       return FutureBuilder<String>(
         future: TelegramService.getImageUrl(telegramFileId),
@@ -891,85 +963,104 @@ class _TeamScreenState extends State<TeamScreen> with WidgetsBindingObserver {
               width: size,
               height: size,
               decoration: BoxDecoration(
-                color: context.cardSecondaryBackground,
+                color: rx.surfaceMuted,
                 shape: BoxShape.circle,
-                border: Border.all(color: context.cardBackground, width: 1.5),
-              ),
-            );
-          } else if (snapshot.hasError || !snapshot.hasData) {
-            return _buildFallbackAvatar(name, size);
-          } else {
-            return Container(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: context.cardBackground, width: 1.5),
-                image: DecorationImage(
-                  image: NetworkImage(snapshot.data!),
-                  fit: BoxFit.cover,
-                ),
+                border: Border.all(color: rx.surface, width: 1.5),
               ),
             );
           }
+          if (snapshot.hasError || !snapshot.hasData) {
+            return _buildFallbackAvatar(name, size);
+          }
+          return image(snapshot.data!);
         },
       );
-    } else if (avatarUrl.isNotEmpty && !avatarUrl.contains('ui-avatars.com')) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: context.cardBackground, width: 1.5),
-          image: DecorationImage(
-            image: NetworkImage(avatarUrl),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    } else {
-      return _buildFallbackAvatar(name, size);
     }
+    if (avatarUrl.isNotEmpty &&
+        avatarUrl.startsWith('http') &&
+        !avatarUrl.contains('ui-avatars.com')) {
+      return image(avatarUrl);
+    }
+    return _buildFallbackAvatar(name, size);
   }
 
   Widget _buildFallbackAvatar(String name, double size) {
+    final rx = context.rx;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: context.textTertiary,
+        color: RxCategory.soft(context, name),
         shape: BoxShape.circle,
-        border: Border.all(color: context.cardBackground, width: 1.5),
+        border: Border.all(color: rx.surface, width: 1.5),
       ),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : '?',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.appBackground,
-            fontSize: size * 0.5,
-            fontWeight: FontWeight.w700,
-          ),
+      alignment: Alignment.center,
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          fontFamily: RxText.family,
+          color: RxCategory.color(context, name),
+          fontSize: size * 0.45,
+          fontWeight: FontWeight.w700,
+          height: 1,
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState(String message) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 32),
-      child: Center(
-        child: Text(
-          message,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-        ),
+  // --- STATES ---
+
+  Widget _buildEmptyTeams() {
+    return RxCard(
+      child: RxEmptyState(
+        icon: HugeIcons.strokeRoundedUserGroup,
+        title: 'No teams yet',
+        message: 'Group people by function to track payroll and budgets',
+        actionLabel: 'Create team',
+        onAction: _openCreateTeam,
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
       ),
+    );
+  }
+
+  Widget _buildError() {
+    return RxCard(
+      child: RxEmptyState(
+        icon: HugeIcons.strokeRoundedAlert02,
+        title: _error ?? "Couldn't load teams",
+        message: 'Pull down to try again',
+      ),
+    );
+  }
+
+  Widget _buildSkeleton() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RxSkeleton(width: 140, height: 13),
+                  SizedBox(height: 12),
+                  RxSkeleton(width: 170, height: 44, radius: 12),
+                ],
+              ),
+            ),
+            RxSkeleton(width: 96, height: 96, radius: 100),
+          ],
+        ),
+        const SizedBox(height: 24),
+        const RxSkeleton(height: 92, radius: 22),
+        const SizedBox(height: 28),
+        for (var i = 0; i < 3; i++)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: RxSkeleton(height: 96, radius: 22),
+          ),
+      ],
     );
   }
 }

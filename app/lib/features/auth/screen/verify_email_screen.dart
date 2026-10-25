@@ -1,8 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'dart:async';
-import '../../../theme/app_theme.dart';
+
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_ui.dart';
+import '../widgets/auth_kit.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
@@ -33,7 +36,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       if (mounted) {
         try {
           await FirebaseAuth.instance.currentUser?.reload();
-          setState(() {});
+          if (mounted) setState(() {});
         } catch (e) {
           // Ignore errors during periodic refresh
         }
@@ -50,28 +53,14 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null && !user.emailVerified) {
         await user.sendEmailVerification();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFF30D158),
-              content: Text(
-                'Verification email sent!',
-                style: TextStyle(fontFamily: 'Satoshi', color: Colors.white),
-              ),
-            ),
-          );
-        }
+        if (mounted) showRxToast(context, 'Verification email sent!');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFFF3B30),
-            content: Text(
-              'Failed to send verification email',
-              style: TextStyle(fontFamily: 'Satoshi', color: Colors.white),
-            ),
-          ),
+        showRxToast(
+          context,
+          'Failed to send verification email',
+          isError: true,
         );
       }
     } finally {
@@ -83,310 +72,184 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
     }
   }
 
+  Future<void> _checkVerified() async {
+    setState(() {
+      _isResending = true; // Use loading state
+    });
+
+    try {
+      // Force reload multiple times to ensure we get latest status
+      await FirebaseAuth.instance.currentUser?.reload();
+      await Future.delayed(const Duration(milliseconds: 500)); // Small delay
+      await FirebaseAuth.instance.currentUser?.reload();
+
+      // Check if email is now verified
+      final user = FirebaseAuth.instance.currentUser;
+      if (!mounted) return;
+      if (user != null && user.emailVerified) {
+        // Email is verified, AuthWrapper will handle navigation
+        showRxToast(context, 'Email verified! Redirecting...');
+      } else {
+        // Email not verified yet
+        showRxToast(
+          context,
+          'Email not verified yet. Please check your inbox (including spam folder) and try again.',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showRxToast(
+          context,
+          'Error checking verification status. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResending = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _forceRefresh() async {
+    setState(() {
+      _isResending = true;
+    });
+
+    try {
+      // Force sign out and sign back in to trigger token refresh
+      final user = FirebaseAuth.instance.currentUser;
+      final email = user?.email;
+
+      if (email != null) {
+        await FirebaseAuth.instance.signOut();
+
+        // Small delay then sign back in
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // This will trigger AuthWrapper to show login screen
+        if (mounted) {
+          showRxToast(
+            context,
+            'Please sign in again to refresh your verification status.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        showRxToast(
+          context,
+          'Error refreshing session. Please try again.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResending = false;
+        });
+      }
+    }
+  }
+
+  static const _cfoLines = [
+    'One quick step before your numbers.',
+    'Tap the link I just emailed you.',
+    "I'll notice the moment you verify.",
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+    final email = FirebaseAuth.instance.currentUser?.email;
+
+    return AuthPage(
+      compactText: "I'll notice the moment you verify",
+      hero: (h) => AuthHero(
+        lines: _cfoLines,
+        height: h,
+        chips: const [
+          AuthChipData(
+            HugeIcons.strokeRoundedMailValidation01,
+            'Verification',
+            'Sent',
+            up: true,
+          ),
+          AuthChipData(
+            HugeIcons.strokeRoundedRefresh,
+            'Auto check',
+            'Every 5s',
+          ),
+        ],
+      ),
+      body: [
+        AuthStep(
+          2,
+          child: AuthTitle(
+            title: 'Check your inbox',
+            subtitle: email == null
+                ? 'We sent you a verification link. Open it to continue.'
+                : 'We sent a verification link to $email.',
+          ),
+        ),
+        const SizedBox(height: 16),
+        AuthStep(
+          3,
+          child: AuthGlassCard(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Email Icon
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: context.cardBackground,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: context.borderColor),
-                    boxShadow: context.cardShadow,
-                  ),
-                  child: Icon(
-                    Icons.email_outlined,
-                    color: context.textPrimary,
-                    size: 48,
+                const AuthNotice(
+                  icon: HugeIcons.strokeRoundedInformationCircle,
+                  tone: AuthNoticeTone.neutral,
+                  text:
+                      "Can't find it? Look in spam. This page updates on its own once you verify.",
+                ),
+                const SizedBox(height: 14),
+                AuthStep(
+                  4,
+                  child: AuthPrimaryButton(
+                    label: "I've verified",
+                    icon: HugeIcons.strokeRoundedTick02,
+                    loading: _isResending,
+                    onTap: _isResending ? null : _checkVerified,
                   ),
                 ),
-                const SizedBox(height: 32),
-
-                // Title
-                Text(
-                  "Verify Your Email",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -1,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-
-                // Description
-                Text(
-                  "We've sent a verification link to your email address. Please check your inbox and click the link to continue.",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 14,
-                    height: 1.5,
-                    fontWeight: FontWeight.w400,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 40),
-
-                // Resend Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isResending ? null : _resendVerificationEmail,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: context.textPrimary,
-                      foregroundColor: context.appBackground,
-                      disabledBackgroundColor: context.textTertiary,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _isResending
-                        ? SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                context.appBackground,
-                              ),
-                            ),
-                          )
-                        : Text(
-                            "Resend Email",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // I've Verified Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      setState(() {
-                        _isResending = true; // Use loading state
-                      });
-
-                      // Capture messenger before async gap
-                      final messenger = ScaffoldMessenger.of(context);
-
-                      try {
-                        // Force reload multiple times to ensure we get latest status
-                        await FirebaseAuth.instance.currentUser?.reload();
-                        await Future.delayed(
-                          const Duration(milliseconds: 500),
-                        ); // Small delay
-                        await FirebaseAuth.instance.currentUser?.reload();
-
-                        // Check if email is now verified
-                        final user = FirebaseAuth.instance.currentUser;
-                        if (user != null && user.emailVerified) {
-                          // Email is verified, AuthWrapper will handle navigation
-                          if (mounted) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFF30D158),
-                                content: Text(
-                                  'Email verified! Redirecting...',
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        } else {
-                          // Email not verified yet
-                          if (mounted) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFFFF3B30),
-                                content: Text(
-                                  'Email not verified yet. Please check your inbox (including spam folder) and try again.',
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
-                          }
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                              backgroundColor: const Color(0xFFFF3B30),
-                              content: Text(
-                                'Error checking verification status. Please try again.',
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-                      } finally {
-                        if (mounted) {
-                          setState(() {
-                            _isResending = false;
-                          });
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF30D158),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      "I've Verified",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Force Refresh Button
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      setState(() {
-                        _isResending = true;
-                      });
-
-                      // Capture messenger before async gap
-                      final messenger = ScaffoldMessenger.of(context);
-
-                      try {
-                        // Force sign out and sign back in to trigger token refresh
-                        final user = FirebaseAuth.instance.currentUser;
-                        final email = user?.email;
-
-                        if (email != null) {
-                          await FirebaseAuth.instance.signOut();
-
-                          // Small delay then sign back in
-                          await Future.delayed(
-                            const Duration(milliseconds: 500),
-                          );
-
-                          // This will trigger AuthWrapper to show login screen
-                          if (mounted) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFF30D158),
-                                content: Text(
-                                  'Please sign in again to refresh your verification status.',
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                duration: const Duration(seconds: 3),
-                              ),
-                            );
-                          }
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          messenger.showSnackBar(
-                            SnackBar(
-                              backgroundColor: const Color(0xFFFF3B30),
-                              content: Text(
-                                'Error refreshing session. Please try again.',
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-                      } finally {
-                        if (mounted) {
-                          setState(() {
-                            _isResending = false;
-                          });
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF007AFF),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      "Force Refresh",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Sign Out Button
-                TextButton(
-                  onPressed: () async {
-                    await FirebaseAuth.instance.signOut();
-                  },
-                  child: Text(
-                    "Sign Out",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+                const SizedBox(height: 10),
+                AuthStep(
+                  5,
+                  child: RxButton(
+                    label: 'Resend email',
+                    icon: HugeIcons.strokeRoundedMailSend01,
+                    style: RxButtonStyle.secondary,
+                    onTap: _isResending ? null : _resendVerificationEmail,
                   ),
                 ),
               ],
             ),
           ),
         ),
+      ],
+      footer: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AuthTextLink(
+            label: 'Refresh session',
+            onTap: _isResending ? () {} : _forceRefresh,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text('·', style: RxText.label(context)),
+          ),
+          AuthTextLink(
+            label: 'Sign out',
+            onTap: () async {
+              await FirebaseAuth.instance.signOut();
+            },
+          ),
+        ],
       ),
     );
   }

@@ -7,7 +7,11 @@ import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/expense_service.dart';
 import '../../../services/financial_calculator.dart';
-import '../../../theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_pickers.dart';
+import '../../../widgets/rx_ui.dart';
 
 class AddFundingScreen extends StatefulWidget {
   final Map<String, String>? prefillData;
@@ -196,45 +200,8 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
     return fallback;
   }
 
-  void _showMinimalToast(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
-              size: 18,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: context.cardBackground,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: context.borderColor),
-        ),
-        duration: const Duration(seconds: 4),
-        elevation: 0,
-      ),
-    );
-  }
+  void _showMinimalToast(String message, {bool isError = false}) =>
+      showRxToast(context, message, isError: isError);
 
   Future<void> _validateAndSaveFunding() async {
     FocusScope.of(context).unfocus();
@@ -341,104 +308,224 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
     }
   }
 
+  static const Map<String, List<List<dynamic>>> _sourceIcons = {
+    'self_funded': HugeIcons.strokeRoundedUser,
+    'bank_loan': HugeIcons.strokeRoundedBank,
+    'angel_investor': HugeIcons.strokeRoundedFavourite,
+    'vc_funding': HugeIcons.strokeRoundedRocket01,
+    'grant': HugeIcons.strokeRoundedAward01,
+    'revenue': HugeIcons.strokeRoundedChartIncrease,
+    'other': HugeIcons.strokeRoundedMoreHorizontal,
+  };
+
+  bool _err(String field) => _errorFields.contains(field);
+
+  void _selectSource(String key) {
+    setState(() {
+      _selectedSource = key;
+      if (key != 'bank_loan') {
+        _userEditedEmi = false;
+        _lenderBankController.clear();
+        _interestController.clear();
+        _tenureController.clear();
+        _emiController.clear();
+      } else {
+        _recalculateEmi();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final currencySymbol = CurrencyFormatter.getCurrencySymbol(
-      _userCountryCode,
-    );
+    final rx = context.rx;
+    final symbol = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+    final hasPrefill =
+        widget.prefillData != null && widget.prefillData!.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
+              const RxTopBar(title: 'Add funding'),
               Expanded(
-                child: GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
-                  child: SingleChildScrollView(
-                    controller: _scrollController,
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 16),
-                        Text(
-                          "Add Funding",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textPrimary,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -1.0,
+                child: ListView(
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                  children: [
+                    if (hasPrefill) ...[
+                      RxPill(
+                        label: 'Pre-filled from your scan. Check before saving',
+                        dot: true,
+                        foreground: rx.textSecondary,
+                        background: rx.surfaceMuted,
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    RxReveal.index(
+                      0,
+                      child: Column(
+                        children: [
+                          RxAmountInput(
+                            controller: _amountController,
+                            symbol: symbol,
+                            label: 'Amount',
+                            onChanged: (_) {
+                              if (_err("ADD FUNDING AMOUNT")) {
+                                setState(
+                                  () =>
+                                      _errorFields.remove("ADD FUNDING AMOUNT"),
+                                );
+                              }
+                            },
                           ),
-                        ),
-                        const SizedBox(height: 32),
-
-                        if (widget.prefillData != null &&
-                            widget.prefillData!.isNotEmpty)
-                          _buildPrefillBanner(),
-
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildReadOnlyMetric(
-                                "CURRENT FUNDING",
-                                CurrencyFormatter.formatByCountryCompact(
-                                  _currentFunding,
-                                  _userCountryCode,
+                          if (_err("ADD FUNDING AMOUNT"))
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Enter an amount',
+                                style: RxText.caption(
+                                  context,
+                                  color: rx.negative,
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _buildReadOnlyMetric(
-                                "NEW TOTAL",
-                                CurrencyFormatter.formatByCountryCompact(
-                                  _currentFunding + _inputAmount,
-                                  _userCountryCode,
-                                ),
-                                highlight: _inputAmount > 0,
+                          const SizedBox(height: 16),
+                          // Before and after, so the effect is obvious.
+                          RxCard(
+                            padding: EdgeInsets.zero,
+                            child: IntrinsicHeight(
+                              child: Row(
+                                children: [
+                                  _metric(
+                                    'Current funding',
+                                    CurrencyFormatter.formatByCountryCompact(
+                                      _currentFunding,
+                                      _userCountryCode,
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    child: Container(
+                                      width: 1,
+                                      color: rx.hairline,
+                                    ),
+                                  ),
+                                  _metric(
+                                    'New total',
+                                    CurrencyFormatter.formatByCountryCompact(
+                                      _currentFunding + _inputAmount,
+                                      _userCountryCode,
+                                    ),
+                                    color: _inputAmount > 0
+                                        ? rx.positive
+                                        : null,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      1,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const RxSectionHeader(title: 'Source'),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final src in _fundingSources)
+                                _sourceChip(src, rx),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_selectedSource == 'bank_loan') ...[
+                      const SizedBox(height: 28),
+                      _buildLoanSection(symbol, rx),
+                    ],
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          RxTextInput(
+                            controller: _notesController,
+                            label: 'Notes',
+                            hint: 'e.g. Seed round from XYZ Ventures',
+                            maxLines: 3,
+                            onChanged: (_) {
+                              if (_err("NOTES")) {
+                                setState(() => _errorFields.remove("NOTES"));
+                              }
+                            },
+                          ),
+                          if (_err("NOTES")) _fieldError('Add a short note'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const RxSectionHeader(title: 'Planning'),
+                          RxCard(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                            child: RxSwitchRow(
+                              title: 'Update target runway',
+                              subtitle:
+                                  'Current: ${_currentTargetRunway.isNotEmpty ? '$_currentTargetRunway months' : 'not set'}',
+                              value: _updateTargetRunway,
+                              onChanged: (v) =>
+                                  setState(() => _updateTargetRunway = v),
+                            ),
+                          ),
+                          if (_updateTargetRunway) ...[
+                            const SizedBox(height: 12),
+                            RxTextInput(
+                              controller: _targetRunwayController,
+                              hint: 'e.g. 18',
+                              icon: HugeIcons.strokeRoundedTarget02,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              textInputAction: TextInputAction.done,
+                              suffix: Text(
+                                'months',
+                                style: RxText.caption(context),
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 40),
-
-                        _buildAmountInput(currencySymbol),
-                        const SizedBox(height: 40),
-
-                        _buildSectionLabel("FUNDING SOURCE"),
-                        _buildSourceSelector(),
-                        const SizedBox(height: 40),
-
-                        if (_selectedSource == 'bank_loan')
-                          _buildBankLoanDetailsSection(),
-
-                        _buildInputGroup(
-                          "NOTES",
-                          "e.g., Seed round from XYZ Ventures",
-                          _notesController,
-                          maxLines: 3,
-                        ),
-                        const SizedBox(height: 40),
-
-                        _buildSectionLabel("PLANNING"),
-                        _buildTargetRunwaySection(),
-
-                        const SizedBox(height: 100),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-              _buildSubmitButton(),
+              RxBottomBar(
+                child: RxButton(
+                  label: 'Add funding',
+                  icon: HugeIcons.strokeRoundedMoneyReceive01,
+                  loading: _isLoading,
+                  onTap: _validateAndSaveFunding,
+                ),
+              ),
             ],
           ),
         ),
@@ -446,872 +533,226 @@ class _AddFundingScreenState extends State<AddFundingScreen> {
     );
   }
 
-  // --- WIDGET BUILDERS ---
-
-  Widget _buildPrefillBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Row(
+  Widget _metric(String label, String value, {Color? color}) => Expanded(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.auto_awesome, color: context.textPrimary, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              "Fields pre-filled from scanned receipt. Review and edit if needed.",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(String text, {bool hasError = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        text.toUpperCase(),
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: hasError ? const Color(0xFFFF453A) : context.textTertiary,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMiniSectionLabel(String text) {
-    final bool hasError = _errorFields.contains(text);
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: hasError ? const Color(0xFFFF453A) : context.textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.0,
-      ),
-    );
-  }
-
-  Widget _buildReadOnlyMetric(
-    String label,
-    String value, {
-    bool highlight = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: highlight ? context.textPrimary : context.textSecondary,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 1.2,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: highlight
-                  ? context.borderColorStrong
-                  : context.borderColor,
-            ),
-            boxShadow: context.cardShadow,
-          ),
-          child: FittedBox(
+          Text(label, style: RxText.label(context)),
+          const SizedBox(height: 6),
+          FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
               value,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: highlight ? context.textPrimary : context.textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: RxText.value(context, size: 18, color: color),
             ),
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAmountInput(String currencySymbol) {
-    final String label = "ADD FUNDING AMOUNT";
-    final bool hasError = _errorFields.contains(label);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel(label, hasError: hasError),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: hasError
-                  ? const Color(0xFFFF453A).withValues(alpha: 0.5)
-                  : context.borderColor,
-            ),
-            boxShadow: context.cardShadow,
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                currencySymbol,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: hasError
-                      ? const Color(0xFFFF453A)
-                      : context.textSecondary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _amountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  textInputAction: TextInputAction.next,
-                  onTapOutside: (event) => FocusScope.of(context).unfocus(),
-                  onChanged: (_) {
-                    if (hasError) setState(() => _errorFields.remove(label));
-                  },
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.5,
-                  ),
-                  cursorColor: context.textPrimary,
-                  decoration: InputDecoration(
-                    hintText: "0",
-                    hintStyle: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: hasError
-                          ? const Color(0xFFFF453A).withValues(alpha: 0.5)
-                          : context.textTertiary,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSourceSelector() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: _fundingSources.map((data) {
-        final key = data['key'] as String;
-        final isSelected = _selectedSource == key;
-        final selectedBg = context.isDarkMode
-            ? Colors.white.withValues(alpha: 0.1)
-            : Colors.black.withValues(alpha: 0.08);
-
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedSource = key;
-              if (key != 'bank_loan') {
-                _userEditedEmi = false;
-                _lenderBankController.clear();
-                _interestController.clear();
-                _tenureController.clear();
-                _emiController.clear();
-              } else {
-                _recalculateEmi();
-              }
-            });
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: isSelected ? selectedBg : Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isSelected
-                    ? context.borderColorStrong
-                    : context.borderColor,
-                width: 1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  data['icon'] as IconData,
-                  color: isSelected
-                      ? context.textPrimary
-                      : context.iconSecondary,
-                  size: 16,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  data['label'] as String,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: isSelected
-                        ? context.textPrimary
-                        : context.textSecondary,
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildBankLoanDetailsSection() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 40),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: context.borderColor),
-          boxShadow: context.cardShadow,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.account_balance_outlined,
-                  color: context.iconSecondary,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  "LOAN DETAILS",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _buildBankLoanInputField(
-              "LENDER BANK NAME",
-              "e.g. HDFC Bank, Chase",
-              _lenderBankController,
-              isText: true,
-            ),
-            const SizedBox(height: 20),
-            _buildEmiDatePickerRow(),
-            const SizedBox(height: 20),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _buildBankLoanInputField(
-                    "INTEREST RATE (% P.A.)",
-                    "e.g. 10.5",
-                    _interestController,
-                    isDouble: true,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildMiniSectionLabel("RATE TYPE"),
-                      const SizedBox(height: 8),
-                      _buildRateTypeSelector(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: _buildBankLoanInputField(
-                    "TENURE (MONTHS)",
-                    "e.g. 24",
-                    _tenureController,
-                    isInteger: true,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildBankLoanInputField(
-                    "EMI AMOUNT",
-                    "Auto-calculated",
-                    _emiController,
-                    isDouble: true,
-                    onChanged: (val) {
-                      setState(() => _userEditedEmi = true);
-                    },
-                  ),
-                ),
-              ],
-            ),
-            if (_userEditedEmi) ...[
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _userEditedEmi = false;
-                      _recalculateEmi();
-                    });
-                  },
-                  icon: Icon(
-                    Icons.refresh,
-                    size: 14,
-                    color: context.iconSecondary,
-                  ),
-                  label: Text(
-                    "Reset to calculated EMI",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBankLoanInputField(
-    String label,
-    String hint,
-    TextEditingController controller, {
-    bool isInteger = false,
-    bool isDouble = false,
-    bool isText = false,
-    ValueChanged<String>? onChanged,
-  }) {
-    final bool hasError = _errorFields.contains(label);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildMiniSectionLabel(label),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: context.appBackground,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: hasError
-                  ? const Color(0xFFFF453A).withValues(alpha: 0.5)
-                  : context.borderColor,
-            ),
-          ),
-          child: TextField(
-            controller: controller,
-            keyboardType: isText
-                ? TextInputType.text
-                : const TextInputType.numberWithOptions(decimal: true),
-            onChanged: (val) {
-              if (hasError) setState(() => _errorFields.remove(label));
-              if (onChanged != null) onChanged(val);
-            },
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-            cursorColor: context.textPrimary,
-            inputFormatters: [
-              if (isInteger) FilteringTextInputFormatter.digitsOnly,
-              if (isDouble) FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-            ],
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-                fontSize: 13,
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              isDense: true,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRateTypeSelector() {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: context.borderColor),
-      ),
-      child: Row(
-        children: [
-          Expanded(child: _buildRateTypeButton('reducing', 'Reducing')),
-          Expanded(child: _buildRateTypeButton('flat', 'Flat / Fixed')),
         ],
       ),
-    );
-  }
+    ),
+  );
 
-  Widget _buildRateTypeButton(String type, String label) {
-    final isSelected = _loanRateType == type;
-    final selectedBg = context.isDarkMode
-        ? Colors.white.withValues(alpha: 0.1)
-        : Colors.black.withValues(alpha: 0.08);
+  Widget _fieldError(String text) => Padding(
+    padding: const EdgeInsets.only(left: 4, top: 6),
+    child: Text(
+      text,
+      style: RxText.caption(context, color: context.rx.negative),
+    ),
+  );
 
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _loanRateType = type;
-          _recalculateEmi();
-        });
-      },
-      child: Container(
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected ? selectedBg : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: isSelected ? context.textPrimary : context.textSecondary,
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+  Widget _sourceChip(Map<String, dynamic> src, RxColors rx) {
+    final key = src['key'] as String;
+    final selected = _selectedSource == key;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: src['label'] as String,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _selectSource(key);
+        },
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.only(left: 12, right: 14),
+          decoration: BoxDecoration(
+            color: selected ? rx.inverse : rx.surface,
+            borderRadius: BorderRadius.circular(100),
+            border: Border.all(
+              color: selected ? Colors.transparent : rx.hairline,
+            ),
+            boxShadow: selected ? null : rx.cardShadow,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              HugeIcon(
+                icon: _sourceIcons[key] ?? HugeIcons.strokeRoundedMoney01,
+                color: selected ? rx.onInverse : rx.textSecondary,
+                size: 16,
+                strokeWidth: 1.9,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                src['label'] as String,
+                style: RxText.label(
+                  context,
+                  color: selected ? rx.onInverse : rx.textPrimary,
+                ).copyWith(fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildEmiDatePickerRow() {
-    final formattedDate =
-        "${_selectedEmiDate.day}/${_selectedEmiDate.month}/${_selectedEmiDate.year}";
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildMiniSectionLabel("EMI REPAYMENT START DATE"),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _showEmiDatePicker,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            decoration: BoxDecoration(
-              color: context.appBackground,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.borderColor),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.calendar_today_outlined,
-                      color: context.iconSecondary,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      formattedDate,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                Icon(
-                  Icons.edit_outlined,
-                  color: context.iconSecondary,
-                  size: 16,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _showEmiDatePicker() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedEmiDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 3650)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: context.isDarkMode
-                ? const ColorScheme.dark(
-                    primary: Colors.white,
-                    onPrimary: Colors.black,
-                    surface: Color(0xFF141416),
-                    onSurface: Colors.white,
-                  )
-                : const ColorScheme.light(
-                    primary: Colors.black,
-                    onPrimary: Colors.white,
-                    surface: Colors.white,
-                    onSurface: Colors.black,
-                  ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(foregroundColor: context.textPrimary),
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && picked != _selectedEmiDate) {
-      setState(() => _selectedEmiDate = picked);
+  Widget _buildLoanSection(String symbol, RxColors rx) {
+    void clear(String f) {
+      if (_err(f)) setState(() => _errorFields.remove(f));
     }
-  }
-
-  Widget _buildInputGroup(
-    String label,
-    String hint,
-    TextEditingController controller, {
-    int maxLines = 1,
-    bool isNumber = false,
-  }) {
-    final bool hasError = _errorFields.contains(label);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionLabel(label, hasError: hasError),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: hasError
-                  ? const Color(0xFFFF453A).withValues(alpha: 0.5)
-                  : context.borderColor,
-            ),
-            boxShadow: context.cardShadow,
-          ),
-          child: TextField(
-            controller: controller,
-            keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-            maxLines: maxLines,
-            onTapOutside: (_) => FocusScope.of(context).unfocus(),
-            onChanged: (_) {
-              if (hasError) setState(() => _errorFields.remove(label));
-            },
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            cursorColor: context.textPrimary,
-            decoration: InputDecoration(
-              hintText: hasError ? "This field is required" : hint,
-              hintStyle: TextStyle(
-                fontFamily: 'Satoshi',
-                color: hasError
-                    ? const Color(0xFFFF453A).withValues(alpha: 0.5)
-                    : context.textTertiary,
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 14),
-              isDense: true,
-            ),
-          ),
+        const RxSectionHeader(title: 'Loan details'),
+        RxTextInput(
+          controller: _lenderBankController,
+          label: 'Lender',
+          hint: 'e.g. HDFC Bank',
+          icon: HugeIcons.strokeRoundedBank,
+          textCapitalization: TextCapitalization.words,
+          onChanged: (_) => clear("LENDER BANK NAME"),
         ),
-      ],
-    );
-  }
-
-  Widget _buildTargetRunwaySection() {
-    final thumbColor = _updateTargetRunway
-        ? (context.isDarkMode ? Colors.black : Colors.white)
-        : context.textPrimary;
-    final trackColor = _updateTargetRunway
-        ? (context.isDarkMode ? Colors.white : Colors.black)
-        : context.borderColor;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: () =>
-              setState(() => _updateTargetRunway = !_updateTargetRunway),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.borderColor),
-              boxShadow: context.cardShadow,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Update Target Runway",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "Current Target: ${_currentTargetRunway.isNotEmpty ? '$_currentTargetRunway months' : 'Not set'}",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  width: 44,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(13),
-                    color: trackColor,
-                  ),
-                  child: Align(
-                    alignment: _updateTargetRunway
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      width: 22,
-                      height: 22,
-                      margin: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: thumbColor,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        if (_updateTargetRunway)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: context.borderColor),
-                boxShadow: context.cardShadow,
-              ),
-              child: Row(
+        if (_err("LENDER BANK NAME")) _fieldError('Enter the lender'),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _targetRunwayController,
-                      keyboardType: TextInputType.number,
-                      textInputAction: TextInputAction.done,
-                      onTapOutside: (_) => FocusScope.of(context).unfocus(),
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      cursorColor: context.textPrimary,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        hintText: "Enter months (e.g., 18)",
-                        hintStyle: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textTertiary,
-                          fontSize: 14,
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 14,
-                        ),
-                      ),
+                  RxTextInput(
+                    controller: _interestController,
+                    label: 'Interest',
+                    hint: '10.5',
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
                     ),
+                    inputFormatters: RxTextInput.money,
+                    suffix: Text('% p.a.', style: RxText.caption(context)),
+                    onChanged: (_) => clear("INTEREST RATE (% P.A.)"),
                   ),
-                  Text(
-                    "months",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  if (_err("INTEREST RATE (% P.A.)")) _fieldError('Required'),
                 ],
               ),
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RxTextInput(
+                    controller: _tenureController,
+                    label: 'Tenure',
+                    hint: '36',
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    suffix: Text('months', style: RxText.caption(context)),
+                    onChanged: (_) => clear("TENURE (MONTHS)"),
+                  ),
+                  if (_err("TENURE (MONTHS)")) _fieldError('Required'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            'Interest type',
+            style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
           ),
-      ],
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    final btnBg = context.isDarkMode ? Colors.white : Colors.black;
-    final btnText = context.isDarkMode ? Colors.black : Colors.white;
-
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: context.appBackground,
-        border: Border(top: BorderSide(color: context.borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _validateAndSaveFunding,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: btnBg,
-            foregroundColor: btnText,
-            disabledBackgroundColor: context.textTertiary,
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+        ),
+        RxSegmented<String>(
+          options: const {'reducing': 'Reducing', 'flat': 'Flat'},
+          value: _loanRateType,
+          onChanged: (v) {
+            setState(() => _loanRateType = v);
+            _recalculateEmi();
+          },
+        ),
+        const SizedBox(height: 16),
+        RxTextInput(
+          controller: _emiController,
+          label: 'Monthly EMI',
+          hint: '0',
+          prefixText: symbol,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: RxTextInput.money,
+          helper: _userEditedEmi
+              ? 'Edited by you'
+              : 'Calculated from amount, interest and tenure',
+          onChanged: (_) {
+            _userEditedEmi = true;
+            clear("EMI AMOUNT");
+          },
+        ),
+        if (_err("EMI AMOUNT")) _fieldError('Enter the EMI'),
+        if (_userEditedEmi)
+          Align(
+            alignment: Alignment.centerRight,
+            child: RxPressable(
+              onTap: () => setState(() {
+                _userEditedEmi = false;
+                _recalculateEmi();
+              }),
+              semanticLabel: 'Use calculated EMI',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    HugeIcon(
+                      icon: HugeIcons.strokeRoundedRefresh,
+                      color: rx.textSecondary,
+                      size: 14,
+                      strokeWidth: 2,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Use calculated EMI',
+                      style: RxText.caption(
+                        context,
+                        color: rx.textPrimary,
+                      ).copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-          child: _isLoading
-              ? SizedBox(
-                  height: 20,
-                  width: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: btnText,
-                  ),
-                )
-              : Text(
-                  "Add Funding",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+        const SizedBox(height: 16),
+        RxDateField(
+          label: 'First EMI date',
+          value: _selectedEmiDate,
+          firstDate: DateTime.now().subtract(const Duration(days: 365)),
+          lastDate: DateTime.now().add(const Duration(days: 3650)),
+          onChanged: (d) => setState(() => _selectedEmiDate = d),
         ),
-      ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, top: 6),
+          child: Text(
+            'A monthly EMI expense is added from this date.',
+            style: RxText.caption(context),
+          ),
+        ),
+      ],
     );
   }
 }

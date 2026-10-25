@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
+import 'package:startup_expense_tracker/widgets/rx_pickers.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -16,7 +17,6 @@ import '../../../services/currency_formatter.dart';
 import '../../../services/bank_account_service.dart';
 import '../../../services/team_member_service.dart';
 import '../../../services/expense_service.dart';
-
 
 import '../../../widgets/avatar_widget.dart';
 import '../../../theme/app_theme.dart';
@@ -66,16 +66,13 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     'legal': 'Legal',
     'others': 'Others',
   };
-  
-  final types = {
-    'one_time': 'One-time',
-    'recurring': 'Recurring',
-  };
+
+  final types = {'one_time': 'One-time', 'recurring': 'Recurring'};
 
   Map<String, String> _bankAccounts = {};
   List<TeamMember> _teamMembers = [];
   List<Team> _teams = [];
-  
+
   TeamMember? _selectedTeamMember;
   Team? _selectedTeam;
   String _expenseType = "team"; // "team" or "member"
@@ -118,7 +115,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         widget.expenseData['Type']?.toString().toLowerCase() ?? 'one_time';
     _selectedType = types.containsKey(fetchedType) ? fetchedType : 'one_time';
 
-    _recurrenceFrequency = widget.expenseData['recurrenceFrequency']?.toString() ?? 'monthly';
+    _recurrenceFrequency =
+        widget.expenseData['recurrenceFrequency']?.toString() ?? 'monthly';
     final dynamic fetchedTenure = widget.expenseData['recurringTenureMonths'];
     _isOngoing = fetchedTenure == null;
     _tenureController = TextEditingController(
@@ -237,12 +235,14 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       if (mounted) {
         setState(() {
           _teamMembers = members;
-          
+
           // Pre-fill member if exists
           String? savedMemberId = widget.expenseData['TeamMemberId'];
           if (savedMemberId != null) {
             try {
-              _selectedTeamMember = members.firstWhere((m) => m.id == savedMemberId);
+              _selectedTeamMember = members.firstWhere(
+                (m) => m.id == savedMemberId,
+              );
             } catch (e) {
               _selectedTeamMember = null;
             }
@@ -363,88 +363,63 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   Future<void> _showFilePicker() async {
     try {
-      await showModalBottomSheet(
-        context: context,
-        backgroundColor: context.cardBackground,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (context) => Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                "Select Attachment",
-                style: GoogleFonts.inter(
-                  color: context.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 20),
-              ListTile(
-                leading: Icon(Icons.camera_alt, color: context.textPrimary),
-                title: Text(
-                  "Take Photo",
-                  style: GoogleFonts.inter(color: context.textPrimary),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final picker = ImagePicker();
-                  final XFile? image = await picker.pickImage(
-                    source: ImageSource.camera,
-                    imageQuality: 80,
-                  );
-                  if (image != null) {
-                    await _uploadFile(image.path, image.name);
-                  }
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.photo_library, color: context.textPrimary),
-                title: Text(
-                  "Choose Photo / Video",
-                  style: GoogleFonts.inter(color: context.textPrimary),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final picker = ImagePicker();
-                  final XFile? media = await picker.pickMedia();
-                  if (media != null) {
-                    await _uploadFile(media.path, media.name);
-                  }
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  Icons.insert_drive_file,
-                  color: context.textPrimary,
-                ),
-                title: Text(
-                  "Choose PDF / Document",
-                  style: GoogleFonts.inter(color: context.textPrimary),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final result = await FilePicker.platform.pickFiles(
-                    type: FileType.custom,
-                    allowedExtensions: [
-                      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv',
-                    ],
-                    allowMultiple: false,
-                  );
-                  if (result != null && result.files.single.path != null) {
-                    await _uploadFile(
-                      result.files.single.path!,
-                      result.files.single.name,
-                    );
-                  }
-                },
-              ),
-            ],
+      await showRxActionSheet(
+        context,
+        title: 'Add attachment',
+        actions: [
+          RxSheetAction(
+            icon: HugeIcons.strokeRoundedCamera01,
+            label: 'Take photo',
+            onTap: () async {
+              final picker = ImagePicker();
+              final XFile? image = await picker.pickImage(
+                source: ImageSource.camera,
+                imageQuality: 80,
+              );
+              if (image != null) {
+                await _uploadFile(image.path, image.name);
+              }
+            },
           ),
-        ),
+          RxSheetAction(
+            icon: HugeIcons.strokeRoundedImage01,
+            label: 'Photo or video',
+            subtitle: 'From your gallery',
+            onTap: () async {
+              final picker = ImagePicker();
+              final XFile? media = await picker.pickMedia();
+              if (media != null) {
+                await _uploadFile(media.path, media.name);
+              }
+            },
+          ),
+          RxSheetAction(
+            icon: HugeIcons.strokeRoundedFile01,
+            label: 'Document',
+            subtitle: 'PDF, Word, Excel, CSV',
+            onTap: () async {
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: [
+                  'pdf',
+                  'doc',
+                  'docx',
+                  'xls',
+                  'xlsx',
+                  'txt',
+                  'csv',
+                ],
+                allowMultiple: false,
+              );
+              if (result != null && result.files.single.path != null) {
+                await _uploadFile(
+                  result.files.single.path!,
+                  result.files.single.name,
+                );
+              }
+            },
+          ),
+        ],
       );
     } catch (e) {
       debugPrint("File pick error: $e");
@@ -458,12 +433,25 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     if (filePath == null) return Icons.insert_drive_file;
     final extension = filePath.toLowerCase().split('.').last;
     switch (extension) {
-      case 'pdf': return Icons.picture_as_pdf;
-      case 'doc': case 'docx': return Icons.description;
-      case 'xls': case 'xlsx': return Icons.table_chart;
-      case 'jpg': case 'jpeg': case 'png': case 'gif': return Icons.image;
-      case 'mp4': case 'avi': case 'mov': return Icons.video_file;
-      default: return Icons.insert_drive_file;
+      case 'pdf':
+        return Icons.picture_as_pdf;
+      case 'doc':
+      case 'docx':
+        return Icons.description;
+      case 'xls':
+      case 'xlsx':
+        return Icons.table_chart;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+        return Icons.image;
+      case 'mp4':
+      case 'avi':
+      case 'mov':
+        return Icons.video_file;
+      default:
+        return Icons.insert_drive_file;
     }
   }
 
@@ -476,16 +464,15 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           children: [
             Icon(
               isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
+              color: isError ? context.rx.negative : context.rx.positive,
               size: 18,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 message,
-                style: GoogleFonts.inter(
+                style: TextStyle(
+                  fontFamily: 'Geist',
                   color: context.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -511,7 +498,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   Future<void> _updateExpense() async {
     FocusScope.of(context).unfocus();
 
-    final double? amount = CurrencyFormatter.parse(_amountController.text.trim());
+    final double? amount = CurrencyFormatter.parse(
+      _amountController.text.trim(),
+    );
     if (amount == null || amount <= 0) {
       _showMinimalToast("Please enter a valid amount.", isError: true);
       return;
@@ -520,7 +509,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       _showMinimalToast("Please enter a title.", isError: true);
       return;
     }
-    final isRecurringOrSub = _selectedType == "recurring" || _selectedType == "subscription";
+    final isRecurringOrSub =
+        _selectedType == "recurring" || _selectedType == "subscription";
     if (!isRecurringOrSub && _selectedDate.isAfter(DateTime.now())) {
       _showMinimalToast("Date cannot be in the future.", isError: true);
       return;
@@ -530,7 +520,10 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     if (isRecurringOrSub && !_isOngoing) {
       final tenureText = _tenureController.text.trim();
       if (tenureText.isEmpty) {
-        _showMinimalToast("Please enter a tenure for the recurring expense.", isError: true);
+        _showMinimalToast(
+          "Please enter a tenure for the recurring expense.",
+          isError: true,
+        );
         return;
       }
       recurringTenure = int.tryParse(tenureText);
@@ -559,7 +552,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       final companyId = userDoc.data()?['companyId'];
       if (companyId == null) throw Exception('Company not found');
 
-      final double newAmount = CurrencyFormatter.parse(_amountController.text.trim())!;
+      final double newAmount = CurrencyFormatter.parse(
+        _amountController.text.trim(),
+      )!;
       final double oldAmount = DataHelpers.safeParseDouble(
         widget.expenseData['Amount'],
       );
@@ -581,7 +576,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         if (addedToMember > 0 && memberDoc.exists) {
           final data = memberDoc.data() as Map<String, dynamic>;
           final salary = (data['salary'] as num?)?.toDouble() ?? 0.0;
-          final currentExpenses = (data['totalExpenses'] as num?)?.toDouble() ?? 0.0;
+          final currentExpenses =
+              (data['totalExpenses'] as num?)?.toDouble() ?? 0.0;
           final newMemberExpenses = currentExpenses + addedToMember;
           if (salary > 0 && newMemberExpenses > salary) {
             if (mounted) {
@@ -725,7 +721,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
                         AnimatedCrossFade(
                           duration: const Duration(milliseconds: 300),
-                          crossFadeState: (_selectedType == 'recurring' || _selectedType == 'subscription')
+                          crossFadeState:
+                              (_selectedType == 'recurring' ||
+                                  _selectedType == 'subscription')
                               ? CrossFadeState.showFirst
                               : CrossFadeState.showSecond,
                           firstChild: _buildRecurringDetailsCard(),
@@ -755,7 +753,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                         const SizedBox(height: 8),
                         _buildExpenseTypeSelector(),
                         const SizedBox(height: 24),
-                        
+
                         _buildSectionLabel("LINK MEMBER (OPTIONAL)"),
                         const SizedBox(height: 16),
                         if (_expenseType == "member") ...[
@@ -765,7 +763,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                           _buildTeamSelector(),
                           const SizedBox(height: 32),
                         ],
-
 
                         _buildSectionLabel("ATTACHMENT"),
                         const SizedBox(height: 16),
@@ -789,45 +786,19 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   // --- WIDGET BUILDERS ---
 
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
-              ),
-              child: Icon(Icons.close, color: context.textPrimary, size: 20),
-            ),
-          ),
-          Text(
-            "Edit Expense",
-            style: GoogleFonts.inter(
-              color: context.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
+    return const RxTopBar(title: 'Edit expense');
   }
 
+  // Sentence-case field labels, like the rest of the redesign.
   Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: GoogleFonts.inter(
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
+    final t = text.isEmpty
+        ? text
+        : text[0].toUpperCase() + text.substring(1).toLowerCase();
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        t,
+        style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -837,20 +808,26 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       width: double.infinity,
       child: TextField(
         controller: _amountController,
-        keyboardType: TextInputType.text,
+        // Number pad only; digits plus one decimal separator.
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+        ],
         textAlign: TextAlign.center,
         onTapOutside: (event) => FocusScope.of(context).unfocus(),
         textInputAction: TextInputAction.next,
-        style: GoogleFonts.inter(
+        style: TextStyle(
+          fontFamily: 'Geist',
           color: context.textPrimary,
           fontSize: 56,
           fontWeight: FontWeight.w600,
           letterSpacing: -2,
         ),
-        cursorColor: const Color(0xFF30D158),
+        cursorColor: context.rx.positive,
         decoration: InputDecoration(
           hintText: "0.00",
-          hintStyle: GoogleFonts.inter(
+          hintStyle: TextStyle(
+            fontFamily: 'Geist',
             color: context.textSecondary.withValues(alpha: 0.3),
             fontSize: 56,
             fontWeight: FontWeight.w600,
@@ -860,7 +837,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           prefixText: _isLoadingCountry
               ? '₹'
               : "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)} ",
-          prefixStyle: GoogleFonts.inter(
+          prefixStyle: TextStyle(
+            fontFamily: 'Geist',
             color: context.textSecondary,
             fontSize: 32,
             fontWeight: FontWeight.w600,
@@ -886,12 +864,23 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         controller: controller,
         onTapOutside: (event) => FocusScope.of(context).unfocus(),
         textInputAction: TextInputAction.next,
-        style: GoogleFonts.inter(color: context.textPrimary, fontSize: 15),
+        style: TextStyle(
+          fontFamily: 'Geist',
+          color: context.textPrimary,
+          fontSize: 15,
+        ),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: GoogleFonts.inter(color: context.textSecondary, fontSize: 13),
+          labelStyle: TextStyle(
+            fontFamily: 'Geist',
+            color: context.textSecondary,
+            fontSize: 13,
+          ),
           hintText: placeholder,
-          hintStyle: GoogleFonts.inter(color: context.textSecondary.withValues(alpha: 0.5)),
+          hintStyle: TextStyle(
+            fontFamily: 'Geist',
+            color: context.textSecondary.withValues(alpha: 0.5),
+          ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 14),
           floatingLabelBehavior: FloatingLabelBehavior.auto,
@@ -912,35 +901,20 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       children: [
         _buildSectionLabel(label),
         const SizedBox(height: 8),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: double.infinity),
-          child: ShadSelect<String>(
-            placeholder: Text(
-              'Select $label',
-              style: GoogleFonts.inter(color: context.textSecondary, fontSize: 14),
-            ),
-            initialValue: currentValue.isNotEmpty ? currentValue : null,
-            options: [
-              ...items.entries.map(
-                (e) => ShadOption(value: e.key, child: Text(e.value)),
-              ),
-            ],
-            selectedOptionBuilder: (context, value) => Text(
-              items[value] ?? "Select",
-              style: GoogleFonts.inter(
-                color: context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onChanged: onChanged,
-          ),
+        RxSelectField<String>(
+          label: null,
+          sheetTitle: _sentenceCase(label),
+          placeholder: 'Select ${label.toLowerCase()}',
+          value: currentValue.isNotEmpty ? currentValue : null,
+          options: [for (final e in items.entries) RxOption(e.key, e.value)],
+          onChanged: onChanged,
         ),
       ],
     );
   }
+
+  String _sentenceCase(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
 
   Widget _buildDateSelector() {
     return Column(
@@ -948,134 +922,34 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       children: [
         _buildSectionLabel('DATE'),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-          ),
-          child: TextField(
-            readOnly: true,
-            style: GoogleFonts.inter(color: context.textPrimary, fontSize: 15),
-            decoration: InputDecoration(
-              icon: Icon(
-                Icons.calendar_today,
-                color: context.textSecondary,
-                size: 20,
-              ),
-              hintText: 'Select date',
-              labelText: 'Date',
-              labelStyle: GoogleFonts.inter(
-                color: context.textSecondary,
-                fontSize: 13,
-              ),
-              hintStyle: GoogleFonts.inter(color: context.textSecondary.withValues(alpha: 0.5)),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 14),
-              suffixIcon: Icon(
-                Icons.calendar_month,
-                color: context.textSecondary,
-              ),
-            ),
-            // Use the persistent _dateController — avoids creating a new
-            // TextEditingController (and leaking it) on every build call.
-            controller: _dateController,
-            onTap: () {
-              FocusScope.of(context).unfocus();
-              _showShadCalendar();
-            },
-          ),
+        RxDateField(
+          value: _selectedDate,
+          firstDate: DateTime(_selectedDate.year - 1, 1),
+          lastDate: DateTime(_selectedDate.year + 1, 12, 31),
+          onChanged: _applyPickedDate,
         ),
       ],
     );
   }
 
-  void _showShadCalendar() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: context.cardBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.8,
-            ),
-            child: SingleChildScrollView(
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          "Select Date",
-                          style: GoogleFonts.inter(
-                            color: context.textPrimary,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: Icon(Icons.close, color: context.textSecondary),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    ShadCalendar(
-                      selected: _selectedDate,
-                      fromMonth: DateTime(_selectedDate.year - 1, 1),
-                      toMonth: DateTime(_selectedDate.year + 1, 12),
-                      onChanged: (DateTime? date) {
-                        if (date != null) {
-                          setState(() {
-                            _selectedDate = date;
-                            _dateController.text =
-                                "${date.day}/${date.month}/${date.year}";
-                          });
-                          // Update the persistent controller so the field reflects the new date
-                          _dateController.text =
-                              '${date.day}/${date.month}/${date.year}';
-                          Navigator.pop(context);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: context.textPrimary,
-                          foregroundColor: context.appBackground,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          "Done",
-                          style: GoogleFonts.inter(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+  /// Same update the old calendar did: keep the date and its text in sync.
+  void _applyPickedDate(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+      _dateController.text = "${date.day}/${date.month}/${date.year}";
+    });
+  }
+
+  // Kept for any caller that still opens the calendar directly.
+  // ignore: unused_element
+  Future<void> _showShadCalendar() async {
+    final date = await showRxDatePicker(
+      context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(_selectedDate.year - 1, 1),
+      lastDate: DateTime(_selectedDate.year + 1, 12, 31),
     );
+    if (date != null) _applyPickedDate(date);
   }
 
   Widget _buildTextArea(String label, TextEditingController controller) {
@@ -1095,12 +969,19 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
             controller: controller,
             onTapOutside: (event) => FocusScope.of(context).unfocus(),
             textInputAction: TextInputAction.done,
-            style: GoogleFonts.inter(color: context.textPrimary, fontSize: 15),
+            style: TextStyle(
+              fontFamily: 'Geist',
+              color: context.textPrimary,
+              fontSize: 15,
+            ),
             maxLines: 4,
             minLines: 3,
             decoration: InputDecoration(
               hintText: "Enter details...",
-              hintStyle: GoogleFonts.inter(color: context.textSecondary.withValues(alpha: 0.5)),
+              hintStyle: TextStyle(
+                fontFamily: 'Geist',
+                color: context.textSecondary.withValues(alpha: 0.5),
+              ),
               border: InputBorder.none,
             ),
           ),
@@ -1130,15 +1011,16 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: _expenseType == "team"
-                      ? const Color(0xFF30D158).withValues(alpha: 0.2)
+                      ? context.rx.positive.withValues(alpha: 0.2)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   "Team Expense",
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'Geist',
                     color: _expenseType == "team"
-                        ? const Color(0xFF30D158)
+                        ? context.rx.positive
                         : context.textSecondary,
                     fontSize: 14,
                     fontWeight: _expenseType == "team"
@@ -1161,15 +1043,16 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: _expenseType == "member"
-                      ? const Color(0xFF0A84FF).withValues(alpha: 0.2)
+                      ? context.rx.textPrimary.withValues(alpha: 0.2)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   "Member Expense",
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'Geist',
                     color: _expenseType == "member"
-                        ? const Color(0xFF0A84FF)
+                        ? context.rx.textPrimary
                         : context.textSecondary,
                     fontSize: 14,
                     fontWeight: _expenseType == "member"
@@ -1185,7 +1068,6 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       ),
     );
   }
-
 
   // 🔥 CLEANED UP UI: Shows ONLY avatar and name (Matches Add Expenses)
   Widget _buildTeamSelector() {
@@ -1203,7 +1085,11 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         child: Center(
           child: Text(
             isTeamExpense ? "No teams available" : "No team members available",
-            style: GoogleFonts.inter(color: context.textSecondary, fontSize: 14),
+            style: TextStyle(
+              fontFamily: 'Geist',
+              color: context.textSecondary,
+              fontSize: 14,
+            ),
           ),
         ),
       );
@@ -1234,9 +1120,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                       height: 52,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: context.borderColor,
-                        ),
+                        border: Border.all(color: context.borderColor),
                         color:
                             (isTeamExpense
                                 ? _selectedTeam == null
@@ -1260,7 +1144,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     const SizedBox(height: 8),
                     Text(
                       "None",
-                      style: GoogleFonts.inter(
+                      style: TextStyle(
+                        fontFamily: 'Geist',
                         color:
                             (isTeamExpense
                                 ? _selectedTeam == null
@@ -1355,9 +1240,12 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     width: 16,
                     height: 16,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF30D158),
+                      color: context.rx.positive,
                       shape: BoxShape.circle,
-                      border: Border.all(color: context.appBackground, width: 2),
+                      border: Border.all(
+                        color: context.appBackground,
+                        width: 2,
+                      ),
                     ),
                     child: const Icon(
                       Icons.check,
@@ -1374,7 +1262,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           width: 70,
           child: Text(
             team.teamName,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'Geist',
               color: isSelected ? context.textPrimary : context.textSecondary,
               fontSize: 12,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
@@ -1390,29 +1279,46 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   Color _getTeamColor(String? colorName) {
     switch (colorName?.toLowerCase()) {
-      case 'blue': return const Color(0xFF0A84FF);
-      case 'orange': return const Color(0xFFFF9F0A);
-      case 'purple': return const Color(0xFFA259FF);
-      case 'green': return const Color(0xFF30D158);
-      case 'red': return const Color(0xFFFF453A);
-      default: return const Color(0xFF0A84FF);
+      case 'blue':
+        return context.rx.textPrimary;
+      case 'orange':
+        return const Color(0xFFFF9F0A);
+      case 'purple':
+        return const Color(0xFFA259FF);
+      case 'green':
+        return context.rx.positive;
+      case 'red':
+        return context.rx.negative;
+      default:
+        return context.rx.textPrimary;
     }
   }
 
   IconData _getTeamIcon(Team team) {
     if (team.iconCodePoint != null && team.iconFontFamily != null) {
       switch (int.tryParse(team.iconCodePoint!)) {
-        case 0xe3af: return Icons.work;
-        case 0xe0af: return Icons.business;
-        case 0xe7fd: return Icons.group;
-        case 0xe226: return Icons.code;
-        case 0xe86c: return Icons.design_services;
-        case 0xe85d: return Icons.computer;
-        case 0xe53b: return Icons.build;
-        case 0xe251: return Icons.lightbulb;
-        case 0xe7f1: return Icons.trending_up;
-        case 0xe8b6: return Icons.people;
-        default: return Icons.group;
+        case 0xe3af:
+          return Icons.work;
+        case 0xe0af:
+          return Icons.business;
+        case 0xe7fd:
+          return Icons.group;
+        case 0xe226:
+          return Icons.code;
+        case 0xe86c:
+          return Icons.design_services;
+        case 0xe85d:
+          return Icons.computer;
+        case 0xe53b:
+          return Icons.build;
+        case 0xe251:
+          return Icons.lightbulb;
+        case 0xe7f1:
+          return Icons.trending_up;
+        case 0xe8b6:
+          return Icons.people;
+        default:
+          return Icons.group;
       }
     }
     return Icons.group;
@@ -1452,9 +1358,12 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                       width: 18,
                       height: 18,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF30D158),
+                        color: context.rx.positive,
                         shape: BoxShape.circle,
-                        border: Border.all(color: context.appBackground, width: 2),
+                        border: Border.all(
+                          color: context.appBackground,
+                          width: 2,
+                        ),
                       ),
                       child: const Icon(
                         Icons.check,
@@ -1469,7 +1378,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           const SizedBox(height: 8),
           Text(
             member.fullName,
-            style: GoogleFonts.inter(
+            style: TextStyle(
+              fontFamily: 'Geist',
               color: isSelected ? context.textPrimary : context.textSecondary,
               fontSize: 12,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
@@ -1501,9 +1411,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                 decoration: BoxDecoration(
                   color: context.cardBackground,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: context.borderColor,
-                  ),
+                  border: Border.all(color: context.borderColor),
                 ),
                 child: Center(
                   child: SizedBox(
@@ -1548,7 +1456,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
   // --- ATTACHMENT ZONE (Matches Add Expense exactly) ---
   Widget _buildAttachmentZone() {
-    if (_attachmentFileId != null && _attachmentFileId!.isNotEmpty && _fileName == null) {
+    if (_attachmentFileId != null &&
+        _attachmentFileId!.isNotEmpty &&
+        _fileName == null) {
       // Existing attachment from firebase without a new file picked yet
       return Container(
         width: double.infinity,
@@ -1556,9 +1466,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         decoration: BoxDecoration(
           color: context.cardBackground,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF30D158).withValues(alpha: 0.3),
-          ),
+          border: Border.all(color: context.rx.positive.withValues(alpha: 0.3)),
         ),
 
         child: Row(
@@ -1566,14 +1474,10 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFF30D158).withValues(alpha: 0.1),
+                color: context.rx.positive.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(
-                Icons.receipt,
-                color: Color(0xFF30D158),
-                size: 20,
-              ),
+              child: Icon(Icons.receipt, color: context.rx.positive, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1582,15 +1486,17 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                 children: [
                   Text(
                     "Receipt attached",
-                    style: GoogleFonts.inter(
-                      color: const Color(0xFF30D158),
+                    style: TextStyle(
+                      fontFamily: 'Geist',
+                      color: context.rx.positive,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   Text(
                     "Stored in Telegram",
-                    style: GoogleFonts.inter(
+                    style: TextStyle(
+                      fontFamily: 'Geist',
                       color: context.textSecondary,
                       fontSize: 11,
                     ),
@@ -1614,7 +1520,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                         final expenseRef = FirebaseFirestore.instance
                             .collection('expenses')
                             .doc(widget.expenseId);
-                            
+
                         batch.update(expenseRef, {
                           "AttachmentFileId": FieldValue.delete(),
                         });
@@ -1655,7 +1561,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: _isUploading
-                ? const Color(0xFF0A84FF).withValues(alpha: 0.3)
+                ? context.rx.textPrimary.withValues(alpha: 0.3)
                 : context.borderColor,
           ),
         ),
@@ -1666,7 +1572,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
-                  color: const Color(0xFF0A84FF),
+                  color: context.rx.textPrimary,
                   strokeWidth: 2,
                 ),
               )
@@ -1685,7 +1591,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                     : _fileName ?? "Upload attachment (any file)",
                 style: TextStyle(
                   color: _isUploading
-                      ? const Color(0xFF0A84FF)
+                      ? context.rx.textPrimary
                       : context.textSecondary,
                   fontSize: _isUploading ? 12 : 14,
                 ),
@@ -1713,9 +1619,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: context.appBackground,
-        border: Border(
-          top: BorderSide(color: context.borderColor),
-        ),
+        border: Border(top: BorderSide(color: context.borderColor)),
       ),
       child: SizedBox(
         width: double.infinity,
@@ -1725,7 +1629,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: context.textPrimary,
             foregroundColor: context.appBackground,
-            disabledBackgroundColor: context.textSecondary.withValues(alpha: 0.3),
+            disabledBackgroundColor: context.textSecondary.withValues(
+              alpha: 0.3,
+            ),
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -1742,7 +1648,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                 )
               : Text(
                   "Update Expense",
-                  style: GoogleFonts.inter(
+                  style: TextStyle(
+                    fontFamily: 'Geist',
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
                   ),
@@ -1773,16 +1680,17 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
         children: [
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.repeat_on_outlined,
-                color: Color(0xFF0A84FF),
+                color: context.rx.textPrimary,
                 size: 20,
               ),
               const SizedBox(width: 10),
               Text(
                 "RECURRENCE DETAILS",
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF0A84FF),
+                style: TextStyle(
+                  fontFamily: 'Geist',
+                  color: context.rx.textPrimary,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   letterSpacing: 1.2,
@@ -1801,31 +1709,19 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                   children: [
                     _buildSectionLabel("FREQUENCY"),
                     const SizedBox(height: 8),
-                    ShadSelect<String>(
-                      placeholder: Text(
-                        'Select Frequency',
-                        style: GoogleFonts.inter(color: context.textSecondary, fontSize: 14),
-                      ),
-                      initialValue: _recurrenceFrequency,
+                    RxSelectField<String>(
+                      label: null,
+                      sheetTitle: 'Frequency',
+                      placeholder: 'Select frequency',
+                      value: _recurrenceFrequency,
                       options: [
-                        ...frequencies.entries.map(
-                          (e) => ShadOption(value: e.key, child: Text(e.value)),
-                        ),
+                        for (final e in frequencies.entries)
+                          RxOption(e.key, e.value),
                       ],
-                      selectedOptionBuilder: (context, value) => Text(
-                        frequencies[value] ?? "Monthly",
-                        style: GoogleFonts.inter(
-                          color: context.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                       onChanged: (val) {
-                        if (val != null) {
-                          setState(() {
-                            _recurrenceFrequency = val;
-                          });
-                        }
+                        setState(() {
+                          _recurrenceFrequency = val;
+                        });
                       },
                     ),
                   ],
@@ -1842,8 +1738,10 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                       children: [
                         Switch(
                           value: _isOngoing,
-                          activeThumbColor: const Color(0xFF30D158),
-                          activeTrackColor: const Color(0xFF30D158).withValues(alpha: 0.2),
+                          activeThumbColor: context.rx.positive,
+                          activeTrackColor: context.rx.positive.withValues(
+                            alpha: 0.2,
+                          ),
                           inactiveThumbColor: context.textSecondary,
                           inactiveTrackColor: context.borderColor,
                           onChanged: (val) {
@@ -1855,7 +1753,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
                         const SizedBox(width: 8),
                         Text(
                           _isOngoing ? "Ongoing" : "Fixed Term",
-                          style: GoogleFonts.inter(
+                          style: TextStyle(
+                            fontFamily: 'Geist',
                             color: context.textSecondary,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -1872,7 +1771,9 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           // If not ongoing, show tenure field
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 250),
-            crossFadeState: !_isOngoing ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            crossFadeState: !_isOngoing
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
             firstChild: Padding(
               padding: const EdgeInsets.only(top: 20),
               child: _buildRecurringInputField(
@@ -1908,10 +1809,18 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
           child: TextField(
             controller: controller,
             keyboardType: TextInputType.number,
-            style: GoogleFonts.inter(color: context.textPrimary, fontSize: 15),
+            style: TextStyle(
+              fontFamily: 'Geist',
+              color: context.textPrimary,
+              fontSize: 15,
+            ),
             decoration: InputDecoration(
               hintText: placeholder,
-              hintStyle: GoogleFonts.inter(color: context.textSecondary.withValues(alpha: 0.5), fontSize: 14),
+              hintStyle: TextStyle(
+                fontFamily: 'Geist',
+                color: context.textSecondary.withValues(alpha: 0.5),
+                fontSize: 14,
+              ),
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(vertical: 14),
             ),

@@ -2,10 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../../../services/bank_account_service.dart';
 import '../../../services/team_member_service.dart';
-import '../../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
+import '../team_widgets.dart';
 
 class TransactionDetailsScreen extends StatefulWidget {
   final String transactionId;
@@ -60,18 +63,14 @@ class _TransactionDetailsScreenState extends State<TransactionDetailsScreen> {
           orElse: () => <String, dynamic>{},
         );
 
-        if (account.isNotEmpty) {
-          setState(() {
-            bankAccount = account;
-          });
+        if (account.isNotEmpty && mounted) {
+          setState(() => bankAccount = account);
         }
       }
     } catch (e) {
       debugPrint('❌ DEBUG: Error fetching bank account: $e');
     } finally {
-      setState(() {
-        isLoadingBankAccount = false;
-      });
+      if (mounted) setState(() => isLoadingBankAccount = false);
     }
   }
 
@@ -200,7 +199,13 @@ class _TransactionDetailsScreenState extends State<TransactionDetailsScreen> {
       if (bankAccountId == 'Cash-' || bankAccountId == 'Cash') {
         return 'Cash';
       }
-      return 'Bank Account ID: $bankAccountId (Not Found)';
+      // Stored as 'BankName-last4'.
+      final parts = bankAccountId.split('-');
+      if (parts.length >= 2 && parts[0].isNotEmpty) {
+        final last4 = BankAccountService.extractLast4(parts[1]);
+        return last4.isNotEmpty ? '${parts[0]} ****$last4' : parts[0];
+      }
+      return bankAccountId;
     }
 
     // Check if it's a cash payment
@@ -212,160 +217,170 @@ class _TransactionDetailsScreenState extends State<TransactionDetailsScreen> {
     return 'Not specified';
   }
 
-  // Generate consistent color from name for fallback avatar
-  Color _generateColorFromName(String name) {
-    final int hash = name.hashCode;
-    final List<Color> colors = [
-      const Color(0xFF0A84FF),
-      const Color(0xFF30D158),
-      const Color(0xFFFF9F0A),
-      const Color(0xFFA259FF),
-      const Color(0xFFFF453A),
-      const Color(0xFF5AC8FA),
-      const Color(0xFFFFCC00),
-      const Color(0xFFAF52DE),
-    ];
-    return colors[hash.abs() % colors.length];
-  }
-
-  String _getInitials(String name) {
-    if (name.isEmpty) return '?';
-    final parts = name.trim().split(' ');
-    if (parts.length >= 2) {
-      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-    }
-    return name[0].toUpperCase();
-  }
+  // --- UI ---
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
+    final data = widget.transactionData;
+    final category =
+        (data['Category'] as String? ?? data['category'] as String? ?? 'salary')
+            .toString();
+    final categoryLabel = category.isEmpty
+        ? 'Salary'
+        : category[0].toUpperCase() + category.substring(1);
+    final description = (data['Title'] ?? '').toString();
+    final isAdvance = widget.displayTitle.contains('Advance');
+
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
           bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
-
+              const RxTopBar(title: ''),
               Expanded(
-                child: SingleChildScrollView(
+                child: ListView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 16),
-                      Container(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          "Transaction Details",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textPrimary,
-                            fontSize: 28, // Compact Hero
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -1.0,
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    8,
+                    20,
+                    MediaQuery.paddingOf(context).bottom + 32,
+                  ),
+                  children: [
+                    RxReveal.index(
+                      0,
+                      child: Column(
+                        children: [
+                          RxIconTile(
+                            icon: isAdvance
+                                ? HugeIcons.strokeRoundedFastWind
+                                : RxCategory.icon(category),
+                            size: 52,
+                            iconSize: 24,
+                            background: isAdvance
+                                ? rx.warningSoft
+                                : RxCategory.soft(context, category),
+                            foreground: isAdvance
+                                ? rx.warning
+                                : RxCategory.color(context, category),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      // Clean Big Amount
-                      Text(
-                        widget.formattedAmount,
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 48,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -1.5,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Status Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF30D158).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          "Completed",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: const Color(0xFF30D158),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                          const SizedBox(height: 16),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              widget.formattedAmount,
+                              style: RxText.hero(context, size: 44),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.displayTitle,
+                            textAlign: TextAlign.center,
+                            style: RxText.label(context),
+                          ),
+                          const SizedBox(height: 12),
+                          RxPill(
+                            label: 'Completed',
+                            dot: true,
+                            foreground: rx.positive,
+                            background: rx.positiveSoft,
+                          ),
+                        ],
                       ),
-
-                      const SizedBox(height: 48),
-
-                      // Details Card
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: context.cardBackground,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: context.borderColor),
-                          boxShadow: context.cardShadow,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    const SizedBox(height: 32),
+                    RxReveal.index(
+                      1,
+                      child: Column(
+                        children: [
+                          const RxSectionHeader(title: 'Details'),
+                          RxCard(
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            child: Column(
+                              children: [
+                                RxDetailRow(
+                                  label: 'Date',
+                                  value: widget.formattedDate,
+                                ),
+                                const RxDivider(),
+                                RxDetailRow(
+                                  label: 'Category',
+                                  value: categoryLabel,
+                                ),
+                                if (description.isNotEmpty) ...[
+                                  const RxDivider(),
+                                  RxDetailRow(
+                                    label: 'Description',
+                                    value: description,
+                                  ),
+                                ],
+                                const RxDivider(),
+                                RxDetailRow(
+                                  label: 'Paid with',
+                                  value: _getBankAccountDisplay(),
+                                ),
+                                if (_isLoadingLinkedMember ||
+                                    _linkedMemberName != null) ...[
+                                  const RxDivider(),
+                                  _buildLinkedMemberRow(),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    RxReveal.index(
+                      2,
+                      child: RxCard(
+                        onTap: () {
+                          Clipboard.setData(
+                            ClipboardData(text: widget.transactionId),
+                          );
+                          showRxToast(context, 'Transaction ID copied');
+                        },
+                        semanticLabel: 'Copy transaction ID',
+                        padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+                        child: Row(
                           children: [
-                            _buildDetailRow(
-                              "Transaction Type",
-                              widget.displayTitle,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Transaction ID',
+                                    style: RxText.label(context),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    widget.transactionId,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: RxText.caption(
+                                      context,
+                                      color: rx.textPrimary,
+                                    ).copyWith(fontFamily: 'monospace'),
+                                  ),
+                                ],
+                              ),
                             ),
-                            _buildDivider(),
-                            _buildDetailRow(
-                              "Date & Time",
-                              widget.formattedDate,
-                            ),
-                            _buildDivider(),
-                            // T-11: Read Category from the transaction doc
-                            // instead of hardcoding "Salary" for all payments.
-                            _buildDetailRow(
-                              "Category",
-                              widget.transactionData['Category'] as String? ??
-                                  widget.transactionData['category']
-                                      as String? ??
-                                  'Salary',
-                            ),
-                            _buildDivider(),
-                            _buildDetailRow(
-                              "Description",
-                              widget.transactionData['Title'] ?? 'N/A',
-                            ),
-                            _buildDivider(),
-                            _buildDetailRow(
-                              "Payment Method",
-                              _getBankAccountDisplay(),
-                            ),
-                            _buildDivider(),
-                            _buildLinkedMemberRow(),
-                            _buildDivider(),
-                            _buildDetailRow(
-                              "Transaction ID",
-                              widget.transactionId,
-                              isId: true,
+                            const SizedBox(width: 8),
+                            HugeIcon(
+                              icon: HugeIcons.strokeRoundedCopy01,
+                              color: rx.textSecondary,
+                              size: 18,
+                              strokeWidth: 1.8,
                             ),
                           ],
                         ),
                       ),
-
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -375,238 +390,40 @@ class _TransactionDetailsScreenState extends State<TransactionDetailsScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(
-            width: 44,
-          ), // To balance the back button and center the title
-        ],
-      ),
-    );
-  }
-
   Widget _buildLinkedMemberRow() {
-    if (_isLoadingLinkedMember) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              "Linked Member",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: context.textSecondary,
+    final rx = context.rx;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Text(
+            _isFundingTransaction ? 'Added by' : 'Paid to',
+            style: RxText.label(context),
+          ),
+          const Spacer(),
+          if (_isLoadingLinkedMember)
+            const RxSkeleton(width: 110, height: 16)
+          else ...[
+            _linkedMemberImageUrl != null
+                ? MemberAvatar(
+                    name: _linkedMemberName ?? '',
+                    size: 26,
+                    avatarUrl: _linkedMemberImageUrl,
+                  )
+                : MemberAvatar(name: _linkedMemberName ?? '', size: 26),
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 170),
+              child: Text(
+                _linkedMemberName ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: RxText.body(context, color: rx.textPrimary),
               ),
             ),
           ],
-        ),
-      );
-    }
-
-    final hasLinkedMember = _linkedMemberName != null;
-    final displayName = _isFundingTransaction
-        ? 'Owner'
-        : (_linkedMemberName ?? 'None');
-    final subtitle = _isFundingTransaction ? _linkedMemberName : null;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            "Linked Member",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 16),
-          if (hasLinkedMember)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Profile image or initials avatar
-                _buildMemberAvatar(
-                  _isFundingTransaction
-                      ? (_linkedMemberName ?? 'O')
-                      : _linkedMemberName!,
-                  _linkedMemberImageUrl,
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      displayName,
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: context.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (subtitle != null)
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            )
-          else
-            Text(
-              "None",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
         ],
       ),
-    );
-  }
-
-  Widget _buildMemberAvatar(String name, String? imageUrl) {
-    const double size = 32;
-
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: context.borderColor, width: 1.5),
-          image: DecorationImage(
-            image: NetworkImage(imageUrl),
-            fit: BoxFit.cover,
-          ),
-        ),
-      );
-    }
-
-    // Fallback: initials avatar
-    final color = _generateColorFromName(name);
-    final initials = _getInitials(name);
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color.withValues(alpha: 0.2),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
-      ),
-      child: Center(
-        child: Text(
-          initials,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value, {bool isId = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: isId
-                  ? GoogleFonts.robotoMono(
-                      color: context.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                    )
-                  : TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Divider(color: context.borderColor, height: 1),
     );
   }
 }

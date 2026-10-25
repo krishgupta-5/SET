@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../shared/widgets/custom_back_button.dart';
+import 'package:hugeicons/hugeicons.dart';
+import '../../../widgets/rx_ui.dart';
 
 class AddBankAccountScreen extends StatefulWidget {
   const AddBankAccountScreen({super.key});
@@ -33,9 +34,7 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
     required Color borderColor,
     required Color textPrimary,
   }) {
-    final statusColor = isError
-        ? const Color(0xFFFF375F)
-        : const Color(0xFF10B981);
+    final statusColor = isError ? context.rx.negative : context.rx.positive;
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -53,25 +52,20 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: RxText.body(context, color: textPrimary),
               ),
             ),
           ],
         ),
         backgroundColor: cardColor,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(24),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           side: BorderSide(color: borderColor),
         ),
         duration: const Duration(seconds: 3),
-        elevation: 16,
+        elevation: 0,
       ),
     );
   }
@@ -142,198 +136,100 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rx = context.rx;
 
-    final bgColor = isDark ? const Color(0xFF09090B) : const Color(0xFFF9FAFB);
-    final cardColor = isDark
-        ? const Color(0xFF141416)
-        : const Color(0xFFFFFFFF);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
-    final shadowColor = isDark
-        ? Colors.transparent
-        : Colors.black.withValues(alpha: 0.04);
-
-    final textPrimary = isDark ? Colors.white : const Color(0xFF09090B);
-    final textSecondary = isDark ? Colors.white54 : const Color(0xFF71717A);
-    final textTertiary = isDark ? Colors.white38 : const Color(0xFFA1A1AA);
-    final accentGreen = const Color(0xFF10B981);
-
-    return Scaffold(
-      backgroundColor: bgColor,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        child: SafeArea(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: Scaffold(
+        backgroundColor: rx.background,
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
           child: Column(
             children: [
-              _buildHeader(
-                context,
-                textPrimary,
-                textSecondary,
-                cardColor,
-                borderColor,
-              ),
-
+              const RxTopBar(title: 'Add bank account'),
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
-                  ),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(28),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(32),
-                      border: Border.all(color: borderColor),
-                      boxShadow: shadowColor == Colors.transparent
-                          ? []
-                          : [
-                              BoxShadow(
-                                color: shadowColor,
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Link an account',
+                          style: RxText.title(context).copyWith(fontSize: 24),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Tag expenses to the account they were paid from.',
+                          style: RxText.label(context),
+                        ),
+                        const SizedBox(height: 24),
+                        _buildTextInput(
+                          controller: _bankNameController,
+                          label: 'Bank name',
+                          hint: 'e.g. HDFC Bank, Chase',
+                          icon: HugeIcons.strokeRoundedBank,
+                          textInputAction: TextInputAction.next,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Bank name is required';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        _buildTextInput(
+                          controller: _accountNumberController,
+                          label: 'Account number',
+                          hint: '8 to 18 digits',
+                          icon: HugeIcons.strokeRoundedCreditCard,
+                          keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Account number is required';
+                            }
+                            if (value.trim().length < 8) {
+                              return 'Must be at least 8 digits';
+                            }
+                            if (value.trim().length > 18) {
+                              return 'Must be at most 18 digits';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            HugeIcon(
+                              icon: HugeIcons.strokeRoundedSecurityLock,
+                              color: rx.textTertiary,
+                              size: 14,
+                              strokeWidth: 1.8,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Only the last 4 digits are shown in the app.',
+                                style: RxText.caption(
+                                  context,
+                                  color: rx.textTertiary,
+                                ),
                               ),
-                            ],
-                    ),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: accentGreen.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(100),
-                                  border: Border.all(
-                                    color: accentGreen.withValues(alpha: 0.2),
-                                  ),
-                                ),
-                                child: Text(
-                                  "NEW LINK",
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: accentGreen,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 32),
-
-                          _buildTextInput(
-                            controller: _bankNameController,
-                            label: "BANK NAME",
-                            hint: "e.g., HDFC Bank, Chase",
-                            icon: Icons.account_balance_rounded,
-                            textInputAction: TextInputAction.next,
-                            textPrimary: textPrimary,
-                            textSecondary: textSecondary,
-                            textTertiary: textTertiary,
-                            borderColor: borderColor,
-                            isDark: isDark,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Bank name is required';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 24),
-
-                          _buildTextInput(
-                            controller: _accountNumberController,
-                            label: "ACCOUNT NUMBER",
-                            hint: "Enter account number",
-                            icon: Icons.numbers_rounded,
-                            keyboardType: TextInputType.number,
-                            textInputAction: TextInputAction.done,
-                            textPrimary: textPrimary,
-                            textSecondary: textSecondary,
-                            textTertiary: textTertiary,
-                            borderColor: borderColor,
-                            isDark: isDark,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Account number is required';
-                              }
-                              if (value.trim().length < 8) {
-                                return 'Must be at least 8 digits';
-                              }
-                              if (value.trim().length > 18) {
-                                return 'Must be at most 18 digits';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                      ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-
-              _buildSubmitButton(textPrimary, bgColor, cardColor, borderColor),
+              _buildSubmitButton(),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(
-    BuildContext context,
-    Color textPrimary,
-    Color textSecondary,
-    Color cardColor,
-    Color borderColor,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          CustomBackButton(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                "Payment Methods",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                "Link Account",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
@@ -342,121 +238,101 @@ class _AddBankAccountScreenState extends State<AddBankAccountScreen> {
     required TextEditingController controller,
     required String label,
     required String hint,
-    required IconData icon,
-    required Color textPrimary,
-    required Color textSecondary,
-    required Color textTertiary,
-    required Color borderColor,
-    required bool isDark,
+    required List<List<dynamic>> icon,
     TextInputType keyboardType = TextInputType.text,
     TextInputAction textInputAction = TextInputAction.done,
     String? Function(String?)? validator,
   }) {
+    final rx = context.rx;
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(color: c, width: w),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label.toUpperCase(),
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: textSecondary,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5,
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(
+            label,
+            style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
           ),
         ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.03)
-                : Colors.black.withValues(alpha: 0.03),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor),
-          ),
-          child: TextFormField(
-            controller: controller,
-            keyboardType: keyboardType,
-            textInputAction: textInputAction,
-            onTapOutside: (event) => FocusScope.of(context).unfocus(),
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-            cursorColor: textPrimary,
-            decoration: InputDecoration(
-              icon: Icon(icon, color: textSecondary, size: 20),
-              hintText: hint,
-              hintStyle: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(vertical: 16),
-              errorStyle: const TextStyle(
-                fontFamily: 'Satoshi',
-                color: Color(0xFFFF375F),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1.0,
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
+          onTapOutside: (event) => FocusScope.of(context).unfocus(),
+          style: RxText.body(context),
+          cursorColor: rx.textPrimary,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: rx.surface,
+            prefixIcon: Padding(
+              padding: const EdgeInsets.only(left: 14, right: 10),
+              child: HugeIcon(
+                icon: icon,
+                color: rx.textSecondary,
+                size: 20,
+                strokeWidth: 1.7,
               ),
             ),
-            validator: validator,
+            prefixIconConstraints: const BoxConstraints(minWidth: 44),
+            hintText: hint,
+            hintStyle: RxText.body(
+              context,
+              color: rx.textTertiary,
+            ).copyWith(fontWeight: FontWeight.w400),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 16,
+            ),
+            // Inputs keep a visible border for 3:1 boundary contrast.
+            enabledBorder: border(rx.textPrimary.withValues(alpha: 0.12)),
+            focusedBorder: border(rx.textPrimary, 1.5),
+            errorBorder: border(rx.negative),
+            focusedErrorBorder: border(rx.negative, 1.5),
+            errorStyle: RxText.caption(context, color: rx.negative),
           ),
+          validator: validator,
         ),
       ],
     );
   }
 
-  Widget _buildSubmitButton(
-    Color textPrimary,
-    Color bgColor,
-    Color cardColor,
-    Color borderColor,
-  ) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      decoration: BoxDecoration(
-        color: bgColor,
-        border: Border(top: BorderSide(color: borderColor)),
-      ),
-      child: SizedBox(
-        width: double.infinity,
-        height: 56,
-        child: ElevatedButton(
-          onPressed: _isLoading
-              ? null
-              : () => _saveBankAccount(cardColor, borderColor, textPrimary),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: textPrimary,
-            foregroundColor: bgColor,
-            disabledBackgroundColor: textPrimary.withValues(alpha: 0.5),
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+  Widget _buildSubmitButton() {
+    final rx = context.rx;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      child: RxPressable(
+        onTap: _isLoading
+            ? null
+            : () => _saveBankAccount(rx.surface, rx.hairline, rx.textPrimary),
+        semanticLabel: 'Link bank account',
+        child: Container(
+          height: 54,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: _isLoading ? rx.inverse.withValues(alpha: 0.5) : rx.inverse,
+            borderRadius: BorderRadius.circular(16),
           ),
+          alignment: Alignment.center,
           child: _isLoading
               ? SizedBox(
-                  height: 24,
-                  width: 24,
+                  height: 20,
+                  width: 20,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: bgColor,
+                    strokeWidth: 2.2,
+                    color: rx.onInverse,
                   ),
                 )
-              : const Text(
-                  "Link Bank Account",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                  ),
+              : Text(
+                  'Link bank account',
+                  style: RxText.body(
+                    context,
+                    color: rx.onInverse,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
         ),
       ),

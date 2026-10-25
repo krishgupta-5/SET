@@ -1,256 +1,159 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../../theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class PrivacyAssurancesScreen extends StatelessWidget {
   const PrivacyAssurancesScreen({super.key});
 
+  // Copy unchanged from the previous version of this screen.
+  static const _items = [
+    (
+      HugeIcons.strokeRoundedLockPassword,
+      'Zero-knowledge encryption',
+      'Your data is encrypted on your device before it reaches our servers. Only you hold the keys.',
+    ),
+    (
+      HugeIcons.strokeRoundedViewOffSlash,
+      'No ad tracking',
+      'We do not sell, rent, or share your personal data with advertisers or third parties.',
+    ),
+    (
+      HugeIcons.strokeRoundedDatabase,
+      'Data residency',
+      'All your financial records are stored in enterprise-grade data centers within your region (India).',
+    ),
+    (
+      HugeIcons.strokeRoundedDelete02,
+      'Right to erasure',
+      'Delete your account and every single byte of your data is permanently wiped from our backups instantly.',
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context, "Privacy Assurances"),
+              const RxTopBar(title: 'Privacy'),
               Expanded(
-                child: SingleChildScrollView(
+                child: ListView(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    12,
+                    20,
+                    MediaQuery.paddingOf(context).bottom + 32,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 16),
-                      Text(
-                        "Privacy Assurances",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -1.0,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Your data belongs to you.",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "We believe financial privacy is a fundamental right. Here is exactly how we handle your information.",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 14,
-                          height: 1.5,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                      const SizedBox(height: 48),
-
-                      _buildSectionLabel(context, "SECURITY STANDARDS"),
-                      const SizedBox(height: 8),
-                      _buildAssuranceCard(
-                        context,
-                        Icons.lock_outline,
-                        "Zero-Knowledge Encryption",
-                        "Your data is encrypted on your device before it reaches our servers. Only you hold the keys.",
-                      ),
-                      const SizedBox(height: 16),
-                      _buildAssuranceCard(
-                        context,
-                        Icons.visibility_off_outlined,
-                        "No Ad Tracking",
-                        "We do not sell, rent, or share your personal data with advertisers or third parties.",
-                      ),
-                      const SizedBox(height: 16),
-                      _buildAssuranceCard(
-                        context,
-                        Icons.storage,
-                        "Data Residency",
-                        "All your financial records are stored in enterprise-grade data centers within your region (India).",
-                      ),
-                      const SizedBox(height: 16),
-                      _buildAssuranceCard(
-                        context,
-                        Icons.delete_outline,
-                        "Right to Erasure",
-                        "Delete your account and every single byte of your data is permanently wiped from our backups instantly.",
-                      ),
-                      const SizedBox(height: 48),
-
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
+                  children: [
+                    RxReveal.index(
+                      0,
+                      child: Column(
+                        children: [
+                          const RxEmptyArt(
+                            icon: HugeIcons.strokeRoundedShield01,
+                            scene: RxArtScene.shield,
                           ),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: const Color(
-                                0xFF30D158,
-                              ).withValues(alpha: 0.3),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Your data belongs to you',
+                            textAlign: TextAlign.center,
+                            style: RxText.title(context).copyWith(fontSize: 24),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Financial privacy is a basic right. Here is how we handle your information.',
+                            textAlign: TextAlign.center,
+                            style: RxText.caption(
+                              context,
+                            ).copyWith(fontSize: 14, height: 1.45),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    RxReveal.index(
+                      1,
+                      child: Column(
+                        children: [
+                          const RxSectionHeader(title: 'How we protect it'),
+                          RxCard(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
                             ),
-                            borderRadius: BorderRadius.circular(20),
-                            color: const Color(
-                              0xFF30D158,
-                            ).withValues(alpha: 0.05),
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < _items.length; i++) ...[
+                                  if (i > 0) const RxDivider(indent: 52),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        RxIconTile(
+                                          icon: _items[i].$1,
+                                          size: 38,
+                                          iconSize: 19,
+                                        ),
+                                        const SizedBox(width: 14),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _items[i].$2,
+                                                style: RxText.body(context),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                _items[i].$3,
+                                                style: RxText.caption(
+                                                  context,
+                                                ).copyWith(height: 1.45),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.check_circle,
-                                color: Color(0xFF30D158),
-                                size: 16,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                "SOC2 Compliant & ISO 27001 Certified",
-                                style: TextStyle(
-                                  fontFamily: 'Satoshi',
-                                  color: const Color(0xFF30D158),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    RxReveal.index(
+                      2,
+                      child: Center(
+                        child: RxPill(
+                          label: 'SOC2 compliant · ISO 27001 certified',
+                          dot: true,
+                          foreground: rx.positive,
+                          background: rx.positiveSoft,
                         ),
                       ),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 44),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionLabel(BuildContext context, String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textTertiary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-
-  Widget _buildAssuranceCard(
-    BuildContext context,
-    IconData icon,
-    String title,
-    String desc,
-  ) {
-    final iconBg = context.isDarkMode
-        ? Colors.white.withValues(alpha: 0.05)
-        : Colors.black.withValues(alpha: 0.05);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: context.iconSecondary, size: 20),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  desc,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 13,
-                    height: 1.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

@@ -1,11 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 
 import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
-import '../../../theme/app_theme.dart';
+import '../../../widgets/rx_form.dart';
+import '../../../widgets/rx_motion.dart';
+import '../../../widgets/rx_ui.dart';
 
 class ManageRecurringPaymentsScreen extends StatefulWidget {
   const ManageRecurringPaymentsScreen({super.key});
@@ -93,423 +95,193 @@ class _ManageRecurringPaymentsScreenState
         {'recurringTenureMonths': elapsedMonths},
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Recurring payment stopped successfully.",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: const Color(0xFF30D158),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
+      if (mounted) showRxToast(context, 'Recurring payment stopped');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Failed to stop payment: $e",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: const Color(0xFFFF453A),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
+        showRxToast(context, 'Failed to stop payment', isError: true);
       }
     }
   }
 
-  void _showStopConfirmation(String docId, Map<String, dynamic> data) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: context.cardBackground,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: context.borderColor),
-          ),
-          title: Text(
-            "Stop Recurring Payment?",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          content: Text(
-            "This will prevent any future occurrences from being generated, but past transactions will remain in your history. Do you want to proceed?",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 14,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                "Cancel",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textSecondary,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                _stopRecurringPayment(docId, data);
-              },
-              child: Text(
-                "Stop Payment",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: const Color(0xFFFF453A),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
+  Future<void> _confirmStop(String docId, Map<String, dynamic> data) async {
+    final title = data['Title']?.toString() ?? 'this payment';
+    final ok = await showRxConfirm(
+      context,
+      title: 'Stop $title?',
+      message:
+          'No future payments will be created. Past ones stay in your history.',
+      confirmLabel: 'Stop payment',
+      destructive: true,
     );
+    if (ok) await _stopRecurringPayment(docId, data);
   }
+
+  String _frequencyLabel(String f) => switch (f.toLowerCase()) {
+    'daily' => 'Daily',
+    'weekly' => 'Weekly',
+    'yearly' => 'Yearly',
+    _ => 'Monthly',
+  };
 
   @override
   Widget build(BuildContext context) {
+    final rx = context.rx;
     return Scaffold(
-      backgroundColor: context.appBackground,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+      backgroundColor: rx.background,
+      body: AnnotatedRegion(
+        value: context.rxOverlayStyle,
         child: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              _buildHeader(context),
+              const RxTopBar(title: 'Recurring payments'),
               Expanded(
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 16),
-                      Text(
-                        "Recurring Payments",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textPrimary,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -1.0,
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('expenses')
+                      .where('uid', isEqualTo: currentUser?.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+                        children: const [
+                          RxSkeleton(height: 92, radius: 22),
+                          SizedBox(height: 24),
+                          RxSkeleton(height: 220, radius: 22),
+                        ],
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: RxEmptyState(
+                          icon: HugeIcons.strokeRoundedAlert02,
+                          title: "Couldn't load recurring payments",
+                          message: 'Go back and try again',
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "View and manage your active subscriptions",
-                        style: TextStyle(
-                          fontFamily: 'Satoshi',
-                          color: context.textSecondary,
-                          fontSize: 14,
+                      );
+                    }
+
+                    final docs = (snapshot.data?.docs ?? []).where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final type = (data['Type'] ?? data['type'] ?? '')
+                          .toString()
+                          .toLowerCase();
+                      return type == 'recurring' || type == 'subscription';
+                    }).toList();
+
+                    if (docs.isEmpty) {
+                      return const Center(
+                        child: RxEmptyState(
+                          icon: HugeIcons.strokeRoundedRepeat,
+                          title: 'No recurring payments',
+                          message:
+                              'Subscriptions and salaries you set to repeat show up here',
                         ),
+                      );
+                    }
+
+                    int byDate(
+                      QueryDocumentSnapshot a,
+                      QueryDocumentSnapshot b,
+                    ) {
+                      final da =
+                          (a.data() as Map)['Date'] ??
+                          (a.data() as Map)['date'];
+                      final db =
+                          (b.data() as Map)['Date'] ??
+                          (b.data() as Map)['date'];
+                      if (da is! Timestamp || db is! Timestamp) return 0;
+                      return db.compareTo(da);
+                    }
+
+                    final active =
+                        docs
+                            .where(
+                              (d) =>
+                                  _isActive(d.data() as Map<String, dynamic>),
+                            )
+                            .toList()
+                          ..sort(byDate);
+                    final stopped =
+                        docs
+                            .where(
+                              (d) =>
+                                  !_isActive(d.data() as Map<String, dynamic>),
+                            )
+                            .toList()
+                          ..sort(byDate);
+
+                    // Monthly-equivalent total of what's still running.
+                    double monthly = 0;
+                    for (final d in active) {
+                      final data = d.data() as Map<String, dynamic>;
+                      final amt =
+                          double.tryParse(data['Amount']?.toString() ?? '0') ??
+                          0;
+                      monthly += switch ((data['recurrenceFrequency'] ??
+                              'monthly')
+                          .toString()
+                          .toLowerCase()) {
+                        'daily' => amt * 30,
+                        'weekly' => amt * 52 / 12,
+                        'yearly' => amt / 12,
+                        _ => amt,
+                      };
+                    }
+
+                    return ListView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        20,
+                        12,
+                        20,
+                        MediaQuery.paddingOf(context).bottom + 32,
                       ),
-                      const SizedBox(height: 40),
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('expenses')
-                            .where('uid', isEqualTo: currentUser?.uid)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32.0),
-                                child: CircularProgressIndicator(
-                                  color: context.textSecondary,
-                                ),
+                      children: [
+                        RxReveal.index(
+                          0,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Running each month',
+                                style: RxText.label(context),
                               ),
-                            );
-                          }
-
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32.0),
+                              const SizedBox(height: 8),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
                                 child: Text(
-                                  "Error loading recurring payments.",
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: const Color(0xFFFF453A),
-                                  ),
+                                  _formatCurrency(monthly),
+                                  style: RxText.hero(context, size: 44),
                                 ),
                               ),
-                            );
-                          }
-
-                          final allDocs = snapshot.data?.docs ?? [];
-                          final recurringDocs = allDocs.where((doc) {
-                            final data = doc.data() as Map<String, dynamic>;
-                            final type = (data['Type'] ?? data['type'] ?? '')
-                                .toString()
-                                .toLowerCase();
-                            return type == 'recurring' ||
-                                type == 'subscription';
-                          }).toList();
-
-                          // Sort: Active first, then stopped
-                          recurringDocs.sort((a, b) {
-                            final dataA = a.data() as Map<String, dynamic>;
-                            final dataB = b.data() as Map<String, dynamic>;
-                            final isActiveA = _isActive(dataA);
-                            final isActiveB = _isActive(dataB);
-
-                            if (isActiveA && !isActiveB) return -1;
-                            if (!isActiveA && isActiveB) return 1;
-
-                            // If same status, sort by date descending
-                            final dateA = dataA['Date'] ?? dataA['date'];
-                            final dateB = dataB['Date'] ?? dataB['date'];
-                            final Timestamp? tsA = dateA is Timestamp
-                                ? dateA
-                                : null;
-                            final Timestamp? tsB = dateB is Timestamp
-                                ? dateB
-                                : null;
-                            if (tsA == null || tsB == null) return 0;
-                            return tsB.compareTo(tsA);
-                          });
-
-                          if (recurringDocs.isEmpty) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 40,
-                                ),
-                                child: Text(
-                                  "You don't have any recurring payments or subscriptions set up yet.",
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontFamily: 'Satoshi',
-                                    color: context.textSecondary,
-                                    height: 1.5,
-                                    fontSize: 14,
-                                  ),
-                                ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${active.length} active · ${stopped.length} stopped',
+                                style: RxText.caption(context),
                               ),
-                            );
-                          }
-
-                          return ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: recurringDocs.length,
-                            itemBuilder: (context, index) {
-                              final doc = recurringDocs[index];
-                              final data = doc.data() as Map<String, dynamic>;
-
-                              final title =
-                                  data['Title']?.toString() ?? 'Unknown';
-                              final amount =
-                                  double.tryParse(
-                                    data['Amount']?.toString() ?? '0',
-                                  ) ??
-                                  0.0;
-                              final frequency =
-                                  (data['recurrenceFrequency'] ?? 'monthly')
-                                      .toString();
-                              final isActive = _isActive(data);
-
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 16),
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: context.cardBackground,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: context.borderColor,
-                                  ),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(10),
-                                              decoration: BoxDecoration(
-                                                color: context.isDarkMode
-                                                    ? Colors.white.withValues(
-                                                        alpha: 0.05,
-                                                      )
-                                                    : Colors.black.withValues(
-                                                        alpha: 0.05,
-                                                      ),
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
-                                              child: Icon(
-                                                Icons.autorenew,
-                                                color: context.iconSecondary,
-                                                size: 20,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 16),
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  title,
-                                                  style: TextStyle(
-                                                    fontFamily: 'Satoshi',
-                                                    color: context.textPrimary,
-                                                    fontSize: 15,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  frequency.toUpperCase(),
-                                                  style: TextStyle(
-                                                    fontFamily: 'Satoshi',
-                                                    color: context.textTertiary,
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w600,
-                                                    letterSpacing: 0.5,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              _formatCurrency(amount),
-                                              style: TextStyle(
-                                                fontFamily: 'Satoshi',
-                                                color: context.textPrimary,
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: isActive
-                                                    ? const Color(
-                                                        0xFF30D158,
-                                                      ).withValues(alpha: 0.1)
-                                                    : context.isDarkMode
-                                                    ? Colors.white.withValues(
-                                                        alpha: 0.1,
-                                                      )
-                                                    : Colors.black.withValues(
-                                                        alpha: 0.1,
-                                                      ),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                isActive ? "ACTIVE" : "STOPPED",
-                                                style: TextStyle(
-                                                  fontFamily: 'Satoshi',
-                                                  color: isActive
-                                                      ? const Color(0xFF30D158)
-                                                      : context.textSecondary,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    if (isActive) ...[
-                                      const SizedBox(height: 16),
-                                      Divider(
-                                        color: context.borderColor,
-                                        height: 1,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      GestureDetector(
-                                        onTap: () =>
-                                            _showStopConfirmation(doc.id, data),
-                                        child: Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(
-                                              0xFFFF453A,
-                                            ).withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(
-                                              12,
-                                            ),
-                                            border: Border.all(
-                                              color: const Color(
-                                                0xFFFF453A,
-                                              ).withValues(alpha: 0.3),
-                                            ),
-                                          ),
-                                          child: Center(
-                                            child: Text(
-                                              "STOP PAYMENT",
-                                              style: TextStyle(
-                                                fontFamily: 'Satoshi',
-                                                color: const Color(0xFFFF453A),
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 0.5,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 40),
-                    ],
-                  ),
+                            ],
+                          ),
+                        ),
+                        if (active.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          RxReveal.index(
+                            1,
+                            child: _section('Active', active, rx, true),
+                          ),
+                        ],
+                        if (stopped.isNotEmpty) ...[
+                          const SizedBox(height: 28),
+                          RxReveal.index(
+                            2,
+                            child: _section('Stopped', stopped, rx, false),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -519,38 +291,110 @@ class _ManageRecurringPaymentsScreenState
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _section(
+    String title,
+    List<QueryDocumentSnapshot> docs,
+    RxColors rx,
+    bool active,
+  ) {
+    return Column(
+      children: [
+        RxSectionHeader(title: title),
+        RxCard(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          child: Column(
+            children: [
+              for (var i = 0; i < docs.length; i++) ...[
+                if (i > 0) const RxDivider(indent: 52),
+                _row(docs[i], rx, active),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(QueryDocumentSnapshot doc, RxColors rx, bool active) {
+    final data = doc.data() as Map<String, dynamic>;
+    final title = data['Title']?.toString() ?? 'Unknown';
+    final amount = double.tryParse(data['Amount']?.toString() ?? '0') ?? 0.0;
+    final category = (data['Category'] ?? 'others').toString();
+    final freq = _frequencyLabel(
+      (data['recurrenceFrequency'] ?? 'monthly').toString(),
+    );
+    final tenure = data['recurringTenureMonths'] as int?;
+    final subtitle = [
+      freq,
+      if (tenure != null) '$tenure ${tenure == 1 ? 'month' : 'months'}',
+      if (tenure == null) 'Ongoing',
+    ].join(' · ');
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+          Opacity(
+            opacity: active ? 1 : 0.5,
+            child: RxIconTile(
+              icon: RxCategory.icon(category),
+              size: 40,
+              iconSize: 19,
+              background: RxCategory.soft(context, category),
+              foreground: RxCategory.color(context, category),
             ),
           ),
-          const SizedBox(width: 44), // To balance the back button
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RxText.body(
+                    context,
+                    color: active ? rx.textPrimary : rx.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RxText.caption(context),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _formatCurrency(amount),
+            style: RxText.amount(
+              context,
+              color: active ? rx.textPrimary : rx.textTertiary,
+            ),
+          ),
+          if (active)
+            RxPressable(
+              onTap: () => _confirmStop(doc.id, data),
+              semanticLabel: 'Stop $title',
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(
+                  child: HugeIcon(
+                    icon: HugeIcons.strokeRoundedStopCircle,
+                    color: rx.negative,
+                    size: 20,
+                    strokeWidth: 1.8,
+                  ),
+                ),
+              ),
+            )
+          else
+            const SizedBox(width: 8),
         ],
       ),
     );

@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
-import 'package:fl_chart/fl_chart.dart';
 import 'dart:developer';
 import 'package:hugeicons/hugeicons.dart';
 
@@ -18,11 +17,19 @@ import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/team_member_service.dart';
 import '../../../services/telegram_service.dart';
+import '../../../widgets/custom_bottom_nav.dart' show RxTabBar;
+import '../../../widgets/rx_ui.dart';
+import '../../../widgets/rx_charts.dart';
+import '../../../widgets/rx_motion.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateToTab;
 
-  const HomeScreen({super.key, this.onNavigateToTab});
+  /// Changes each time the Home tab is opened (null while hidden), so the
+  /// charts replay their entrance.
+  final int? visit;
+
+  const HomeScreen({super.key, this.onNavigateToTab, this.visit});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -78,6 +85,24 @@ class _HomeScreenState extends State<HomeScreen> {
     // Initiate Real-Time Listeners
     _setupRealtimeListeners();
     _createAIData();
+  }
+
+  // Keys the charts; bumping it replays their grow/sweep entrance.
+  int _chartEpoch = 0;
+
+  // Bar picked in the burn chart (null = current month) and slice picked
+  // in the breakdown donut (null = whole month).
+  int? _selectedBar;
+  String? _selectedCategory;
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.visit != null && widget.visit != oldWidget.visit) {
+      _chartEpoch++;
+      _selectedBar = null;
+      _selectedCategory = null;
+    }
   }
 
   @override
@@ -156,7 +181,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (user == null || !_expensesLoaded || runwayValue == null) return;
 
     try {
-      final docRef = FirebaseFirestore.instance.collection("companies").doc(user.uid);
+      final docRef = FirebaseFirestore.instance
+          .collection("companies")
+          .doc(user.uid);
       final snapshot = await docRef.get();
       if (!snapshot.exists) return;
       final currentRunway = (snapshot.data()!['Runway'] ?? '').toString();
@@ -357,18 +384,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // --- UI HELPERS ---
+  // Everything below is presentation only. Data comes from the state above.
 
-  Widget _buildSectionLabel(String text, bool isDark) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: isDark ? Colors.white54 : Colors.black54,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
+  /// "Good morning, Sahil" (first name when we have one).
+  String _greeting() {
+    final h = DateTime.now().hour;
+    final part = h < 12
+        ? 'Good morning'
+        : h < 17
+        ? 'Good afternoon'
+        : 'Good evening';
+    final name = (FirebaseAuth.instance.currentUser?.displayName ?? '')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .first;
+    return name.isEmpty ? part : '$part, $name';
+  }
+
+  void _push(Widget screen) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
 
   Widget _buildProfileAvatar(String? profileImageFileId, bool isDark) {
@@ -376,29 +410,28 @@ class _HomeScreenState extends State<HomeScreen> {
       return FutureBuilder<String>(
         future: getTelegramImageUrl(profileImageFileId),
         builder: (context, snapshot) {
+          if (!snapshot.hasData) return _buildDefaultAvatar(isDark);
           return Container(
             width: 48,
             height: 48,
-            decoration: BoxDecoration(
+            // Pure black/white 10% outline so the photo edge never tints.
+            foregroundDecoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.1)
                     : Colors.black.withValues(alpha: 0.1),
-                width: 1.0,
               ),
             ),
             child: ClipOval(
-              child: snapshot.hasData
-                  ? Image.network(
-                      snapshot.data!,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _buildDefaultAvatar(isDark),
-                    )
-                  : _buildDefaultAvatar(isDark),
+              child: Image.network(
+                snapshot.data!,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    _buildDefaultAvatar(isDark),
+              ),
             ),
           );
         },
@@ -407,44 +440,24 @@ class _HomeScreenState extends State<HomeScreen> {
     return _buildDefaultAvatar(isDark);
   }
 
+  /// Plain default avatar: a soft circle with a person glyph.
   Widget _buildDefaultAvatar(bool isDark) {
+    final rx = context.rx;
     return Container(
       width: 48,
       height: 48,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.black.withValues(alpha: 0.1),
-          width: 1.0,
-        ),
-        color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF3F4F6),
+        color: rx.surface,
+        border: Border.all(color: isDark ? rx.hairline : Colors.transparent),
+        boxShadow: rx.cardShadow,
       ),
-      child: Icon(
-        Icons.person,
-        size: 24,
-        color: isDark ? Colors.white : Colors.black,
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(String text, bool isDark) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: isDark ? Colors.white38 : Colors.black38,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+      alignment: Alignment.center,
+      child: HugeIcon(
+        icon: HugeIcons.strokeRoundedUser,
+        size: 22,
+        color: rx.textSecondary,
+        strokeWidth: 1.7,
       ),
     );
   }
@@ -452,7 +465,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String _getRunwayString(String runwayValue) {
     final runway = double.tryParse(runwayValue) ?? 0;
     if (runway <= 0) return "--";
-    if (runway >= kProfitableRunwayMonths) return "Profitable";
 
     if (runway > 120) {
       return ">10Y";
@@ -495,46 +507,28 @@ class _HomeScreenState extends State<HomeScreen> {
     return HealthStatus.safe;
   }
 
-  // --- HIGH CONTRAST, DISTINCT COLOR PALETTE (CRED/SLICE VIBE) ---
-  Color _getCategoryColor(String category) {
-    switch (category.toLowerCase()) {
-      case 'salaries':
-      case 'salary':
-        return const Color(0xFF10B981); // Emerald Green
-      case 'servers':
-      case 'infrastructure':
-      case 'servers & infrastructure':
-        return const Color(0xFF3B82F6); // Bright Blue
-      case 'marketing':
-      case 'ads':
-        return const Color(0xFFBF5AF2); // Neon Purple
-      case 'office':
-      case 'operations':
-      case 'office & operations':
-        return const Color(0xFF00BFA5); // Teal
-      case 'software':
-      case 'tools':
-        return const Color(0xFFFF375F); // Vibrant Pink
-      case 'legal':
-        return const Color(0xFFFFD60A); // Vivid Yellow
-      case 'meals':
-      case 'food':
-        return const Color(0xFFF59E0B); // Bold Orange
-      case 'travel':
-      case 'transport':
-        return const Color(0xFF32ADE6); // Cyan
-      default:
-        // Expanded fallback to ensure colors never collide
-        final colors = [
-          const Color(0xFF3B82F6),
-          const Color(0xFF10B981),
-          const Color(0xFFBF5AF2),
-          const Color(0xFFFF375F),
-          const Color(0xFFF59E0B),
-          const Color(0xFF32ADE6),
-        ];
-        return colors[category.hashCode % colors.length];
+  /// Display split of the runway for the hero: big value + small unit,
+  /// plus a phrase for the sentence below. Formatting only; the runway
+  /// value itself comes from [_updateRunwayValue].
+  ({String value, String? unit, String? phrase}) _runwayParts() {
+    if (isLoading) return (value: '--', unit: null, phrase: null);
+    final m = double.tryParse(runwayValue ?? '') ?? 0;
+    if (m <= 0) return (value: '--', unit: null, phrase: null);
+    if (m > 120) {
+      return (value: '10+', unit: 'years', phrase: 'over 10 years');
     }
+    if (m >= 12) {
+      final y = m / 12;
+      final v = y.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '');
+      final unit = v == '1' ? 'year' : 'years';
+      return (value: v, unit: unit, phrase: 'about $v $unit');
+    }
+    if (m >= 1) {
+      final v = m.toStringAsFixed(1);
+      return (value: v, unit: 'months', phrase: '$v months');
+    }
+    final d = (m * 30).round().clamp(1, 30);
+    return (value: '$d', unit: d == 1 ? 'day' : 'days', phrase: '$d days');
   }
 
   String _capitalizeFirstLetter(String text) {
@@ -542,156 +536,73 @@ class _HomeScreenState extends State<HomeScreen> {
     return text[0].toUpperCase() + text.substring(1);
   }
 
+  String get _burnText {
+    if (_isMonthlyBurnLoading) return '--';
+    if (_currentMonthBurn <= 0) {
+      return _isLoadingCountry
+          ? "₹0"
+          : "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0";
+    }
+    return _formatCurrency(_currentMonthBurn);
+  }
+
   @override
   Widget build(BuildContext context) {
-    HealthStatus currentHealth = _calculateHealthStatus();
+    final rx = context.rx;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Premium Solid Color Palette
-    final bgColor = isDark ? const Color(0xFF09090B) : const Color(0xFFF9FAFB);
-    // Use slightly lighter surface for cards to contrast against true black bg
-    final cardColor = isDark
-        ? const Color(0xFF1A1A1C)
-        : const Color(0xFFFFFFFF);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.06)
-        : Colors.black.withValues(alpha: 0.05);
-    final shadowColor = isDark
-        ? Colors.transparent
-        : Colors.black.withValues(alpha: 0.04);
-
-    final textPrimary = isDark ? Colors.white : const Color(0xFF09090B);
-    final textSecondary = isDark ? Colors.white54 : const Color(0xFF71717A);
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      value: context.rxOverlayStyle,
       child: Scaffold(
-        backgroundColor: bgColor,
-        floatingActionButton: FloatingActionButton(
-          backgroundColor: textPrimary,
-          elevation: 2,
-          child: HugeIcon(
-            icon: HugeIcons.strokeRoundedMessage02,
-            color: bgColor,
-            size: 24,
-          ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ChatbotScreen()),
-            );
-          },
-        ),
+        backgroundColor: rx.background,
         body: SafeArea(
+          // Content runs under the floating tab bar to the screen edge;
+          // the bottom padding (RxTabBar.reservedHeight) clears the bar.
+          bottom: false,
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              RxTabBar.reservedHeight(context),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              // Sections rise in once, 60ms apart, on first open.
               children: [
-                _buildHeaderAndHero(isDark, textPrimary, textSecondary),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                RxReveal.index(0, child: _buildHeader(isDark)),
+                const SizedBox(height: 28),
+                RxReveal.index(1, child: _buildRunwayHero()),
+                const SizedBox(height: 24),
+                RxReveal.index(2, child: _buildStatsCard()),
+                const SizedBox(height: 10),
+                RxReveal.index(3, child: _buildAskAiCard()),
+                const SizedBox(height: 28),
+                RxReveal.index(
+                  4,
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // RUNWAY AND BURN PILLS
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      const RunwayEstimationScreen(),
-                                ),
-                              ),
-                              child: _buildRunwayPill(
-                                currentHealth,
-                                cardColor,
-                                borderColor,
-                                shadowColor,
-                                textPrimary,
-                                textSecondary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const MonthlyBurnScreen(),
-                                ),
-                              ),
-                              child: _buildBurnPill(
-                                cardColor,
-                                borderColor,
-                                shadowColor,
-                                textPrimary,
-                                textSecondary,
-                              ),
-                            ),
-                          ),
-                        ],
+                      RxSectionHeader(
+                        title: 'Monthly burn',
+                        actionLabel: 'Details',
+                        onAction: () => _push(const MonthlyBurnScreen()),
                       ),
-                      const SizedBox(height: 32),
-
-                      // BURN TREND
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildSectionLabel("BURN TREND", isDark),
-                          _buildViewAllButton(
-                            context,
-                            isDark,
-                            textPrimary,
-                            borderColor,
-                          ),
-                        ],
+                      _buildTrendCard(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+                RxReveal.index(
+                  5,
+                  child: Column(
+                    children: [
+                      RxSectionHeader(
+                        title: 'Where it goes',
+                        actionLabel: 'Breakdown',
+                        onAction: () => _push(const MonthlyBurnScreen()),
                       ),
-                      const SizedBox(height: 12),
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const MonthlyBurnScreen(),
-                          ),
-                        ),
-                        child: _buildTrendChart(
-                          cardColor,
-                          borderColor,
-                          shadowColor,
-                          textPrimary,
-                          textSecondary,
-                          isDark,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // EXPENSE BREAKDOWN
-                      _buildSectionLabel("EXPENSE BREAKDOWN", isDark),
-                      const SizedBox(height: 12),
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const MonthlyBurnScreen(),
-                          ),
-                        ),
-                        child: _buildDonutChartBreakdown(
-                          cardColor,
-                          borderColor,
-                          shadowColor,
-                          textPrimary,
-                          textSecondary,
-                          isDark,
-                        ),
-                      ),
-                      const SizedBox(
-                        height: 80,
-                      ), // Reduced bottom padding, just enough for nav bar
+                      _buildBreakdownCard(),
                     ],
                   ),
                 ),
@@ -703,464 +614,536 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Integrates the Header and the "Available Funds"
-  Widget _buildHeaderAndHero(
-    bool isDark,
-    Color textPrimary,
-    Color textSecondary,
-  ) {
+  // --- HEADER ---
+
+  Widget _buildHeader(bool isDark) {
     final user = FirebaseAuth.instance.currentUser;
-    final fundsText = _isFundsLoading ? "--" : _formatCurrency(_availableFunds);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                "Overview",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              if (user != null)
-                StreamBuilder<DocumentSnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection("users")
-                      .doc(user.uid)
-                      .snapshots(),
-                  builder: (context, userSnapshot) {
-                    String? profileImageFileId;
-                    if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                      final userData =
-                          userSnapshot.data!.data() as Map<String, dynamic>;
-                      profileImageFileId = userData['profileImageFileId'];
-                    }
-                    return GestureDetector(
-                      onTap: () => widget.onNavigateToTab?.call(4),
-                      child: _buildProfileAvatar(profileImageFileId, isDark),
-                    );
-                  },
-                )
-              else
-                GestureDetector(
-                  onTap: () => widget.onNavigateToTab?.call(4),
-                  child: _buildDefaultAvatar(isDark),
-                ),
-            ],
-          ),
-          const SizedBox(height: 40),
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const FundsOverviewScreen()),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "AVAILABLE FUNDS",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    fundsText,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: textPrimary,
-                      fontSize:
-                          40, // Scaled down from 64 to fix "FONT SIZE IS TOO BIG"
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: -1.5,
-                      height: 1.1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    Widget avatar(Widget child) => RxPressable(
+      onTap: () => widget.onNavigateToTab?.call(4),
+      semanticLabel: 'Profile and settings',
+      // 52px hit area around the 48px avatar.
+      child: SizedBox(width: 52, height: 52, child: Center(child: child)),
     );
-  }
 
-  // Pill-shaped Runway widget
-  Widget _buildRunwayPill(
-    HealthStatus status,
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-  ) {
-    Color statusColor;
-    String statusText;
-    switch (status) {
-      case HealthStatus.safe:
-        statusColor = const Color(0xFF10B981);
-        statusText = "SAFE";
-        break;
-      case HealthStatus.warning:
-        statusColor = const Color(0xFFF59E0B);
-        statusText = "WARN";
-        break;
-      case HealthStatus.critical:
-        statusColor = const Color(0xFFEF4444);
-        statusText = "CRIT";
-        break;
-      case HealthStatus.unknown:
-        statusColor = textSecondary;
-        statusText = "N/A";
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: borderColor),
-        boxShadow: shadowColor == Colors.transparent
-            ? []
-            : [
-                BoxShadow(
-                  color: shadowColor,
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(
-                Icons.flight_takeoff_rounded,
-                color: textSecondary,
-                size: 20,
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(color: statusColor.withValues(alpha: 0.2)),
-                ),
-                child: Text(
-                  statusText,
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: statusColor,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            isLoading ? "--" : _getRunwayString(runwayValue ?? "0"),
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "EST. RUNWAY",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Pill-shaped Burn widget
-  Widget _buildBurnPill(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-  ) {
-    final value = _isMonthlyBurnLoading || _currentMonthBurn <= 0
-        ? '--'
-        : _formatCurrency(_currentMonthBurn);
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: borderColor),
-        boxShadow: shadowColor == Colors.transparent
-            ? []
-            : [
-                BoxShadow(
-                  color: shadowColor,
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(
-                Icons.local_fire_department_rounded,
-                color: const Color(0xFFF59E0B),
-                size: 20,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value == '--' && !_isMonthlyBurnLoading
-                  ? (_isLoadingCountry
-                        ? "₹0"
-                        : "${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0")
-                  : value,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "MONTHLY BURN",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrendChart(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    bool isDark,
-  ) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: borderColor),
-        boxShadow: shadowColor == Colors.transparent
-            ? []
-            : [
-                BoxShadow(
-                  color: shadowColor,
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
-      child: _isTrendLoading
-          ? SizedBox(
-              height: 160,
-              child: Center(
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: textSecondary,
-                ),
-              ),
-            )
-          : _trendData.isEmpty
-          ? SizedBox(
-              height: 160,
-              child: _buildEmptyState(
-                "Not enough data for trend analysis",
-                isDark,
-              ),
-            )
-          : SizedBox(
-              height: 160,
-              child: Builder(
-                builder: (context) {
-                  List<Map<String, dynamic>> display = _trendData;
-                  if (display.isNotEmpty) {
-                    bool isNewestFirst =
-                        display.first['isCurrentMonth'] == true;
-                    if (isNewestFirst) {
-                      display = display.take(6).toList().reversed.toList();
-                    } else {
-                      if (display.length > 6) {
-                        display = display.sublist(display.length - 6);
-                      }
-                    }
-                  }
-
-                  final maxAmount = display.isEmpty
-                      ? 1.0
-                      : display
-                            .map((d) => _toDouble(d['amount']))
-                            .reduce((a, b) => a > b ? a : b);
-
-                  return Row(
-                    mainAxisAlignment: display.length <= 3
-                        ? MainAxisAlignment.spaceEvenly
-                        : MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: display.map((data) {
-                      final amount = _toDouble(data['amount']);
-                      final pct = maxAmount > 0 ? amount / maxAmount : 0.0;
-                      return _buildCapsuleBar(
-                        data['month'] as String,
-                        pct,
-                        amount,
-                        textPrimary,
-                        textSecondary,
-                        isDark,
-                        isActive: data['isCurrentMonth'] as bool? ?? false,
-                      );
-                    }).toList(),
-                  );
-                },
-              ),
-            ),
-    );
-  }
-
-  // Elegant capsule bars
-  Widget _buildCapsuleBar(
-    String label,
-    double pct,
-    double amount,
-    Color textPrimary,
-    Color textSecondary,
-    bool isDark, {
-    bool isActive = false,
-  }) {
-    final safePct = pct == 0.0 ? 0.02 : pct.clamp(0.0, 1.0);
-    // Subtle background for inactive bars
-    final inactiveBarColor = isDark
-        ? Colors.white.withValues(alpha: 0.04)
-        : Colors.black.withValues(alpha: 0.04);
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Flexible(
-          child: Text(
-            _formatCurrency(amount),
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: isActive ? textPrimary : textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: FractionallySizedBox(
-              heightFactor: safePct,
-              child: Container(
-                width: 32,
-                decoration: BoxDecoration(
-                  color: isActive ? const Color(0xFF3B82F6) : inactiveBarColor,
-                  borderRadius: BorderRadius.circular(
-                    8,
-                  ), // Modern rounded rectangle
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          label,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: isActive ? textPrimary : textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+    return RxTabHeader(
+      label: _greeting(),
+      title: 'Overview',
+      actions: [
+        if (user != null)
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection("users")
+                .doc(user.uid)
+                .snapshots(),
+            builder: (context, userSnapshot) {
+              String? profileImageFileId;
+              if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                final userData =
+                    userSnapshot.data!.data() as Map<String, dynamic>;
+                profileImageFileId = userData['profileImageFileId'];
+              }
+              return avatar(_buildProfileAvatar(profileImageFileId, isDark));
+            },
+          )
+        else
+          avatar(_buildDefaultAvatar(isDark)),
       ],
     );
   }
 
-  // --- CRED-STYLE DONUT CHART ---
-  Widget _buildDonutChartBreakdown(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    bool isDark,
-  ) {
-    if (_isPieChartLoading) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: borderColor),
-        ),
-        child: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: textSecondary,
+  // --- RUNWAY HERO ---
+  // Flat on the page, no card: one big number is the whole story.
+
+  Widget _buildRunwayHero() {
+    final rx = context.rx;
+    final health = _calculateHealthStatus();
+
+    late final String statusLabel;
+    late final Color statusFg;
+    late final Color statusBg;
+    late String note;
+    switch (health) {
+      case HealthStatus.safe:
+        statusLabel = 'Healthy';
+        statusFg = rx.positive;
+        statusBg = rx.positiveSoft;
+        note = 'More than 6 months of cash at your current burn';
+        break;
+      case HealthStatus.warning:
+        statusLabel = 'Watch';
+        statusFg = rx.warning;
+        statusBg = rx.warningSoft;
+        note = 'Under 6 months left. A good time to plan the next raise';
+        break;
+      case HealthStatus.critical:
+        statusLabel = 'Critical';
+        statusFg = rx.negative;
+        statusBg = rx.negativeSoft;
+        note = 'Under 3 months of cash left at your current burn';
+        break;
+      case HealthStatus.unknown:
+        statusLabel = isLoading ? 'Updating' : 'No data';
+        statusFg = rx.textSecondary;
+        statusBg = rx.surfaceMuted;
+        note = isLoading
+            ? 'Crunching your latest numbers'
+            : 'Add funding and expenses to estimate your runway';
+        break;
+    }
+
+    final runwayText = isLoading ? '--' : _getRunwayString(runwayValue ?? "0");
+    final parts = _runwayParts();
+    // Lead the note with the actual duration, so it never contradicts the
+    // number (">10Y" next to "more than 6 months" read oddly).
+    if (health == HealthStatus.safe && parts.phrase != null) {
+      note = 'Cash lasts ${parts.phrase} at your current burn';
+    }
+
+    return RxPressable(
+      onTap: () => _push(const RunwayEstimationScreen()),
+      semanticLabel: 'Runway $runwayText, $statusLabel. Open runway details',
+      scale: 0.98,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Runway', style: RxText.label(context)),
+              const SizedBox(width: 8),
+              RxPill(
+                label: statusLabel,
+                dot: true,
+                foreground: statusFg,
+                background: statusBg,
+              ),
+              const Spacer(),
+              HugeIcon(
+                icon: HugeIcons.strokeRoundedArrowRight01,
+                color: rx.textTertiary,
+                size: 20,
+                strokeWidth: 1.8,
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(parts.value, style: RxText.hero(context, size: 60)),
+                if (parts.unit != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    parts.unit!,
+                    style: RxText.value(
+                      context,
+                      size: 20,
+                      color: rx.textSecondary,
+                    ).copyWith(fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(note, style: RxText.label(context)),
+        ],
+      ),
+    );
+  }
+
+  // --- CASH + BURN ---
+  // One card split in two, so the pair reads as a single fact.
+
+  Widget _buildStatsCard() {
+    final rx = context.rx;
+    final cashText = _isFundsLoading ? '--' : _formatCurrency(_availableFunds);
+
+    Widget half({
+      required String label,
+      required String value,
+      required bool loading,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: RxPressable(
+          onTap: onTap,
+          semanticLabel: '$label $value',
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: RxText.label(context)),
+                const SizedBox(height: 8),
+                if (loading)
+                  const RxSkeleton(width: 96, height: 26)
+                else
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(value, style: RxText.value(context)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RxCard(
+      padding: EdgeInsets.zero,
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            half(
+              label: 'Cash available',
+              value: cashText,
+              loading: _isFundsLoading,
+              onTap: () => _push(const FundsOverviewScreen()),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Container(width: 1, color: rx.hairline),
+            ),
+            half(
+              label: 'Burn this month',
+              value: _burnText,
+              loading: _isMonthlyBurnLoading,
+              onTap: () => _push(const MonthlyBurnScreen()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- ASK AI ---
+
+  Widget _buildAskAiCard() {
+    final rx = context.rx;
+    return RxCard(
+      onTap: () => _push(const ChatbotScreen()),
+      semanticLabel: 'Ask your AI CFO',
+      padding: const EdgeInsets.fromLTRB(11, 8, 8, 8),
+      radius: 100,
+      child: Row(
+        children: [
+          const RxAiBadge(size: 32),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Ask about your numbers…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: RxText.body(context, color: rx.textTertiary),
+            ),
+          ),
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: rx.inverse,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: HugeIcon(
+              icon: HugeIcons.strokeRoundedArrowUp02,
+              color: rx.onInverse,
+              size: 18,
+              strokeWidth: 2.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- MONTHLY BURN BARS ---
+  // Header shows the picked month (current by default) and how it compares
+  // with the month before; bars grow up in a left-to-right cascade.
+
+  Widget _buildTrendCard() {
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const chartHeight = 120.0;
+    const labelSpace = 26.0;
+
+    if (_isTrendLoading) {
+      return RxCard(
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const RxSkeleton(width: 80, height: 12),
+            const SizedBox(height: 8),
+            const RxSkeleton(width: 130, height: 26),
+            const SizedBox(height: 20),
+            SizedBox(
+              height: chartHeight + labelSpace,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final h in const [0.45, 0.6, 0.5, 0.75, 0.65, 0.9])
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(7, 0, 7, labelSpace),
+                        child: RxSkeleton(height: chartHeight * h, radius: 8),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_trendData.isEmpty) {
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedChartBarLine,
+          title: 'No trend yet',
+          message: 'Your monthly burn shows up here after the first expenses',
+        ),
+      );
+    }
+
+    // Same 6-month window as before, oldest on the left.
+    List<Map<String, dynamic>> display = _trendData;
+    final isNewestFirst = display.first['isCurrentMonth'] == true;
+    if (isNewestFirst) {
+      display = display.take(6).toList().reversed.toList();
+    } else if (display.length > 6) {
+      display = display.sublist(display.length - 6);
+    }
+
+    final amounts = [for (final d in display) _toDouble(d['amount'])];
+    final maxAmount = amounts.fold<double>(0, (a, b) => a > b ? a : b);
+    final currentIndex = display.indexWhere((d) => d['isCurrentMonth'] == true);
+    final fallback = currentIndex >= 0 ? currentIndex : display.length - 1;
+    final sel = (_selectedBar != null && _selectedBar! < display.length)
+        ? _selectedBar!
+        : fallback;
+
+    final selAmount = amounts[sel];
+    final prevAmount = sel > 0 ? amounts[sel - 1] : null;
+    final selLabel = sel == currentIndex
+        ? 'This month'
+        : (display[sel]['month'] as String? ?? '');
+
+    final activeColor = isDark ? rx.accent : rx.inverse;
+
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(selLabel, style: RxText.label(context)),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _formatCurrency(selAmount),
+                        style: RxText.value(context, size: 24),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (prevAmount != null) _buildDeltaPill(selAmount, prevAmount),
+            ],
+          ),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: chartHeight + labelSpace,
+            child: Stack(
+              children: [
+                // Quiet guides at 0, 1/3 and 2/3 of the scale.
+                for (final f in const [0.0, 1 / 3, 2 / 3])
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: labelSpace + chartHeight * f,
+                    child: Container(height: 1, color: rx.hairline),
+                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < display.length; i++)
+                      Expanded(
+                        child: _buildBar(
+                          index: i,
+                          label: display[i]['month'] as String? ?? '',
+                          amount: amounts[i],
+                          max: maxAmount,
+                          selected: i == sel,
+                          color: activeColor,
+                          chartHeight: chartHeight,
+                          labelSpace: labelSpace,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Change versus the previous month. Spending more reads as negative.
+  Widget _buildDeltaPill(double current, double previous) {
+    final rx = context.rx;
+    if (previous <= 0) {
+      if (current <= 0) return const SizedBox.shrink();
+      return RxPill(
+        label: 'New',
+        foreground: rx.textSecondary,
+        background: rx.surfaceMuted,
+      );
+    }
+    final change = (current - previous) / previous * 100;
+    final up = change > 0.5;
+    final down = change < -0.5;
+    final text = up || down
+        ? '${up ? '↑' : '↓'} ${change.abs().toStringAsFixed(change.abs() >= 10 ? 0 : 1)}%'
+        : 'No change';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: RxPill(
+        label: text,
+        foreground: up
+            ? rx.negative
+            : down
+            ? rx.positive
+            : rx.textSecondary,
+        background: up
+            ? rx.negativeSoft
+            : down
+            ? rx.positiveSoft
+            : rx.surfaceMuted,
+      ),
+    );
+  }
+
+  Widget _buildBar({
+    required int index,
+    required String label,
+    required double amount,
+    required double max,
+    required bool selected,
+    required Color color,
+    required double chartHeight,
+    required double labelSpace,
+  }) {
+    final rx = context.rx;
+    final pct = max > 0 ? (amount / max).clamp(0.0, 1.0) : 0.0;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label ${_formatCurrency(amount)}',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() => _selectedBar = index);
+        },
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            SizedBox(
+              height: chartHeight,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                // Grows from the axis on open; cascades 70ms per bar.
+                child: RxGrow(
+                  key: ValueKey('bar-$_chartEpoch-$index'),
+                  value: pct,
+                  delay: Duration(milliseconds: 70 * index),
+                  builder: (context, v) => Container(
+                    width: 28,
+                    // Empty months keep a short stub so the axis still reads.
+                    height: (chartHeight * v).clamp(4.0, chartHeight),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? color
+                          : rx.textPrimary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: labelSpace,
+              child: Center(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.clip,
+                  style:
+                      RxText.micro(
+                        context,
+                        color: selected ? rx.textPrimary : rx.textTertiary,
+                      ).copyWith(
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                      ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- WHERE IT GOES ---
+  // Donut of this month's categories. Tapping a row lifts its slice and
+  // shows it in the centre; tapping again returns to the month total.
+
+  static const _otherKey = '__other__';
+
+  Widget _buildBreakdownCard() {
+    final rx = context.rx;
+
+    if (_isPieChartLoading) {
+      return RxCard(
+        padding: const EdgeInsets.fromLTRB(18, 22, 18, 12),
+        child: Column(
+          children: [
+            const RxSkeleton(width: 176, height: 176, radius: 100),
+            const SizedBox(height: 20),
+            for (var i = 0; i < 3; i++)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 9),
+                child: Row(
+                  children: [
+                    RxSkeleton(width: 10, height: 10, radius: 100),
+                    SizedBox(width: 12),
+                    Expanded(child: RxSkeleton(height: 14)),
+                    SizedBox(width: 48),
+                    RxSkeleton(width: 64, height: 14),
+                  ],
+                ),
+              ),
+          ],
         ),
       );
     }
@@ -1169,160 +1152,195 @@ class _HomeScreenState extends State<HomeScreen> {
     final totalExpenses = _currentMonthBurn;
 
     if (categoryBreakdown.isEmpty || totalExpenses == 0) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: borderColor),
+      return const RxCard(
+        child: RxEmptyState(
+          icon: HugeIcons.strokeRoundedPieChart,
+          title: 'Nothing spent this month',
+          message: 'Categories appear here as you add expenses',
         ),
-        child: _buildEmptyState("No expense data available", isDark),
       );
     }
 
-    final categories = categoryBreakdown.map(
-      (key, value) =>
-          MapEntry(key, {'amount': value, 'color': _getCategoryColor(key)}),
-    );
-
-    final expenseData = categories.entries.map((entry) {
-      final amount = _toDouble(entry.value['amount']);
-      final percentage = FinancialCalculator.calculatePercentage(
+    double pctOf(double amount) => _toDouble(
+      FinancialCalculator.calculatePercentage(
         amount: amount,
         total: totalExpenses,
-      );
-      return {
-        'category': _capitalizeFirstLetter(entry.key),
-        'amount': amount,
-        'percentage': percentage,
-        'color': entry.value['color'] as Color,
-      };
-    }).toList();
-
-    expenseData.sort(
-      (a, b) => ((b['percentage'] as num?)?.toInt() ?? 0).compareTo(
-        (a['percentage'] as num?)?.toInt() ?? 0,
       ),
     );
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: borderColor),
-        boxShadow: shadowColor == Colors.transparent
-            ? []
-            : [
-                BoxShadow(
-                  color: shadowColor,
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-      ),
+    final sorted =
+        categoryBreakdown.entries
+            .where((e) => _toDouble(e.value) > 0)
+            .map((e) => (key: e.key, amount: _toDouble(e.value)))
+            .toList()
+          ..sort((a, b) => b.amount.compareTo(a.amount));
+
+    // Five slices at most: past that, the tail folds into "Other".
+    const maxSlices = 5;
+    final rows = <({String key, String name, double amount, Color color})>[];
+    final head = sorted.length > maxSlices
+        ? sorted.take(maxSlices - 1)
+        : sorted;
+    for (final r in head) {
+      rows.add((
+        key: r.key,
+        name: _capitalizeFirstLetter(r.key),
+        amount: r.amount,
+        color: RxCategory.color(context, r.key),
+      ));
+    }
+    final folded = sorted.length - head.length;
+    if (folded > 0) {
+      rows.add((
+        key: _otherKey,
+        name: 'Other ($folded)',
+        amount: sorted
+            .skip(head.length)
+            .fold<double>(0, (a, r) => a + r.amount),
+        color: rx.textTertiary,
+      ));
+    }
+
+    final selIndex = rows.indexWhere((r) => r.key == _selectedCategory);
+    final sel = selIndex >= 0 ? rows[selIndex] : null;
+
+    final centerTitle = sel?.name ?? 'This month';
+    final centerValue = _formatCurrency(sel?.amount ?? totalExpenses);
+    final centerNote = sel != null
+        ? '${pctOf(sel.amount).round()}% of spend'
+        : '${sorted.length} ${sorted.length == 1 ? 'category' : 'categories'}';
+
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 8),
       child: Column(
         children: [
-          SizedBox(
-            height: 200, // Slightly reduced to make it look tighter
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 2, // Very tight gaps like CRED
-                centerSpaceRadius: 75, // Massive hollow center
-                startDegreeOffset: -90, // Start from the top
-                sections: expenseData.map((data) {
-                  return PieChartSectionData(
-                    color: data['color'] as Color,
-                    value: _toDouble(data['percentage']),
-                    title: '',
-                    radius: 16, // Thin modern ring
-                    showTitle: false,
-                  );
-                }).toList(),
+          RxDonut(
+            key: ValueKey('donut-$_chartEpoch'),
+            segments: [
+              for (final r in rows)
+                RxDonutSegment(value: r.amount, color: r.color),
+            ],
+            trackColor: rx.textPrimary.withValues(alpha: 0.06),
+            selected: selIndex >= 0 ? selIndex : null,
+            semanticLabel:
+                'Spending by category this month: ${rows.map((r) => '${r.name} ${pctOf(r.amount).round()}%').join(', ')}',
+            center: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              child: Column(
+                key: ValueKey(centerTitle),
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    centerTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: RxText.caption(context),
+                  ),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      centerValue,
+                      style: RxText.value(context, size: 22),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    centerNote,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RxText.micro(context),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(height: 40),
-
-          // Horizontal Legend Below Chart
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 24,
-            runSpacing: 16,
-            children: expenseData.map((data) {
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: data['color'] as Color,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    data['category'] as String,
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              );
-            }).toList(),
-          ),
+          const SizedBox(height: 18),
+          for (var i = 0; i < rows.length; i++)
+            _buildLegendRow(
+              name: rows[i].name,
+              color: rows[i].color,
+              pct: pctOf(rows[i].amount),
+              amount: rows[i].amount,
+              selected: i == selIndex,
+              dimmed: selIndex >= 0 && i != selIndex,
+              onTap: () => setState(() {
+                _selectedCategory = _selectedCategory == rows[i].key
+                    ? null
+                    : rows[i].key;
+              }),
+            ),
+          const SizedBox(height: 6),
         ],
       ),
     );
   }
 
-  Widget _buildViewAllButton(
-    BuildContext context,
-    bool isDark,
-    Color textPrimary,
-    Color borderColor,
-  ) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const MonthlyBurnScreen()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 6,
-        ), // Much tighter padding
-        decoration: BoxDecoration(
-          color:
-              Colors.transparent, // Removed background color for cleaner look
-          borderRadius: BorderRadius.circular(100),
-          border: Border.all(color: borderColor),
-        ),
-        child: Row(
-          children: [
-            Text(
-              "VIEW ALL",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 9, // Smaller font
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-              ),
+  Widget _buildLegendRow({
+    required String name,
+    required Color color,
+    required double pct,
+    required double amount,
+    required bool selected,
+    required bool dimmed,
+    required VoidCallback onTap,
+  }) {
+    final rx = context.rx;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$name, ${pct.round()} percent, ${_formatCurrency(amount)}',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? rx.surfaceMuted : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 150),
+            opacity: dimmed ? 0.5 : 1,
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RxText.body(context),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    '${pct.round()}%',
+                    textAlign: TextAlign.right,
+                    style: RxText.label(context, color: rx.textTertiary),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Text(_formatCurrency(amount), style: RxText.amount(context)),
+              ],
             ),
-            const SizedBox(width: 4),
-            Icon(
-              Icons.arrow_forward,
-              color: textPrimary,
-              size: 10,
-            ), // Smaller icon
-          ],
+          ),
         ),
       ),
     );

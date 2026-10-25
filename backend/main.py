@@ -27,7 +27,7 @@ from services.insights_service import generate_section
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
-app = FastAPI(title="AI CFO Backend")
+app = FastAPI(title="RunWayX Backend")
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):

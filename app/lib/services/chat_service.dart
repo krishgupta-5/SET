@@ -57,7 +57,9 @@ class ChatService {
   /// Converts Firestore types (Timestamp, GeoPoint, refs) into JSON-encodable values.
   static dynamic _jsonSafe(dynamic v) {
     if (v is Timestamp) return v.toDate().toIso8601String();
-    if (v is Map) return v.map((k, val) => MapEntry(k.toString(), _jsonSafe(val)));
+    if (v is Map) {
+      return v.map((k, val) => MapEntry(k.toString(), _jsonSafe(val)));
+    }
     if (v is List) return v.map(_jsonSafe).toList();
     if (v is GeoPoint) return {"lat": v.latitude, "lng": v.longitude};
     if (v is DocumentReference) return v.path;
@@ -66,7 +68,10 @@ class ChatService {
 
   /// Fetches the user's financial data from Firestore and sends it
   /// alongside the chat message so the backend always has context.
-  static Future<String> sendMessage(String question, List<Map<String, dynamic>> history) async {
+  static Future<String> sendMessage(
+    String question,
+    List<Map<String, dynamic>> history,
+  ) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw Exception('User not authenticated. Please log in.');
@@ -78,8 +83,11 @@ class ChatService {
     }
 
     // Send on-device data as a fallback in case the backend can't read Firestore.
-    final currencyCode = await CurrencyPreferenceService.getCurrencyPreference();
-    final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(currencyCode);
+    final currencyCode =
+        await CurrencyPreferenceService.getCurrencyPreference();
+    final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(
+      currencyCode,
+    );
     final sectionData = await _buildSectionData(user.uid);
 
     final requestBody = {
@@ -94,14 +102,16 @@ class ChatService {
       http.Response? res;
       Object? networkError;
       try {
-        res = await http.post(
-          Uri.parse("$baseUrl/chat"),
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer $token",
-          },
-          body: jsonEncode(requestBody),
-        ).timeout(const Duration(seconds: 60));
+        res = await http
+            .post(
+              Uri.parse("$baseUrl/chat"),
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer $token",
+              },
+              body: jsonEncode(requestBody),
+            )
+            .timeout(const Duration(seconds: 60));
       } catch (e) {
         networkError = e;
       }
@@ -132,7 +142,10 @@ class ChatService {
   }
 
   /// Streams the user's financial data and yields LLM tokens for a typewriter effect.
-  static Stream<String> streamMessage(String question, List<Map<String, dynamic>> history) async* {
+  static Stream<String> streamMessage(
+    String question,
+    List<Map<String, dynamic>> history,
+  ) async* {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw Exception('User not authenticated. Please log in.');
@@ -143,8 +156,11 @@ class ChatService {
       throw Exception('Failed to get auth token.');
     }
 
-    final currencyCode = await CurrencyPreferenceService.getCurrencyPreference();
-    final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(currencyCode);
+    final currencyCode =
+        await CurrencyPreferenceService.getCurrencyPreference();
+    final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(
+      currencyCode,
+    );
     final sectionData = await _buildSectionData(user.uid);
 
     final requestBody = {

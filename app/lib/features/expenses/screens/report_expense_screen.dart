@@ -2,6 +2,10 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
+import 'package:startup_expense_tracker/widgets/rx_charts.dart';
+import 'package:startup_expense_tracker/widgets/rx_motion.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:pdf/pdf.dart';
@@ -131,9 +135,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
           children: [
             Icon(
               isError ? Icons.error_outline : Icons.check_circle_outline,
-              color: isError
-                  ? const Color(0xFFFF453A)
-                  : const Color(0xFF30D158),
+              color: isError ? context.rx.negative : context.rx.positive,
               size: 18,
             ),
             const SizedBox(width: 12),
@@ -141,7 +143,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
               child: Text(
                 message,
                 style: TextStyle(
-                  fontFamily: 'Satoshi',
+                  fontFamily: 'Geist',
                   color: context.textPrimary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -190,7 +192,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                     Text(
                       isStart ? "Select Start Date" : "Select End Date",
                       style: TextStyle(
-                        fontFamily: 'Satoshi',
+                        fontFamily: 'Geist',
                         color: context.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -247,7 +249,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                     child: Text(
                       "Done",
                       style: TextStyle(
-                        fontFamily: 'Satoshi',
+                        fontFamily: 'Geist',
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -828,15 +830,16 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
   }
 
   // --- PREMIUM SECTION LABEL HELPER ---
+  // Sentence-case field labels, like the rest of the redesign.
   Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
+    final t = text.isEmpty
+        ? text
+        : text[0].toUpperCase() + text.substring(1).toLowerCase();
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        t,
+        style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -876,7 +879,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                             child: Text(
                               "Failed to load reports.",
                               style: TextStyle(
-                                fontFamily: 'Satoshi',
+                                fontFamily: 'Geist',
                                 color: Colors.redAccent,
                               ),
                             ),
@@ -1040,6 +1043,11 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                                 totalExpenses /
                                 (daysInPeriod == 0 ? 1 : daysInPeriod);
 
+                            // Changes whenever a filter does, so charts
+                            // replay their entrance for the new data.
+                            final filterKey =
+                                '$_selectedPeriod|$selectedCategory|${startDate.millisecondsSinceEpoch}|${endDate.millisecondsSinceEpoch}';
+
                             return SingleChildScrollView(
                               controller: _scrollController,
                               physics: const BouncingScrollPhysics(),
@@ -1053,7 +1061,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                                   Text(
                                     "Expense Report",
                                     style: TextStyle(
-                                      fontFamily: 'Satoshi',
+                                      fontFamily: 'Geist',
                                       color: context.textPrimary,
                                       fontSize: 28,
                                       fontWeight: FontWeight.w700,
@@ -1067,21 +1075,43 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                                   const SizedBox(height: 24),
                                   _buildCategoryFilter(),
                                   const SizedBox(height: 32),
-                                  _buildSummaryCards(
-                                    totalExpenses,
-                                    averageDaily,
-                                  ),
-                                  const SizedBox(height: 32),
-                                  _buildChartSection(
-                                    tempChartData.values.toList(),
-                                    chartLabels,
-                                    isDailyChart,
-                                  ),
-                                  const SizedBox(height: 32),
-                                  _buildDetailedBreakdown(
-                                    categoryBreakdown,
-                                    totalExpenses,
-                                  ),
+                                  // Nothing in range: one quiet line instead
+                                  // of empty ₹0 cards and a blank chart.
+                                  if (totalExpenses <= 0)
+                                    RxReveal(
+                                      key: ValueKey('empty-$filterKey'),
+                                      child: _buildNoDataNote(),
+                                    )
+                                  else ...[
+                                    RxReveal(
+                                      key: ValueKey('sum-$filterKey'),
+                                      child: _buildSummaryCards(
+                                        totalExpenses,
+                                        averageDaily,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 32),
+                                    RxReveal(
+                                      key: ValueKey('chart-$filterKey'),
+                                      delay: const Duration(milliseconds: 60),
+                                      child: _buildChartSection(
+                                        tempChartData.values.toList(),
+                                        chartLabels,
+                                        isDailyChart,
+                                        filterKey,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 32),
+                                    RxReveal(
+                                      key: ValueKey('cat-$filterKey'),
+                                      delay: const Duration(milliseconds: 120),
+                                      child: _buildDetailedBreakdown(
+                                        categoryBreakdown,
+                                        totalExpenses,
+                                        filterKey,
+                                      ),
+                                    ),
+                                  ],
                                   const SizedBox(height: 40),
                                 ],
                               ),
@@ -1109,50 +1139,12 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: context.textSecondary,
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: context.textSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => _exportReport(),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.cardBackground,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: context.borderColor),
-                boxShadow: context.cardShadow,
-              ),
-              child: Icon(Icons.download, color: context.textPrimary, size: 20),
-            ),
-          ),
-        ],
+    return RxTopBar(
+      title: '',
+      trailing: RxCircleButton(
+        icon: HugeIcons.strokeRoundedDownload04,
+        semanticLabel: 'Export report',
+        onTap: () => _exportReport(),
       ),
     );
   }
@@ -1201,7 +1193,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
         child: Text(
           label,
           style: TextStyle(
-            fontFamily: 'Satoshi',
+            fontFamily: 'Geist',
             color: isSelected ? context.appBackground : context.textSecondary,
             fontSize: 14,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
@@ -1241,7 +1233,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                             ? _formatDate(_customStartDate!)
                             : "Start Date",
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: _customStartDate != null
                               ? context.textPrimary
                               : context.textSecondary,
@@ -1281,7 +1273,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                             ? _formatDate(_customEndDate!)
                             : "End Date",
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: _customEndDate != null
                               ? context.textPrimary
                               : context.textSecondary,
@@ -1357,7 +1349,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                         child: Text(
                           category,
                           style: TextStyle(
-                            fontFamily: 'Satoshi',
+                            fontFamily: 'Geist',
                             color: isSelected
                                 ? context.appBackground
                                 : context.textSecondary,
@@ -1392,7 +1384,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                 "Total Expenses",
                 _formatCurrency(total),
                 Icons.account_balance_wallet,
-                const Color(0xFFFF453A),
+                context.rx.negative,
               ),
             ),
             const SizedBox(width: 12),
@@ -1401,7 +1393,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                 "Average Daily",
                 _formatCurrency(averageDaily),
                 Icons.show_chart,
-                const Color(0xFF30D158),
+                context.rx.positive,
               ),
             ),
           ],
@@ -1435,7 +1427,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textSecondary,
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
@@ -1454,7 +1446,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
             child: Text(
               value,
               style: TextStyle(
-                fontFamily: 'Satoshi',
+                fontFamily: 'Geist',
                 color: context.textPrimary,
                 fontSize: 22,
                 fontWeight: FontWeight.w600,
@@ -1467,67 +1459,41 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
     );
   }
 
-  // --- FIXED CHART SECTION: EXPANDED BARS & WHITE THEME ---
+  // --- NO DATA ---
+  // A plain line, no card: there is nothing to box up.
+  Widget _buildNoDataNote() {
+    // Sits in a card under the filters, where the summary and chart would
+    // be, so the page keeps its shape.
+    return const RxCard(
+      padding: EdgeInsets.zero,
+      child: RxEmptyState(
+        icon: HugeIcons.strokeRoundedChartBarLine,
+        title: 'No expenses in this period',
+        message: 'Try a different period, date range or category',
+        padding: EdgeInsets.fromLTRB(20, 36, 20, 36),
+      ),
+    );
+  }
+
+  // --- TREND BARS ---
+  // Bars grow up from the axis in a left-to-right cascade, and replay
+  // whenever a filter changes. The tallest bar is highlighted.
   Widget _buildChartSection(
     List<double> data,
     List<String> labels,
     bool isDailyChart,
+    String filterKey,
   ) {
     if (data.isEmpty) return const SizedBox.shrink();
+    final maxVal = data.reduce(max);
+    if (maxVal <= 0) return const SizedBox.shrink();
 
-    double maxVal = data.reduce(max);
-
-    // Show a clear empty state when there are no expenses for the period
-    if (maxVal == 0) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionLabel(
-            isDailyChart ? 'EXPENSE TREND (LAST 7 DAYS)' : 'EXPENSE TREND',
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            height: 240,
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: context.borderColor),
-              boxShadow: context.cardShadow,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.bar_chart_outlined,
-                  color: context.textSecondary.withValues(alpha: 0.3),
-                  size: 48,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'No expenses for this period',
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Try selecting a different date range or category',
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textSecondary.withValues(alpha: 0.6),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
+    final rx = context.rx;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final peakColor = isDark ? rx.accent : rx.inverse;
+    final peakIndex = data.indexOf(maxVal);
+    const chartHeight = 130.0;
+    final step = 420 ~/ data.length.clamp(6, 60);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1536,89 +1502,75 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
           isDailyChart ? "EXPENSE TREND (LAST 7 DAYS)" : "EXPENSE TREND",
         ),
         const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          height: 240,
-          padding: const EdgeInsets.only(
-            top: 24,
-            bottom: 16,
-            left: 16,
-            right: 16,
-          ),
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
+        RxCard(
+          padding: const EdgeInsets.fromLTRB(12, 20, 12, 14),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: List.generate(data.length, (index) {
-              double heightPercentage = data[index] / maxVal;
-              if (data[index] == 0) {
-                heightPercentage = 0.02;
-              }
-
-              List<String> labelParts = labels[index].split(' ');
+              final value = data[index];
+              final pct = (value / maxVal).clamp(0.0, 1.0);
+              final isPeak = index == peakIndex;
+              final labelParts = labels[index].split(' ');
 
               return Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 2.0,
-                  ), // Gap between bars
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      if (data[index] > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              CurrencyFormatter.formatByCountryCompact(
-                                data[index],
-                                _isLoadingCountry ? '+1' : _userCountryCode,
-                              ),
-                              style: TextStyle(
-                                fontFamily: 'Satoshi',
-                                color: context.textSecondary,
-                                fontSize: 9,
+                      SizedBox(
+                        height: 16,
+                        child: value > 0
+                            ? FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  CurrencyFormatter.formatByCountryCompact(
+                                    value,
+                                    _isLoadingCountry ? '+1' : _userCountryCode,
+                                  ),
+                                  style: RxText.micro(
+                                    context,
+                                    color: isPeak
+                                        ? rx.textPrimary
+                                        : rx.textTertiary,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: chartHeight,
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: RxGrow(
+                            key: ValueKey('rbar-$filterKey-$index'),
+                            value: pct,
+                            delay: Duration(milliseconds: step * index),
+                            builder: (context, v) => Container(
+                              constraints: const BoxConstraints(maxWidth: 30),
+                              width: double.infinity,
+                              // Empty days keep a stub so the axis reads.
+                              height: (chartHeight * v).clamp(4.0, chartHeight),
+                              decoration: BoxDecoration(
+                                color: isPeak
+                                    ? peakColor
+                                    : rx.textPrimary.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(7),
                               ),
                             ),
                           ),
                         ),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 500),
-                        curve: Curves.easeOut,
-                        width: double.infinity, // Let Expanded constrain it
-                        height: 120 * heightPercentage,
-                        constraints: const BoxConstraints(
-                          maxWidth: 36,
-                        ), // Avoid super fat bars
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              context.textPrimary,
-                              context.textPrimary.withValues(alpha: 0.3),
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         child: Text(
                           labelParts[0],
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: context.textPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: RxText.micro(
+                            context,
+                            color: rx.textPrimary,
+                          ).copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
                       if (labelParts.length > 1)
@@ -1626,11 +1578,7 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
                           fit: BoxFit.scaleDown,
                           child: Text(
                             labelParts[1],
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textSecondary,
-                              fontSize: 9,
-                            ),
+                            style: RxText.micro(context),
                           ),
                         ),
                     ],
@@ -1644,104 +1592,160 @@ class _ReportExpenseScreenState extends State<ReportExpenseScreen> {
     );
   }
 
-  Widget _buildDetailedBreakdown(Map<String, double> breakdown, double total) {
-    if (breakdown.isEmpty) return const SizedBox.shrink();
-
-    var sortedEntries = breakdown.entries.toList()
+  // --- CATEGORY BREAKDOWN ---
+  // Donut on top, rows below with a share track that fills in.
+  Widget _buildDetailedBreakdown(
+    Map<String, double> breakdown,
+    double total,
+    String filterKey,
+  ) {
+    final sortedEntries = breakdown.entries.where((e) => e.value > 0).toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    if (sortedEntries.isEmpty || total <= 0) return const SizedBox.shrink();
+
+    final rx = context.rx;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionLabel("CATEGORY BREAKDOWN"),
         const SizedBox(height: 16),
-        Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: context.cardBackground,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: context.borderColor),
-            boxShadow: context.cardShadow,
-          ),
+        RxCard(
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 6),
           child: Column(
-            children: sortedEntries.asMap().entries.map((entry) {
-              int index = entry.key;
-              String categoryName = entry.value.key;
-              double amount = entry.value.value;
-              double percentage = total > 0 ? (amount / total) : 0;
-
-              String displayCategory = categoryName.isEmpty
-                  ? "Other"
-                  : categoryName[0].toUpperCase() + categoryName.substring(1);
-
-              return Column(
-                children: [
-                  _buildBreakdownRow(
-                    displayCategory,
-                    _formatCurrency(amount),
-                    percentage,
-                  ),
-                  if (index != sortedEntries.length - 1)
-                    Divider(color: context.borderColor, height: 1),
+            children: [
+              RxDonut(
+                key: ValueKey('rdonut-$filterKey'),
+                size: 168,
+                thickness: 16,
+                segments: [
+                  for (final e in sortedEntries)
+                    RxDonutSegment(
+                      value: e.value,
+                      color: RxCategory.color(context, e.key),
+                    ),
                 ],
-              );
-            }).toList(),
+                trackColor: rx.textPrimary.withValues(alpha: 0.06),
+                semanticLabel: 'Spending by category',
+                center: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Total', style: RxText.caption(context)),
+                    const SizedBox(height: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _formatCurrency(total),
+                        style: RxText.value(context, size: 20),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${sortedEntries.length} ${sortedEntries.length == 1 ? 'category' : 'categories'}',
+                      style: RxText.micro(context),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              for (var i = 0; i < sortedEntries.length; i++) ...[
+                if (i > 0) const RxDivider(indent: 22),
+                _buildBreakdownRow(
+                  sortedEntries[i].key,
+                  _formatCurrency(sortedEntries[i].value),
+                  sortedEntries[i].value / total,
+                  filterKey,
+                  i,
+                ),
+              ],
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildBreakdownRow(String category, String amount, double percentage) {
+  Widget _buildBreakdownRow(
+    String categoryKey,
+    String amount,
+    double percentage,
+    String filterKey,
+    int index,
+  ) {
+    final rx = context.rx;
+    final color = RxCategory.color(context, categoryKey);
+    final name = categoryKey.isEmpty
+        ? 'Other'
+        : categoryKey[0].toUpperCase() + categoryKey.substring(1);
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(vertical: 13),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              category,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
             ),
           ),
-          Row(
-            children: [
-              Text(
-                amount,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: context.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: RxText.body(context),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(amount, style: RxText.amount(context)),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                width: 55,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: context.textPrimary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                const SizedBox(height: 2),
+                Text(
+                  '${(percentage * 100).toStringAsFixed(1)}% of spend',
+                  style: RxText.caption(context),
                 ),
-                child: Text(
-                  "${(percentage * 100).toStringAsFixed(1)}%",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: context.textPrimary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(100),
+                  child: SizedBox(
+                    height: 6,
+                    child: Stack(
+                      children: [
+                        Container(
+                          color: rx.textPrimary.withValues(alpha: 0.07),
+                        ),
+                        RxGrow(
+                          key: ValueKey('rtrack-$filterKey-$categoryKey'),
+                          value: percentage.clamp(0.02, 1.0),
+                          delay: Duration(milliseconds: 150 + 60 * index),
+                          builder: (context, v) => FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: v,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: color,
+                                borderRadius: BorderRadius.circular(100),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),

@@ -10,7 +10,9 @@ import '../../../services/currency_formatter.dart';
 import '../../../services/currency_preference_service.dart';
 import '../../../services/bank_account_service.dart';
 import '../../../utils/expense_expansion_helper.dart';
-import '../../../shared/widgets/custom_back_button.dart';
+import '../../../widgets/rx_ui.dart';
+import '../../../widgets/rx_charts.dart';
+import '../../../widgets/rx_motion.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 // --- CUSTOM DOTTED DIVIDER WIDGET ---
@@ -345,20 +347,6 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
     return 'SAFE';
   }
 
-  Color _getHealthStatusColor() {
-    final status = _getHealthStatus();
-    switch (status) {
-      case "SAFE":
-        return const Color(0xFF10B981); // Emerald Green
-      case "WARNING":
-        return const Color(0xFFF59E0B); // Amber
-      case "CRITICAL":
-        return const Color(0xFFEF4444); // Red
-      default:
-        return const Color(0xFF71717A); // Gray
-    }
-  }
-
   Future<void> _fetchAllExpenses() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -444,535 +432,340 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
     }
   }
 
-  // --- UI RENDERING ---
+  // --- UI RENDERING (presentation only) ---
 
-  Widget _buildSectionLabel(String text, Color textSecondary) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
+  String _money(num amount) => CurrencyFormatter.formatByCountryCompact(
+    amount.toDouble(),
+    _userCountryCode,
+  );
 
-  Widget _buildEmptyState(String text, Color textTertiary) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: textTertiary,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-    );
+  ({String label, Color fg, Color bg}) _statusStyle() {
+    final rx = context.rx;
+    switch (_getHealthStatus()) {
+      case "SAFE":
+        return (label: 'Healthy', fg: rx.positive, bg: rx.positiveSoft);
+      case "WARNING":
+        return (label: 'Watch', fg: rx.warning, bg: rx.warningSoft);
+      case "CRITICAL":
+        return (label: 'Critical', fg: rx.negative, bg: rx.negativeSoft);
+      default:
+        return (
+          label: isLoading ? 'Updating' : 'No data',
+          fg: rx.textSecondary,
+          bg: rx.surfaceMuted,
+        );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rx = context.rx;
 
-    // Premium Solid Color Palette
-    final bgColor = isDark ? const Color(0xFF09090B) : const Color(0xFFF9FAFB);
-    final cardColor = isDark
-        ? const Color(0xFF141416)
-        : const Color(0xFFFFFFFF);
-    final borderColor = isDark
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.black.withValues(alpha: 0.05);
-    final shadowColor = isDark
-        ? Colors.transparent
-        : Colors.black.withValues(alpha: 0.04);
-
-    final textPrimary = isDark ? Colors.white : const Color(0xFF09090B);
-    final textSecondary = isDark ? Colors.white54 : const Color(0xFF71717A);
-    final textTertiary = isDark ? Colors.white38 : const Color(0xFFA1A1AA);
-
-    return Scaffold(
-      backgroundColor: bgColor,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: _loadAllData,
-            color: textPrimary,
-            backgroundColor: cardColor,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: context.rxOverlayStyle,
+      child: Scaffold(
+        backgroundColor: rx.background,
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              RxTopBar(
+                title: 'Funds',
+                trailing: RxCircleButton(
+                  icon: HugeIcons.strokeRoundedRefresh,
+                  semanticLabel: 'Refresh',
+                  onTap: isLoading ? null : _loadAllData,
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(
-                    context,
-                    textPrimary,
-                    textSecondary,
-                    cardColor,
-                    borderColor,
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _loadAllData,
+                  color: rx.textPrimary,
+                  backgroundColor: rx.surface,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      12,
+                      20,
+                      MediaQuery.paddingOf(context).bottom + 32,
+                    ),
+                    children: [
+                      RxReveal(
+                        key: ValueKey('hero-$isLoading'),
+                        child: _buildHero(),
+                      ),
+                      if (errorMessage != null) ...[
+                        const SizedBox(height: 16),
+                        _buildErrorBanner(errorMessage!),
+                      ],
+                      // Sections with nothing to show are left out.
+                      ..._section(
+                        1,
+                        'Funding history',
+                        _buildFundingHistoryCard,
+                      ),
+                      ..._section(
+                        2,
+                        'Recent expenses',
+                        _buildRecentExpensesCard,
+                      ),
+                      ..._section(3, 'Spend by category', _buildCashFlowCard),
+                      ..._section(4, 'Payment methods', _buildBankAccountsCard),
+                    ],
                   ),
-                  const SizedBox(height: 32),
-
-                  // Unified Bento Hero Section
-                  _buildHeroBento(
-                    cardColor,
-                    borderColor,
-                    shadowColor,
-                    textPrimary,
-                    textSecondary,
-                    isDark,
-                  ),
-                  const SizedBox(height: 32),
-
-                  _buildFundingHistorySection(
-                    cardColor,
-                    borderColor,
-                    shadowColor,
-                    textPrimary,
-                    textSecondary,
-                    textTertiary,
-                  ),
-                  const SizedBox(height: 32),
-
-                  _buildRecentExpensesSection(
-                    cardColor,
-                    borderColor,
-                    shadowColor,
-                    textPrimary,
-                    textSecondary,
-                    textTertiary,
-                    isDark,
-                  ),
-                  const SizedBox(height: 32),
-
-                  _buildCashFlowSection(
-                    cardColor,
-                    borderColor,
-                    shadowColor,
-                    textPrimary,
-                    textSecondary,
-                    textTertiary,
-                  ),
-                  const SizedBox(height: 32),
-
-                  _buildBankAccountsSection(
-                    cardColor,
-                    borderColor,
-                    shadowColor,
-                    textPrimary,
-                    textSecondary,
-                    textTertiary,
-                    isDark,
-                  ),
-                  const SizedBox(height: 40),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(
-    BuildContext context,
-    Color textPrimary,
-    Color textSecondary,
-    Color cardColor,
-    Color borderColor,
-  ) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  /// Header + card, revealed when data lands. Nothing when the card is empty.
+  List<Widget> _section(int index, String title, Widget? Function() build) {
+    final card = build();
+    if (card == null) return const [];
+    return [
+      const SizedBox(height: 28),
+      RxReveal(
+        key: ValueKey('$title-$isLoading'),
+        delay: Duration(milliseconds: 60 * index),
+        child: Column(
+          children: [
+            RxSectionHeader(title: title),
+            card,
+          ],
+        ),
+      ),
+    ];
+  }
+
+  // --- HERO ---
+  // Same pattern as Home: the number on the page, details in one split card.
+  Widget _buildHero() {
+    final rx = context.rx;
+    final status = _statusStyle();
+
+    Widget half(String label, String value) => Expanded(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: RxText.label(context)),
+            const SizedBox(height: 8),
+            if (isLoading)
+              const RxSkeleton(width: 90, height: 24)
+            else
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(value, style: RxText.value(context, size: 20)),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        CustomBackButton(),
-        Text(
-          "Capital Analysis",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: textPrimary,
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
+        Row(
+          children: [
+            Text('Available funds', style: RxText.label(context)),
+            const SizedBox(width: 8),
+            RxPill(
+              label: status.label,
+              dot: true,
+              foreground: status.fg,
+              background: status.bg,
+            ),
+            const Spacer(),
+            if (lastUpdated != null)
+              Text(
+                'Updated ${lastUpdated!.toLowerCase()}',
+                style: RxText.micro(context),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            isLoading ? '--' : _money(_availableAmount),
+            style: RxText.hero(context, size: 52),
+          ),
+        ),
+        const SizedBox(height: 24),
+        RxCard(
+          padding: EdgeInsets.zero,
+          child: IntrinsicHeight(
+            child: Row(
+              children: [
+                half('Total raised', _money(fundingAmount ?? 0)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Container(width: 1, color: rx.hairline),
+                ),
+                half('Spent to date', _money(_totalExpensesAmount)),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildHeroBento(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    bool isDark,
-  ) {
+  Widget _buildErrorBanner(String text) {
+    final rx = context.rx;
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: borderColor),
-        boxShadow: shadowColor == Colors.transparent
-            ? []
-            : [
-                BoxShadow(
-                  color: shadowColor,
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+        color: rx.warningSoft,
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: _getHealthStatusColor().withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(100),
-                  border: Border.all(
-                    color: _getHealthStatusColor().withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Text(
-                  _getHealthStatus(),
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: _getHealthStatusColor(),
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Text(
-                    "Updated: ${lastUpdated ?? '--'}",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: textSecondary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: _loadAllData,
-                    child: isLoading
-                        ? SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: textSecondary,
-                            ),
-                          )
-                        : HugeIcon(
-                            icon: HugeIcons.strokeRoundedRefresh,
-                            color: textSecondary,
-                            size: 14,
-                          ),
-                  ),
-                ],
-              ),
-            ],
+          HugeIcon(
+            icon: HugeIcons.strokeRoundedAlert02,
+            color: rx.warning,
+            size: 18,
+            strokeWidth: 1.8,
           ),
-          const SizedBox(height: 32),
-          Text(
-            "AVAILABLE FUNDS",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
+          const SizedBox(width: 10),
+          Expanded(
             child: Text(
-              isLoading
-                  ? '--'
-                  : CurrencyFormatter.formatByCountryCompact(
-                      _availableAmount,
-                      _userCountryCode,
-                    ),
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 48,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -2.0,
-                height: 1.1,
-              ),
+              text,
+              style: RxText.caption(context, color: rx.warning),
             ),
-          ),
-          const SizedBox(height: 32),
-          DottedDivider(color: borderColor), // Subtle Divider
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "LIFETIME OUTFLOW",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: textSecondary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      isLoading
-                          ? '--'
-                          : CurrencyFormatter.formatByCountryCompact(
-                              _totalExpensesAmount,
-                              _userCountryCode,
-                            ),
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 40,
-                color: borderColor,
-              ), // Vertical separator
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      "TOTAL CAPITAL",
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: textSecondary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      isLoading
-                          ? '--'
-                          : CurrencyFormatter.formatByCountryCompact(
-                              fundingAmount ?? 0,
-                              _userCountryCode,
-                            ),
-                      style: TextStyle(
-                        fontFamily: 'Satoshi',
-                        color: textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFundingHistorySection(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  // --- LIST HELPERS ---
+
+  Widget _skeletonRows(int n) => RxCard(
+    child: Column(
       children: [
-        _buildSectionLabel("FUNDING HISTORY", textSecondary),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: borderColor),
-            boxShadow: shadowColor == Colors.transparent
-                ? []
-                : [
-                    BoxShadow(
-                      color: shadowColor,
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+        for (var i = 0; i < n; i++)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 9),
+            child: Row(
+              children: [
+                RxSkeleton(width: 36, height: 36, radius: 11),
+                SizedBox(width: 12),
+                Expanded(child: RxSkeleton(height: 14)),
+                SizedBox(width: 40),
+                RxSkeleton(width: 64, height: 14),
+              ],
+            ),
           ),
-          child: isLoading
-              ? _buildEmptyState("Loading history...", textTertiary)
-              : fundingHistory.isEmpty
-              ? _buildEmptyState("No funding rounds recorded", textTertiary)
-              : Column(
-                  children: fundingHistory.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final item = entry.value;
-                    final isLast = index == fundingHistory.length - 1;
-                    return Column(
-                      children: [
-                        _buildFundingItem(item, textPrimary, textSecondary),
-                        if (!isLast) Divider(color: borderColor, height: 32),
-                      ],
-                    );
-                  }).toList(),
-                ),
-        ),
       ],
-    );
-  }
+    ),
+  );
 
-  Widget _buildFundingItem(
-    Map<String, dynamic> item,
-    Color textPrimary,
-    Color textSecondary,
-  ) {
-    final amount = (item['amount'] as num?)?.toInt() ?? 0;
-    final isActive =
-        item['status'] == 'active' || item['status'] == 'completed';
-    final greenColor = const Color(0xFF10B981); // Emerald
-    final formattedAmount =
-        '+${CurrencyFormatter.formatByCountryCompact(amount.toDouble(), _userCountryCode)}';
-
-    return Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: greenColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: greenColor.withValues(alpha: 0.2)),
+  /// Row used by every list on this screen: tile, title + subtitle, amount.
+  Widget _row({
+    required List<List<dynamic>> icon,
+    required Color tint,
+    required Color tintSoft,
+    required String title,
+    required String subtitle,
+    required String amount,
+    Color? amountColor,
+    String? amountNote,
+    VoidCallback? onTap,
+  }) {
+    final content = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          RxIconTile(
+            icon: icon,
+            size: 38,
+            iconSize: 18,
+            background: tintSoft,
+            foreground: tint,
           ),
-          child: HugeIcon(
-            icon: HugeIcons.strokeRoundedBank,
-            color: greenColor,
-            size: 20,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RxText.body(context),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RxText.caption(context),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                item['round'] as String,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                item['date'] as String,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text(amount, style: RxText.amount(context, color: amountColor)),
+              if (amountNote != null) ...[
+                const SizedBox(height: 2),
+                Text(amountNote, style: RxText.micro(context)),
+              ],
             ],
           ),
-        ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              formattedAmount,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: greenColor,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (isActive)
-              Container(
-                margin: const EdgeInsets.only(top: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: greenColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  "COMPLETED",
-                  style: TextStyle(
-                    fontFamily: 'Satoshi',
-                    color: greenColor,
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
+        ],
+      ),
     );
+    if (onTap == null) return content;
+    return RxPressable(onTap: onTap, scale: 0.98, child: content);
   }
 
-  Widget _buildRecentExpensesSection(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-    bool isDark,
-  ) {
+  Widget _listCard(List<Widget> rows) => RxCard(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    child: Column(
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const RxDivider(indent: 50),
+          rows[i],
+        ],
+      ],
+    ),
+  );
+
+  // --- FUNDING HISTORY ---
+  Widget? _buildFundingHistoryCard() {
+    final rx = context.rx;
+    if (isLoading) return _skeletonRows(2);
+    if (fundingHistory.isEmpty) return null;
+    return _listCard([
+      for (final item in fundingHistory)
+        _row(
+          icon: HugeIcons.strokeRoundedMoneyReceive01,
+          tint: rx.positive,
+          tintSoft: rx.positiveSoft,
+          title: item['round'] as String,
+          subtitle: item['date'] as String,
+          amount: '+${_money((item['amount'] as num?)?.toInt() ?? 0)}',
+          amountColor: rx.positive,
+        ),
+    ]);
+  }
+
+  // --- RECENT EXPENSES ---
+  Widget? _buildRecentExpensesCard() {
     final List<Map<String, dynamic>> expenseTransactions = allExpenses
         .take(5)
         .map(
@@ -989,314 +782,150 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
         )
         .toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel("RECENT EXPENSES", textSecondary),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: borderColor),
-            boxShadow: shadowColor == Colors.transparent
-                ? []
-                : [
-                    BoxShadow(
-                      color: shadowColor,
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: isLoading
-              ? _buildEmptyState("Loading expenses...", textTertiary)
-              : expenseTransactions.isEmpty
-              ? _buildEmptyState("No recent expenses", textTertiary)
-              : Column(
-                  children: expenseTransactions.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final transaction = entry.value;
-                    final isLast = index == expenseTransactions.length - 1;
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _navigateToExpenseDetails(transaction),
-                      child: Column(
-                        children: [
-                          _buildTransactionItem(
-                            transaction,
-                            textPrimary,
-                            textSecondary,
-                            borderColor,
-                            isDark,
-                          ),
-                          if (!isLast) Divider(color: borderColor, height: 32),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
+    if (isLoading) return _skeletonRows(3);
+    if (expenseTransactions.isEmpty) return null;
+
+    return _listCard([
+      for (final t in expenseTransactions)
+        Builder(
+          builder: (context) {
+            final category = t['category']?.toString() ?? 'Other';
+            final amount = (t['amount'] as num?)?.toInt() ?? 0;
+            return _row(
+              icon: RxCategory.icon(category),
+              tint: RxCategory.color(context, category),
+              tintSoft: RxCategory.soft(context, category),
+              title: t['round']?.toString() ?? 'Expense',
+              subtitle: '${_capitalize(category)} · ${t['date']}',
+              amount: '-${_money(amount.abs())}',
+              onTap: () => _navigateToExpenseDetails(t),
+            );
+          },
         ),
-      ],
-    );
+    ]);
   }
 
-  Widget _buildTransactionItem(
-    Map<String, dynamic> transaction,
-    Color textPrimary,
-    Color textSecondary,
-    Color borderColor,
-    bool isDark,
-  ) {
-    final isExpense = transaction['type'] == 'expense';
-    final isActive = transaction['status'] == 'active';
-    final amount = (transaction['amount'] as num?)?.toInt() ?? 0;
-    final isNegative = amount < 0;
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
-    final redColor = const Color(0xFFEF4444);
-    final greenColor = const Color(0xFF10B981);
-
-    String formattedAmount;
-    Color amountColor;
-
-    final cleanAmount = CurrencyFormatter.formatByCountryCompact(
-      amount.abs().toDouble(),
-      _userCountryCode,
-    );
-
-    if (isNegative) {
-      formattedAmount = '-$cleanAmount';
-      amountColor = redColor;
-    } else {
-      formattedAmount = '+$cleanAmount';
-      amountColor = isActive ? greenColor : textPrimary;
-    }
-
-    final iconBgColor = isExpense
-        ? redColor.withValues(alpha: 0.1)
-        : isActive
-        ? greenColor.withValues(alpha: 0.1)
-        : (isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.black.withValues(alpha: 0.05));
-
-    final iconBorderColor = isExpense
-        ? redColor.withValues(alpha: 0.2)
-        : isActive
-        ? greenColor.withValues(alpha: 0.2)
-        : borderColor;
-
-    final iconColor = isExpense
-        ? redColor
-        : (isActive ? greenColor : textSecondary);
-
-    return Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: iconBgColor,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: iconBorderColor),
-          ),
-          child: HugeIcon(
-            icon: isExpense
-                ? HugeIcons.strokeRoundedInvoice01
-                : (isActive
-                      ? HugeIcons.strokeRoundedArrowUpRight01
-                      : HugeIcons.strokeRoundedBank),
-            color: iconColor,
-            size: 20,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                transaction['round'],
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                isExpense
-                    ? '${transaction['category']} • ${transaction['date']}'
-                    : transaction['date'],
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          formattedAmount,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: amountColor,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCashFlowSection(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-  ) {
+  // --- SPEND BY CATEGORY ---
+  Widget? _buildCashFlowCard() {
+    final rx = context.rx;
     final totalOutflow = cashFlowBreakdown
         .where((item) => item['amount'] < 0)
         .fold<int>(0, (total, item) => total + (item['amount'] as int));
 
-    final formattedOutflow = CurrencyFormatter.formatByCountryCompact(
-      totalOutflow.abs().toDouble(),
-      _userCountryCode,
-    );
-    final redColor = const Color(0xFFEF4444);
+    if (isLoading) return _skeletonRows(3);
+    final total = totalOutflow.abs();
+    if (cashFlowBreakdown.isEmpty || total <= 0) return null;
+    final sorted = [...cashFlowBreakdown]
+      ..sort(
+        (a, b) =>
+            (b['amount'] as int).abs().compareTo((a['amount'] as int).abs()),
+      );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel("CASH FLOW BREAKDOWN", textSecondary),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: borderColor),
-            boxShadow: shadowColor == Colors.transparent
-                ? []
-                : [
-                    BoxShadow(
-                      color: shadowColor,
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: isLoading
-              ? _buildEmptyState("Loading cash flow...", textTertiary)
-              : cashFlowBreakdown.isEmpty
-              ? _buildEmptyState("No cash flow data", textTertiary)
-              : Column(
-                  children: [
-                    ...cashFlowBreakdown.map(
-                      (item) => _buildCashFlowItem(
-                        item,
-                        textPrimary,
-                        textSecondary,
-                        redColor,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DottedDivider(color: borderColor),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          "Total Outflow",
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          '-$formattedOutflow',
-                          style: TextStyle(
-                            fontFamily: 'Satoshi',
-                            color: redColor,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCashFlowItem(
-    Map<String, dynamic> item,
-    Color textPrimary,
-    Color textSecondary,
-    Color redColor,
-  ) {
-    final amount = item['amount'] as int;
-    final isPositive = amount >= 0;
-    final greenColor = const Color(0xFF10B981);
-
-    final formattedAmount = CurrencyFormatter.formatByCountryCompact(
-      amount.abs().toDouble(),
-      _userCountryCode,
-    );
-    final displayAmount = isPositive
-        ? '+$formattedAmount'
-        : '-$formattedAmount';
-    final dotColor = isPositive ? greenColor : redColor;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Row(
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 6),
+      child: Column(
         children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              item['category'],
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
+          // Lifetime spend as a donut; sweeps in on open.
+          Center(
+            child: RxDonut(
+              key: ValueKey('funds-donut-$isLoading'),
+              size: 168,
+              thickness: 16,
+              segments: [
+                for (final item in sorted)
+                  RxDonutSegment(
+                    value: (item['amount'] as int).abs().toDouble(),
+                    color: RxCategory.color(
+                      context,
+                      item['category'] as String,
+                    ),
+                  ),
+              ],
+              trackColor: rx.textPrimary.withValues(alpha: 0.06),
+              semanticLabel: 'Lifetime spend by category',
+              center: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Lifetime', style: RxText.caption(context)),
+                  const SizedBox(height: 4),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _money(total),
+                      style: RxText.value(context, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${sorted.length} ${sorted.length == 1 ? 'category' : 'categories'}',
+                    style: RxText.micro(context),
+                  ),
+                ],
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            displayAmount,
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: dotColor,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+          const SizedBox(height: 10),
+          for (var i = 0; i < sorted.length; i++) ...[
+            if (i > 0) const RxDivider(indent: 22),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: RxCategory.color(
+                        context,
+                        sorted[i]['category'] as String,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      sorted[i]['category'] as String,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: RxText.body(context),
+                    ),
+                  ),
+                  if (total > 0)
+                    Text(
+                      '${(((sorted[i]['amount'] as int).abs() / total) * 100).round()}%',
+                      style: RxText.label(context, color: rx.textTertiary),
+                    ),
+                  const SizedBox(width: 14),
+                  Text(
+                    _money((sorted[i]['amount'] as int).abs()),
+                    style: RxText.amount(context),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const RxDivider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Total spent',
+                    style: RxText.body(
+                      context,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Text(
+                  '-${_money(total)}',
+                  style: RxText.amount(context, color: rx.negative),
+                ),
+              ],
             ),
           ),
         ],
@@ -1304,80 +933,12 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
     );
   }
 
-  Widget _buildBankAccountsSection(
-    Color cardColor,
-    Color borderColor,
-    Color shadowColor,
-    Color textPrimary,
-    Color textSecondary,
-    Color textTertiary,
-    bool isDark,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionLabel("PAYMENT METHODS", textSecondary),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: borderColor),
-            boxShadow: shadowColor == Colors.transparent
-                ? []
-                : [
-                    BoxShadow(
-                      color: shadowColor,
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-          ),
-          child: isLoading
-              ? _buildEmptyState("Loading accounts...", textTertiary)
-              : bankAccounts.isEmpty
-              ? Column(
-                  children: [
-                    _buildEmptyState(
-                      "No bank accounts connected",
-                      textTertiary,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildAddAccountButton(textPrimary, isDark),
-                  ],
-                )
-              : Column(
-                  children: [
-                    ...bankAccounts.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final account = entry.value;
-                      final isLast = index == bankAccounts.length - 1;
-                      return Column(
-                        children: [
-                          _buildBankAccountItem(
-                            account,
-                            textPrimary,
-                            textSecondary,
-                          ),
-                          if (!isLast) Divider(color: borderColor, height: 32),
-                        ],
-                      );
-                    }),
-                    const SizedBox(height: 16),
-                    DottedDivider(color: borderColor),
-                    const SizedBox(height: 24),
-                    _buildAddAccountButton(textPrimary, isDark),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
+  // --- PAYMENT METHODS ---
+  Widget? _buildBankAccountsCard() {
+    final rx = context.rx;
+    if (isLoading) return _skeletonRows(2);
 
-  Widget _buildAddAccountButton(Color textPrimary, bool isDark) {
-    return GestureDetector(
+    final addButton = RxPressable(
       onTap: () async {
         final result = await Navigator.push(
           context,
@@ -1387,141 +948,90 @@ class _FundsOverviewScreenState extends State<FundsOverviewScreen> {
           _loadAllData();
         }
       },
+      semanticLabel: 'Add bank account',
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        height: 48,
         decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.05)
-              : Colors.black.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(16), // Soft filled button
+          color: rx.surfaceMuted,
+          borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             HugeIcon(
               icon: HugeIcons.strokeRoundedAdd01,
-              color: textPrimary,
+              color: rx.textPrimary,
               size: 18,
+              strokeWidth: 2,
             ),
             const SizedBox(width: 8),
             Text(
-              "Add Bank Account",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
+              'Add bank account',
+              style: RxText.body(context).copyWith(fontWeight: FontWeight.w600),
             ),
           ],
         ),
       ),
     );
-  }
 
-  Widget _buildBankAccountItem(
-    Map<String, dynamic> account,
-    Color textPrimary,
-    Color textSecondary,
-  ) {
-    final totalSpent = (account['totalSpent'] as num?)?.toDouble() ?? 0.0;
-    final isCash = account['isCash'] == true;
-
-    final bankName =
-        account['name']?.toString() ??
-        account['bankName']?.toString() ??
-        account['bank_name']?.toString() ??
-        'Unknown Bank';
-
-    final accentColor = isCash
-        ? const Color(0xFFF59E0B)
-        : const Color(0xFF3B82F6); // Amber or Blue
-    final redColor = const Color(0xFFEF4444);
-
-    final cleanSpent = totalSpent
-        .toStringAsFixed(0)
-        .replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (match) => '${match[1]},',
-        );
-    final formattedAmount = totalSpent > 0
-        ? '-${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}$cleanSpent'
-        : '${CurrencyFormatter.getCurrencySymbol(_userCountryCode)}0';
-
-    return Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: accentColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: accentColor.withValues(alpha: 0.2)),
-          ),
-          child: HugeIcon(
-            icon: isCash
-                ? HugeIcons.strokeRoundedCoins01
-                : HugeIcons.strokeRoundedBank,
-            color: accentColor,
-            size: 20,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                bankName,
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                account['maskedNumber']?.toString() ?? '****',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  color: textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+    if (bankAccounts.isEmpty) {
+      return RxCard(
+        child: Column(
           children: [
-            Text(
-              formattedAmount,
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: totalSpent > 0 ? redColor : textSecondary,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
+            const RxEmptyState(
+              icon: HugeIcons.strokeRoundedCreditCard,
+              title: 'No accounts yet',
+              message: 'Add a bank account or cash wallet to tag spending',
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 20),
             ),
-            const SizedBox(height: 2),
-            Text(
-              "total outflow",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: textSecondary,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            addButton,
           ],
         ),
-      ],
+      );
+    }
+
+    return RxCard(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: Column(
+        children: [
+          for (var i = 0; i < bankAccounts.length; i++) ...[
+            if (i > 0) const RxDivider(indent: 50),
+            Builder(
+              builder: (context) {
+                final account = bankAccounts[i];
+                final totalSpent =
+                    (account['totalSpent'] as num?)?.toDouble() ?? 0.0;
+                final isCash = account['isCash'] == true;
+                final bankName =
+                    account['name']?.toString() ??
+                    account['bankName']?.toString() ??
+                    account['bank_name']?.toString() ??
+                    'Unknown Bank';
+                final tint = isCash
+                    ? RxCategory.color(context, 'meals')
+                    : RxCategory.color(context, 'servers');
+                final tintSoft = isCash
+                    ? RxCategory.soft(context, 'meals')
+                    : RxCategory.soft(context, 'servers');
+                return _row(
+                  icon: isCash
+                      ? HugeIcons.strokeRoundedCoins01
+                      : HugeIcons.strokeRoundedBank,
+                  tint: tint,
+                  tintSoft: tintSoft,
+                  title: bankName,
+                  subtitle: account['maskedNumber']?.toString() ?? '****',
+                  amount: totalSpent > 0 ? '-${_money(totalSpent)}' : _money(0),
+                  amountColor: totalSpent > 0 ? null : rx.textSecondary,
+                  amountNote: 'spent',
+                );
+              },
+            ),
+          ],
+          const SizedBox(height: 8),
+          addButton,
+        ],
+      ),
     );
   }
 

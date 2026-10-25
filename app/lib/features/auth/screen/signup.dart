@@ -5,13 +5,15 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:startup_expense_tracker/features/auth/services/google_sign_in_service.dart';
 import 'package:startup_expense_tracker/features/company-setup/screen/company_setup_screen.dart';
 import 'package:startup_expense_tracker/shared/utils/error_handler.dart';
 
 import 'package:startup_expense_tracker/features/auth/auth_wrapper.dart';
-import '../../../theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+import 'package:startup_expense_tracker/widgets/rx_form.dart';
+import 'package:startup_expense_tracker/widgets/rx_motion.dart';
+import '../widgets/auth_kit.dart';
 import 'login.dart';
 
 class SignUpScreen extends StatefulWidget {
@@ -22,8 +24,6 @@ class SignUpScreen extends StatefulWidget {
 }
 
 class _SignUpScreenState extends State<SignUpScreen> {
-  bool _isPasswordVisible = false;
-  bool _isConfirmPasswordVisible = false;
   bool _isLoading = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -74,8 +74,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
   }
 
-  /// Shows a dialog when email is already registered, offering to go to login.
-  void _showEmailExistsDialog(String email, List<String> providers) {
+  /// Shown when the email is already registered. Offers the right way back
+  /// in: log in with the password, or continue with Google.
+  Future<void> _showEmailExistsDialog(
+    String email,
+    List<String> providers,
+  ) async {
     final bool isGoogleOnly =
         providers.contains('google.com') && !providers.contains('password');
     final bool isEmailOnly =
@@ -86,7 +90,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     String message;
     if (isGoogleOnly) {
       message =
-          'This email is already linked to a Google account. Please use the "Google Sign-In" button to continue.';
+          'This email is already linked to a Google account. Continue with Google to sign in.';
     } else if (isEmailOnly) {
       message =
           'This email is already registered with a password. Would you like to log in instead?';
@@ -97,75 +101,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
       message = 'This email is already registered. Please log in instead.';
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.cardBackground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: context.borderColor),
-        ),
-        title: Text(
-          'Email Already Registered',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          message,
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              'Cancel',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          if (!isGoogleOnly)
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                // Navigate to login with pre-filled email
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (_) => LoginScreen(prefillEmail: email),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: context.textPrimary,
-                foregroundColor: context.appBackground,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                'Go to Login',
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  fontWeight: FontWeight.w600,
-                  color: context.appBackground,
-                ),
-              ),
-            ),
-        ],
-      ),
+    final go = await showRxConfirm(
+      context,
+      title: 'Email already registered',
+      icon: HugeIcons.strokeRoundedMailAccount01,
+      message: message,
+      confirmLabel: isGoogleOnly ? 'Use Google' : 'Go to login',
     );
+    if (!go || !mounted) return;
+    if (isGoogleOnly) {
+      _signUpWithGoogle();
+    } else {
+      // Navigate to login with pre-filled email
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => LoginScreen(prefillEmail: email)),
+      );
+    }
   }
 
   /// Looks up an email in Firestore's users collection to determine
@@ -315,472 +266,234 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // Live password checklist.
+    _passwordController.addListener(_onPasswordChanged);
+    _confirmPasswordController.addListener(_onPasswordChanged);
+  }
+
+  void _onPasswordChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _passwordController.removeListener(_onPasswordChanged);
+    _confirmPasswordController.removeListener(_onPasswordChanged);
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight:
-                      MediaQuery.of(context).size.height -
-                      MediaQuery.of(context).viewInsets.bottom -
-                      MediaQuery.of(context).padding.top -
-                      MediaQuery.of(context).padding.bottom,
-                ),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeader(context),
-                      const SizedBox(height: 32),
-                      _buildLabel(context, "EMAIL ADDRESS"),
-                      const SizedBox(height: 8),
-                      _buildInputField(
-                        context: context,
-                        controller: _emailController,
-                        hint: "name@company.com",
-                        icon: Icons.email_outlined,
-                      ),
-                      const SizedBox(height: 20),
-                      _buildLabel(context, "PASSWORD"),
-                      const SizedBox(height: 8),
-                      _buildPasswordField(context),
-                      const SizedBox(height: 20),
-                      _buildLabel(context, "CONFIRM PASSWORD"),
-                      const SizedBox(height: 8),
-                      _buildConfirmPasswordField(context),
-                      const SizedBox(height: 24),
-                      _buildSignUpButton(context),
-                      const SizedBox(height: 24),
-                      _buildDivider(context),
-                      const SizedBox(height: 16),
-                      _buildGoogleSignInButton(context),
-                      const Spacer(),
-                      _buildFooter(context),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Future<void> _signUpWithGoogle() async {
+    FocusScope.of(context).unfocus();
+    if (_isLoading) return;
 
-  Widget _buildHeader(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: context.borderColor),
-              boxShadow: context.cardShadow,
-            ),
-            child: Icon(Icons.arrow_back, color: context.textPrimary, size: 20),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          "Create Account",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 32,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -1,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          "Join us to manage your startup finances.",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ],
-    );
-  }
+    setState(() => _isLoading = true);
 
-  Widget _buildLabel(BuildContext context, String text) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
-      ),
-    );
-  }
+    try {
+      final UserCredential? userCredential =
+          await GoogleSignInService.signInWithGoogle();
 
-  Widget _buildInputField({
-    required BuildContext context,
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: TextField(
-        controller: controller,
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textPrimary,
-          fontSize: 15,
-        ),
-        cursorColor: context.textPrimary,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-          ),
-          icon: Icon(icon, color: context.iconSecondary, size: 20),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-      ),
-    );
-  }
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-  Widget _buildConfirmPasswordField(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: TextField(
-        controller: _confirmPasswordController,
-        obscureText: !_isConfirmPasswordVisible,
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textPrimary,
-          fontSize: 15,
-        ),
-        cursorColor: context.textPrimary,
-        decoration: InputDecoration(
-          hintText: "Confirm your password",
-          hintStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-          ),
-          icon: Icon(
-            Icons.lock_outline,
-            color: context.iconSecondary,
-            size: 20,
-          ),
-          suffixIcon: IconButton(
-            icon: Icon(
-              _isConfirmPasswordVisible
-                  ? Icons.visibility
-                  : Icons.visibility_off,
-              color: context.iconSecondary,
-              size: 20,
-            ),
-            onPressed: () {
-              setState(() {
-                _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
-              });
-            },
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-      ),
-    );
-  }
+      if (userCredential != null) {
+        final bool isNewUser =
+            userCredential.additionalUserInfo?.isNewUser ?? false;
+        final User user = userCredential.user!;
 
-  Widget _buildPasswordField(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.cardBackground,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.borderColor),
-        boxShadow: context.cardShadow,
-      ),
-      child: TextField(
-        controller: _passwordController,
-        obscureText: !_isPasswordVisible,
-        style: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textPrimary,
-          fontSize: 15,
-        ),
-        cursorColor: context.textPrimary,
-        decoration: InputDecoration(
-          hintText: "Create a password",
-          hintStyle: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textTertiary,
-          ),
-          icon: Icon(
-            Icons.lock_outline,
-            color: context.iconSecondary,
-            size: 20,
-          ),
-          suffixIcon: IconButton(
-            icon: Icon(
-              _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
-              color: context.iconSecondary,
-              size: 20,
-            ),
-            onPressed: () {
-              setState(() {
-                _isPasswordVisible = !_isPasswordVisible;
-              });
-            },
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSignUpButton(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: _isLoading
-            ? null
-            : () {
-                createUserWithEmailAndPassword();
-              },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: context.textPrimary,
-          foregroundColor: context.appBackground,
-          disabledBackgroundColor: context.textTertiary,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: _isLoading
-            ? SizedBox(
-                height: 24,
-                width: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    context.appBackground,
-                  ),
-                ),
-              )
-            : Text(
-                "Sign Up",
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: context.appBackground,
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildDivider(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(child: Divider(color: context.borderColor)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            "Or",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(child: Divider(color: context.borderColor)),
-      ],
-    );
-  }
-
-  Widget _buildGoogleSignInButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () async {
-        if (_isLoading) return;
-
-        setState(() => _isLoading = true);
-
-        try {
-          final UserCredential? userCredential =
-              await GoogleSignInService.signInWithGoogle();
-
-          if (!mounted) return;
-          setState(() => _isLoading = false);
-
-          if (userCredential != null) {
-            final bool isNewUser =
-                userCredential.additionalUserInfo?.isNewUser ?? false;
-            final User user = userCredential.user!;
-
-            if (isNewUser) {
-              // Brand new account — ensure Firestore document exists
-              await FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(user.uid)
-                  .set({
-                    'uid': user.uid,
-                    'email': user.email ?? '',
-                    'provider': 'google',
-                    'companySetup': false,
-                    'createdAt': FieldValue.serverTimestamp(),
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  }, SetOptions(merge: true));
+        if (isNewUser) {
+          // Brand new account — ensure Firestore document exists
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({
+                'uid': user.uid,
+                'email': user.email ?? '',
+                'provider': 'google',
+                'companySetup': false,
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
 
 
-              if (mounted) {
-                ErrorHandler.handleSuccess(
-                  context: context,
-                  message: 'Account created successfully! Welcome.',
-                );
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(
-                    builder: (context) => const CompanySetupScreen(),
-                  ),
-                );
-              }
-            } else {
-              // Existing account — treat as login
-
-              if (mounted) {
-                ErrorHandler.handleSuccess(
-                  context: context,
-                  message: 'Welcome back! Signed in with Google.',
-                );
-                // Navigate to AuthWrapper which will route to the correct screen
-                // (CompanySetup or Home based on companySetup status).
-                // We must navigate explicitly because the signup screen replaced
-                // AuthWrapper in the stack, so it won't auto-navigate.
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (context) => const AuthWrapper()),
-                  (route) => false,
-                );
-              }
-            }
-          } else {
-            // User cancelled Google sign-in — not an error, just reset state
-            if (mounted) setState(() => _isLoading = false);
-          }
-        } catch (e) {
           if (mounted) {
-            setState(() => _isLoading = false);
-            ErrorHandler.handleError(
+            ErrorHandler.handleSuccess(
               context: context,
-              error: e,
-              customMessage: 'Failed to sign in with Google. Please try again.',
-              onRetry: () async {},
+              message: 'Account created successfully! Welcome.',
+            );
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => const CompanySetupScreen(),
+              ),
+            );
+          }
+        } else {
+          // Existing account — treat as login
+
+          if (mounted) {
+            ErrorHandler.handleSuccess(
+              context: context,
+              message: 'Welcome back! Signed in with Google.',
+            );
+            // Navigate to AuthWrapper which will route to the correct screen
+            // (CompanySetup or Home based on companySetup status).
+            // We must navigate explicitly because the signup screen replaced
+            // AuthWrapper in the stack, so it won't auto-navigate.
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const AuthWrapper()),
+              (route) => false,
             );
           }
         }
-      },
-      child: Container(
-        width: double.infinity,
-        height: 56,
-        decoration: BoxDecoration(
-          color: context.cardBackground,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: context.borderColor),
-          boxShadow: context.cardShadow,
+      } else {
+        // User cancelled Google sign-in — not an error, just reset state
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ErrorHandler.handleError(
+          context: context,
+          error: e,
+          customMessage: 'Failed to sign in with Google. Please try again.',
+          onRetry: () async {},
+        );
+      }
+    }
+  }
+
+  void _goToLogin() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+    );
+  }
+
+  static const _cfoLines = [
+    'Set up in two minutes.',
+    "I'll forecast your runway from day one.",
+    'Track burn, payroll and funding in one place.',
+    'Ask me anything about your numbers.',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return AuthPage(
+      leading: AuthBackButton(onTap: _goToLogin),
+      compactText: 'Your AI CFO is saving you a seat',
+      // Simple: just the robot and its line, no metric chips.
+      hero: (h) => AuthHero(lines: _cfoLines, height: h, chips: const []),
+      body: [
+        const AuthStep(
+          2,
+          child: AuthTitle(
+            title: 'Create your account',
+            subtitle: 'Your AI CFO is free with every account.',
+          ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset('assets/images/google_logo.png', height: 24, width: 24),
-            const SizedBox(width: 12),
-            Text(
-              "Google Sign-In",
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        const SizedBox(height: 16),
+        AuthStep(3, child: _buildForm()),
+        const SizedBox(height: 14),
+        const AuthStep(8, child: AuthDivider(text: 'or sign up with')),
+        const SizedBox(height: 12),
+        AuthStep(
+          8,
+          child: AuthSocialRow(
+            onGoogle: _isLoading ? null : _signUpWithGoogle,
+            onGithub: _isLoading ? null : () => showGithubComingSoon(context),
+          ),
         ),
+      ],
+      footer: AuthFooterLink(
+        prompt: 'Already have an account?',
+        action: 'Log in',
+        onTap: _goToLogin,
       ),
     );
   }
 
-  Widget _buildFooter(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          "Already have an account? ",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-          ),
-        ),
-        GestureDetector(
-          onTap: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const LoginScreen()),
-            );
-          },
-          child: Text(
-            "Login",
-            style: TextStyle(
-              fontFamily: 'Satoshi',
-              color: context.textPrimary,
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
+  Widget _buildForm() {
+    final typing = MediaQuery.viewInsetsOf(context).bottom > 0;
+    final password = _passwordController.text.trim();
+    final confirm = _confirmPasswordController.text.trim();
+    // Same rules as createUserWithEmailAndPassword().
+    final rules = {
+      'At least 8 characters': password.length >= 8,
+      'One uppercase letter': password.contains(RegExp(r'[A-Z]')),
+      'One number': password.contains(RegExp(r'[0-9]')),
+      'Passwords match': confirm.isNotEmpty && password == confirm,
+    };
+
+    return AuthGlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AuthStep(
+            4,
+            child: RxTextInput(
+              controller: _emailController,
+              hint: 'Work email',
+              icon: HugeIcons.strokeRoundedMail01,
+              keyboardType: TextInputType.emailAddress,
+              textCapitalization: TextCapitalization.none,
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 10),
+          AuthStep(
+            5,
+            child: RxPasswordInput(
+              controller: _passwordController,
+              hint: 'Create a password',
+            ),
+          ),
+          const SizedBox(height: 10),
+          AuthStep(
+            6,
+            child: RxPasswordInput(
+              controller: _confirmPasswordController,
+              hint: 'Confirm password',
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) {
+                if (!_isLoading) createUserWithEmailAndPassword();
+              },
+            ),
+          ),
+          // Checklist shows while they're typing a password (keyboard up,
+          // page can scroll). With the keyboard closed the page is fixed
+          // height, so it hides; the same rules are checked on submit.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: password.isEmpty || !typing
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: RxReveal(
+                      offset: 8,
+                      child: RxPasswordChecklist(rules: rules),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 14),
+          AuthStep(
+            7,
+            child: AuthPrimaryButton(
+              label: 'Create account',
+              loading: _isLoading,
+              onTap: _isLoading ? null : createUserWithEmailAndPassword,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const AuthFinePrint(
+            text: 'By continuing you agree to our Terms and Privacy Policy.',
+          ),
+        ],
+      ),
     );
   }
 }

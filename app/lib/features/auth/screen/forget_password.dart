@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:startup_expense_tracker/features/auth/screen/login.dart';
 import '../../../shared/widgets/error_popup.dart';
 import '../services/auth_service.dart';
-import '../../../theme/app_theme.dart';
+import 'package:hugeicons/hugeicons.dart';
+import '../../../widgets/rx_form.dart';
+import '../widgets/auth_kit.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   /// Optional email to pre-fill (e.g. passed from login screen).
@@ -19,11 +20,11 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
 
   bool _isLoading = false;
   bool _emailSent = false;
+  String? _emailError;
   int _cooldownSeconds = 0;
   Timer? _cooldownTimer;
 
@@ -73,78 +74,42 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
   }
 
-  void _showGoogleAccountDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.cardBackground,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: context.borderColor),
-        ),
-        title: Text(
-          'Google Account Detected',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        content: Text(
-          'This email is linked to a Google account. You don\'t need a password — just use the "Google Sign-In" button on the login screen.',
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-            height: 1.5,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(
-              'Cancel',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: context.textPrimary,
-              foregroundColor: context.appBackground,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              'Go to Login',
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                fontWeight: FontWeight.w600,
-                color: context.appBackground,
-              ),
-            ),
-          ),
-        ],
-      ),
+  String? _validateEmail(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Please enter your email address';
+    }
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$',
     );
+    if (!emailRegex.hasMatch(value.trim())) {
+      return 'Please enter a valid email';
+    }
+    return null;
+  }
+
+  Future<void> _showGoogleAccountDialog() async {
+    final go = await showRxConfirm(
+      context,
+      title: 'Google account detected',
+      icon: HugeIcons.strokeRoundedKey01,
+      message:
+          'This email is linked to a Google account. You don\'t need a password, just continue with Google on the login screen.',
+      confirmLabel: 'Go to login',
+    );
+    if (go && mounted) {
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
+    }
   }
 
   Future<void> _sendPasswordResetEmail() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) return;
+    // Same rules the old form validator used.
+    _emailError = _validateEmail(_emailController.text);
+    setState(() {});
+    if (_emailError != null) return;
 
     setState(() => _isLoading = true);
 
@@ -236,309 +201,110 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     }
   }
 
+  static const _cfoLines = [
+    'Happens to every founder.',
+    "I'll send you a secure reset link.",
+    'Check spam if it hides from you.',
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: context.appBackground,
-      resizeToAvoidBottomInset: true,
-      body: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: context.isDarkMode
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
-        child: SafeArea(
-          child: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight:
-                      MediaQuery.of(context).size.height -
-                      MediaQuery.of(context).viewInsets.bottom -
-                      MediaQuery.of(context).padding.top -
-                      MediaQuery.of(context).padding.bottom,
-                ),
-                child: IntrinsicHeight(
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 24),
-                        _buildHeader(context),
-                        const SizedBox(height: 48),
-                        _buildLabel(context, "EMAIL ADDRESS"),
-                        const SizedBox(height: 8),
-                        _buildInputField(
-                          context: context,
-                          controller: _emailController,
-                          hint: "name@company.com",
-                          action: TextInputAction.done,
-                          keyboardType: TextInputType.emailAddress,
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty) {
-                              return 'Please enter your email address';
-                            }
-                            final emailRegex = RegExp(
-                              r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$',
-                            );
-                            if (!emailRegex.hasMatch(value.trim())) {
-                              return 'Please enter a valid email';
-                            }
-                            return null;
-                          },
-                        ),
-                        // Show success hint after email is sent
-                        if (_emailSent) ...[
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: const Color(
-                                0xFF30D158,
-                              ).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(
-                                  0xFF30D158,
-                                ).withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.check_circle_outline,
-                                  color: Color(0xFF30D158),
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    "Check your inbox (and spam folder) for the reset link.",
-                                    style: TextStyle(
-                                      fontFamily: 'Satoshi',
-                                      color: const Color(0xFF30D158),
-                                      fontSize: 13,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 48),
-                        _buildSendButton(context),
-                        const Spacer(),
-                        _buildBackToLogin(context),
-                        const SizedBox(height: 16),
-                      ],
-                    ),
+    final bool isButtonDisabled = _isLoading || _cooldownSeconds > 0;
+
+    return AuthPage(
+      leading: AuthBackButton(onTap: () => Navigator.maybePop(context)),
+      compactText: "I'll send a secure reset link",
+      hero: (h) => AuthHero(
+        lines: _cfoLines,
+        height: h,
+        chips: const [
+          AuthChipData(
+            HugeIcons.strokeRoundedShieldKey,
+            'Reset link',
+            'Secure',
+            up: true,
+          ),
+          AuthChipData(
+            HugeIcons.strokeRoundedMailSend01,
+            'Delivery',
+            'Under a minute',
+          ),
+        ],
+      ),
+      body: [
+        const AuthStep(
+          2,
+          child: AuthTitle(
+            title: 'Reset password',
+            subtitle: "Enter your account email and we'll send you a link.",
+          ),
+        ),
+        const SizedBox(height: 16),
+        AuthStep(
+          3,
+          child: AuthGlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AuthStep(
+                  4,
+                  child: RxTextInput(
+                    controller: _emailController,
+                    hint: 'Email address',
+                    icon: HugeIcons.strokeRoundedMail01,
+                    keyboardType: TextInputType.emailAddress,
+                    textCapitalization: TextCapitalization.none,
+                    textInputAction: TextInputAction.done,
+                    onChanged: (_) {
+                      if (_emailError != null) {
+                        setState(() => _emailError = null);
+                      }
+                    },
+                    onSubmitted: (_) {
+                      if (!isButtonDisabled) _sendPasswordResetEmail();
+                    },
                   ),
                 ),
-              ),
+                AuthFieldError(text: _emailError),
+                // Success hint after the email is sent.
+                if (_emailSent) ...[
+                  const SizedBox(height: 12),
+                  const AuthNotice(
+                    icon: HugeIcons.strokeRoundedMailOpen01,
+                    text:
+                        'Check your inbox (and spam folder) for the reset link.',
+                  ),
+                ],
+                const SizedBox(height: 14),
+                AuthStep(
+                  5,
+                  child: AuthPrimaryButton(
+                    label: _cooldownSeconds > 0
+                        ? 'Resend in ${_cooldownSeconds}s'
+                        : (_emailSent ? 'Send again' : 'Send reset link'),
+                    icon: _cooldownSeconds > 0
+                        ? null
+                        : HugeIcons.strokeRoundedMailSend01,
+                    loading: _isLoading,
+                    onTap: isButtonDisabled ? null : _sendPasswordResetEmail,
+                  ),
+                ),
+              ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.cardBackground,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: context.borderColor),
-              boxShadow: context.cardShadow,
-            ),
-            child: Icon(Icons.arrow_back, color: context.textPrimary, size: 20),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          "Reset Password",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textPrimary,
-            fontSize: 32,
-            fontWeight: FontWeight.w600,
-            letterSpacing: -1,
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-          "Enter the email associated with your account and we'll send you a reset link.",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            height: 1.5,
-          ),
-        ),
       ],
-    );
-  }
-
-  Widget _buildLabel(BuildContext context, String text) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 10,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
+      footer: AuthFooterLink(
+        prompt: 'Remembered it?',
+        action: 'Log in',
+        onTap: () {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
+        },
       ),
-    );
-  }
-
-  Widget _buildInputField({
-    required BuildContext context,
-    required TextEditingController controller,
-    required String hint,
-    TextInputAction action = TextInputAction.next,
-    TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      textInputAction: action,
-      keyboardType: keyboardType,
-      validator: validator,
-      onTapOutside: (_) => FocusScope.of(context).unfocus(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textPrimary,
-        fontSize: 15,
-      ),
-      cursorColor: context.textPrimary,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(
-          fontFamily: 'Satoshi',
-          color: context.textTertiary,
-        ),
-        filled: true,
-        fillColor: context.cardBackground,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: context.borderColor),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: context.borderColor),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: context.textPrimary),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFFF3B30)),
-        ),
-        errorStyle: TextStyle(
-          fontFamily: 'Satoshi',
-          color: const Color(0xFFFF3B30),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSendButton(BuildContext context) {
-    final bool isButtonDisabled = _isLoading || _cooldownSeconds > 0;
-
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: isButtonDisabled ? null : _sendPasswordResetEmail,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: context.textPrimary,
-          foregroundColor: context.appBackground,
-          disabledBackgroundColor: context.textTertiary,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: _isLoading
-            ? SizedBox(
-                height: 24,
-                width: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    context.appBackground,
-                  ),
-                ),
-              )
-            : Text(
-                _cooldownSeconds > 0
-                    ? "Resend in ${_cooldownSeconds}s"
-                    : (_emailSent ? "Send Again" : "Send Reset Link"),
-                style: TextStyle(
-                  fontFamily: 'Satoshi',
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: isButtonDisabled
-                      ? context.appBackground.withValues(alpha: 0.6)
-                      : context.appBackground,
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildBackToLogin(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          "Remembered your password? ",
-          style: TextStyle(
-            fontFamily: 'Satoshi',
-            color: context.textSecondary,
-            fontSize: 14,
-          ),
-        ),
-        GestureDetector(
-          onTap: () {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-            child: Text(
-              "Login",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: context.textPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

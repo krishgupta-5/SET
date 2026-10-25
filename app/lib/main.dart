@@ -58,7 +58,7 @@ class FinancialDashboardApp extends StatelessWidget {
           data: isDark ? AppTheme.darkShadTheme : AppTheme.lightShadTheme,
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
-            title: 'Financial Dashboard',
+            title: 'RunwayX',
             themeMode: themeMode,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,

@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:hugeicons/hugeicons.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
 import 'package:flutter/services.dart';
 import '../../../theme/app_theme.dart';
 
@@ -155,23 +157,11 @@ class _DataAccessScreenState extends State<DataAccessScreen> {
                     final docs = snapshot.data?.docs ?? [];
 
                     if (docs.isEmpty) {
-                      return Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: context.cardBackground,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: context.borderColor),
-                          boxShadow: context.cardShadow,
-                        ),
-                        child: Center(
-                          child: Text(
-                            "No team members yet.",
-                            style: TextStyle(
-                              fontFamily: 'Satoshi',
-                              color: context.textSecondary,
-                              fontSize: 14,
-                            ),
-                          ),
+                      return const RxCard(
+                        child: RxEmptyState(
+                          icon: HugeIcons.strokeRoundedUserGroup,
+                          title: 'No team members yet',
+                          message: 'People you add to teams appear here',
                         ),
                       );
                     }

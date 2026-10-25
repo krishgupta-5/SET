@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:startup_expense_tracker/widgets/rx_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:hugeicons/hugeicons.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -137,7 +139,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                 Text(
                   "Camera Permission Required",
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -148,7 +150,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                 Text(
                   "Please grant camera permission to scan receipts.",
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textSecondary,
                     fontSize: 14,
                   ),
@@ -527,79 +529,51 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
     );
   }
 
+  // Same layout as RxTopBar (round back button, centred title, round
+  // action) so the scan screen matches every other pushed screen. The
+  // title is white because it sits on the camera feed.
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.arrow_back,
-                    color: Colors.white.withValues(alpha: 0.8),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    "Back",
-                    style: TextStyle(
-                      fontFamily: 'Satoshi',
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            RxCircleButton(
+              icon: HugeIcons.strokeRoundedArrowLeft01,
+              semanticLabel: 'Back',
+              onTap: () => Navigator.maybePop(context),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05), // White Glass Style
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            child: Text(
-              _capturedImagePath != null ? "Review Image" : "Scan Expense",
-              style: TextStyle(
-                fontFamily: 'Satoshi',
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          // Flash button: hidden when reviewing a still image (no effect)
-          if (_capturedImagePath == null)
-            GestureDetector(
-              onTap: _toggleFlash,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _flashOn
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.1),
-                  ),
-                ),
-                child: Icon(
-                  _flashOn ? Icons.flash_on : Icons.flash_off,
-                  color: _flashOn ? Colors.black : Colors.white,
-                  size: 20,
+            Expanded(
+              child: Text(
+                _capturedImagePath != null ? 'Review image' : 'Scan expense',
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: RxText.navTitle(context).copyWith(
+                  color: Colors.white,
+                  shadows: const [Shadow(color: Colors.black54, blurRadius: 8)],
                 ),
               ),
-            )
-          else
-            const SizedBox(width: 44), // Maintain layout balance
-        ],
+            ),
+            // Flash is hidden while reviewing a still image (no effect).
+            SizedBox(
+              width: 48,
+              child: _capturedImagePath == null
+                  ? RxCircleButton(
+                      icon: _flashOn
+                          ? HugeIcons.strokeRoundedFlash
+                          : HugeIcons.strokeRoundedFlashOff,
+                      semanticLabel: _flashOn
+                          ? 'Turn flash off'
+                          : 'Turn flash on',
+                      filled: _flashOn,
+                      onTap: _toggleFlash,
+                    )
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -618,7 +592,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
           Text(
             "Initializing camera...",
             style: TextStyle(
-              fontFamily: 'Satoshi',
+              fontFamily: 'Geist',
               color: Colors.white38,
               fontSize: 14,
               fontWeight: FontWeight.w500,
@@ -694,7 +668,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                 Text(
                   title,
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -705,7 +679,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                 Text(
                   message,
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textSecondary,
                     fontSize: 14,
                   ),
@@ -727,7 +701,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                     child: Text(
                       "OK",
                       style: TextStyle(
-                        fontFamily: 'Satoshi',
+                        fontFamily: 'Geist',
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -769,7 +743,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                   child: Text(
                     "Retake",
                     style: TextStyle(
-                      fontFamily: 'Satoshi',
+                      fontFamily: 'Geist',
                       color: context.textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
@@ -813,7 +787,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                   child: Text(
                     "Use Photo",
                     style: TextStyle(
-                      fontFamily: 'Satoshi',
+                      fontFamily: 'Geist',
                       color: context.appBackground,
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
@@ -884,7 +858,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
             child: Text(
               _scanStatus,
               style: TextStyle(
-                fontFamily: 'Satoshi',
+                fontFamily: 'Geist',
                 color: context.textPrimary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -897,15 +871,16 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
   }
 
   // --- SECTION LABEL HELPER ---
+  // Sentence-case field labels, like the rest of the redesign.
   Widget _buildSectionLabel(String text) {
-    return Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontFamily: 'Satoshi',
-        color: context.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.2,
+    final t = text.isEmpty
+        ? text
+        : text[0].toUpperCase() + text.substring(1).toLowerCase();
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        t,
+        style: RxText.label(context).copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -946,7 +921,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                   child: Text(
                     "✓ Parsed",
                     style: TextStyle(
-                      fontFamily: 'Satoshi',
+                      fontFamily: 'Geist',
                       color: const Color(0xFF30D158),
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -969,7 +944,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                 child: Text(
                   _scannedResult,
                   style: TextStyle(
-                    fontFamily: 'Satoshi',
+                    fontFamily: 'Geist',
                     color: context.textPrimary,
                     fontSize: 14, // Slightly smaller for better fit
                     height: 1.6,
@@ -1020,7 +995,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                       child: Text(
                         hasData ? 'Proceed' : 'Retry Scan',
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.appBackground,
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -1044,7 +1019,7 @@ class _ScanExpenseScreenState extends State<ScanExpenseScreen>
                       child: Text(
                         "Discard",
                         style: TextStyle(
-                          fontFamily: 'Satoshi',
+                          fontFamily: 'Geist',
                           color: context.textSecondary,
                           fontSize: 15,
                           fontWeight: FontWeight.w500,

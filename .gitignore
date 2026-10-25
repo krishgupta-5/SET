@@ -54,7 +54,7 @@ app.*.map.json
 /android/app/release
 
 # FVM Version Cache
-.fvm/lib/features/ai/screens/.env
+.fvm/
 
 # Python
 **/.venv/
@@ -69,3 +69,4 @@ backend/*firebase-adminsdk*.json
 # Android Gradle generated files
 **/.gradle/
 **/build/
+/.kiro

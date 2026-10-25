@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Startup Expense Tracker</string>
+	<string>RunwayX</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>startup_expense_tracker</string>
+	<string>RunwayX</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -79,9 +79,9 @@
 	</array>
 	<!-- Camera permissions -->
 	<key>NSCameraUsageDescription</key>
-	<string>This app needs camera access to scan receipts for expense tracking</string>
+	<string>RunwayX uses the camera to scan receipts into expenses.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs photo library access to select receipt images for expense tracking</string>
+	<string>RunwayX uses your photo library to attach receipt images to expenses.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>This app needs permission to save scanned receipt images</string>
 </dict>

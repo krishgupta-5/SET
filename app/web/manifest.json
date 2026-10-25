@@ -1,11 +1,11 @@
 {
-    "name": "startup_expense_tracker",
-    "short_name": "startup_expense_tracker",
+    "name": "RunwayX",
+    "short_name": "RunwayX",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F4F4F2",
+    "theme_color": "#0D0E0F",
+    "description": "RunwayX: track expenses, burn and runway with an AI CFO.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
