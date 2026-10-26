@@ -97,6 +97,13 @@ class CurrencyPreferenceService {
     }
   }
 
+  /// Reloads the preference for whoever is signed in now. Call after an
+  /// account switch so the previous account's currency doesn't carry over.
+  static Future<void> reloadForCurrentUser() async {
+    final currency = await getCurrencyPreference();
+    _currencyNotifier.value = currency;
+  }
+
   /// Update user's currency preference
   static Future<bool> updateCurrencyPreference(String countryCode) async {
     try {

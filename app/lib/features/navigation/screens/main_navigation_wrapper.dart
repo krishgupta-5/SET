@@ -103,7 +103,14 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
                       key: ValueKey('expenses-$_dataEpoch'),
                       visit: _page == _expenses ? _visit : null,
                     ),
-                    const AiScreen(),
+                    AiScreen(
+                      onAddExpense: _onAddPressed,
+                      onOpenTeam: () => _openPage(_team),
+                      // Re-check an empty AI screen after adding data or
+                      // reopening the tab (e.g. after adding a team member).
+                      refreshToken:
+                          _page == _ai ? '$_dataEpoch-$_visit' : null,
+                    ),
                     const SettingsScreen(),
                   ],
                 ),

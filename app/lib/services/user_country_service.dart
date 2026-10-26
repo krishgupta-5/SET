@@ -140,6 +140,11 @@ class UserCountryService {
     return getUserCountryCodeSync();
   }
 
+  /// Forgets the cached code (call on sign-out / account switch).
+  static void reset() {
+    _cachedCountryCode = null;
+  }
+
   /// Initialize the country code cache (call this early in app startup)
   static Future<void> initializeCache() async {
     if (_cachedCountryCode == null) {

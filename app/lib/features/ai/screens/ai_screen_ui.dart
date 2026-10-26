@@ -40,7 +40,23 @@ extension HexColor on Color {
 }
 
 class AiScreen extends StatefulWidget {
-  const AiScreen({super.key});
+  const AiScreen({
+    super.key,
+    this.onAddExpense,
+    this.onOpenTeam,
+    this.refreshToken,
+  });
+
+  /// Opens the add-expense flow (used by the empty state).
+  final VoidCallback? onAddExpense;
+
+  /// Switches to the Team tab (used by the empty state).
+  final VoidCallback? onOpenTeam;
+
+  /// Changes when data may have changed or the tab is reopened. While the
+  /// screen is empty, a change triggers a re-check so insights appear as soon
+  /// as the user adds their first expense or team member.
+  final Object? refreshToken;
 
   @override
   State<AiScreen> createState() => _AiScreenState();
@@ -51,6 +67,9 @@ class _AiScreenState extends State<AiScreen>
   final Map<String, bool> _sectionLoadStates = {};
 
   bool _isLoading = true;
+
+  // True when the account has no expenses and no team members yet.
+  bool _isEmpty = false;
 
   // Bumped on every fetch; results from an older fetch are dropped, so a
   // refresh never shows old and new content one after another.
@@ -78,6 +97,18 @@ class _AiScreenState extends State<AiScreen>
     CurrencyPreferenceService.currencyNotifier.addListener(_onCurrencyChanged);
     _initializeLoadStates();
     _initializeAndFetch();
+  }
+
+  @override
+  void didUpdateWidget(covariant AiScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isEmpty &&
+        !_isLoading &&
+        widget.refreshToken != null &&
+        widget.refreshToken != oldWidget.refreshToken) {
+      _initializeLoadStates();
+      _fetchAIInsight(forceRefresh: true);
+    }
   }
 
   @override
@@ -170,6 +201,7 @@ class _AiScreenState extends State<AiScreen>
             debugPrint("Loaded UI AI insights from fast local cache!");
             setState(() {
               final map = rawCachedState[0] as Map<String, dynamic>;
+              _isEmpty = false;
               _mainData = map["main"];
               _keyPointsData = map["keyPoints"];
               _runwayData = map["runway"];
@@ -209,14 +241,15 @@ class _AiScreenState extends State<AiScreen>
 
       if (!mounted) return;
 
-      if (expensesSnapshot.docs.isEmpty && membersSnapshot.docs.isEmpty) {
+      final empty =
+          expensesSnapshot.docs.isEmpty && membersSnapshot.docs.isEmpty;
+      setState(() => _isEmpty = empty);
+      if (empty) {
+        // Nothing to analyse: show the getting-started card, not sections
+        // that would wait forever for a payload that never comes.
+        _cachedPayload = null;
         setState(() {
-          _mainData = {
-            "primary_insight": "Welcome to AI Insights",
-            "high_impact_summary": "NO DATA",
-            "description":
-                "No expenses recorded yet. Add some expenses to generate your first financial intelligence report.",
-          };
+          _mainData = null;
           _isLoading = false;
         });
         return;
@@ -579,7 +612,9 @@ class _AiScreenState extends State<AiScreen>
               children: [
                 RxReveal.index(0, child: _buildHeader(busy)),
                 const SizedBox(height: 20),
-                if (_isLoading || _mainData == null)
+                if (_isEmpty && !_isLoading)
+                  RxReveal(child: _buildGettingStarted())
+                else if (_isLoading || _mainData == null)
                   _centered(const AiThinking())
                 else if (_mainData!.containsKey('error'))
                   _centered(AiOffline(onRetry: _refresh))
@@ -684,6 +719,69 @@ class _AiScreenState extends State<AiScreen>
         height: h.clamp(320.0, 900.0),
         child: Center(child: child),
       ),
+    );
+  }
+
+  /// First-run state: explains what the AI CFO does and gives clear next
+  /// steps, instead of a "no data" card above loaders that never finish.
+  Widget _buildGettingStarted() {
+    final rx = context.rx;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RxCard(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const AiChip(label: 'GET STARTED'),
+              const SizedBox(height: 14),
+              Text(
+                'Your AI CFO needs a few numbers first',
+                style: RxText.heading(context).copyWith(
+                  fontSize: 19,
+                  height: 1.35,
+                  letterSpacing: -0.2,
+                  color: rx.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Once you add expenses or team members, you get a daily '
+                'briefing on runway, burn, payroll and subscriptions, with '
+                'specific ways to save.',
+                style: RxText.body(context, color: rx.textSecondary)
+                    .copyWith(fontWeight: FontWeight.w400, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _StepCard(
+          step: 1,
+          icon: HugeIcons.strokeRoundedInvoice01,
+          title: 'Add your first expense',
+          subtitle: 'Scan a receipt or enter it manually',
+          onTap: widget.onAddExpense,
+        ),
+        const SizedBox(height: 10),
+        _StepCard(
+          step: 2,
+          icon: HugeIcons.strokeRoundedUserGroup,
+          title: 'Add your team',
+          subtitle: 'Salaries help estimate burn and runway',
+          onTap: widget.onOpenTeam,
+        ),
+        const SizedBox(height: 10),
+        _StepCard(
+          step: 3,
+          icon: HugeIcons.strokeRoundedSparkles,
+          title: 'Come back for insights',
+          subtitle: 'They appear here automatically',
+        ),
+        const SizedBox(height: 24),
+        _buildAskCard(),
+      ],
     );
   }
 
@@ -902,6 +1000,63 @@ class _AiScreenState extends State<AiScreen>
     subtitle: 'Recurring costs worth a look',
     tone: AiTone.brand,
   );
+}
+
+/// One numbered step in the getting-started list. Tappable when [onTap] set.
+class _StepCard extends StatelessWidget {
+  const _StepCard({
+    required this.step,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+  });
+
+  final int step;
+  final List<List<dynamic>> icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final rx = context.rx;
+    return RxCard(
+      onTap: onTap,
+      semanticLabel: 'Step $step: $title',
+      padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+      child: Row(
+        children: [
+          RxIconTile(icon: icon),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: RxText.body(context, color: rx.textPrimary)
+                      .copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: RxText.caption(context, color: rx.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if (onTap != null)
+            HugeIcon(
+              icon: HugeIcons.strokeRoundedArrowRight01,
+              color: rx.textTertiary,
+              size: 18,
+              strokeWidth: 1.8,
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Inline "the AI is working on this" row, shown while a section loads.
