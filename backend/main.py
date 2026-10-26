@@ -204,7 +204,7 @@ def chat_endpoint(request: ChatRequest, uid: str = Depends(rate_limited_user)):
 def chat_endpoint_stream(request: ChatRequest, uid: str = Depends(rate_limited_user)):
     return StreamingResponse(
         process_chat_message_stream(uid, request.question, request.history, request.sectionData, request.currencySymbol),
-        media_type="text/event-stream"
+        media_type="text/event-stream; charset=utf-8"
     )
 
 # ---------------------------

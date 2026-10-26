@@ -130,6 +130,9 @@ def process_chat_message_stream(uid: str, question: str, history: list, client_d
                 yield _sse_error("AI service is temporarily unavailable. Please try again later.")
                 return
 
+            # Groq's SSE has no charset, so requests would fall back to
+            # ISO-8859-1 and turn "₹" into "â\x82¹". The stream is UTF-8.
+            response.encoding = "utf-8"
             chunks = 0
             for line in response.iter_lines(decode_unicode=True):
                 if not line or not line.startswith("data:"):
