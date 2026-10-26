@@ -286,3 +286,32 @@ def test_endpoints_require_auth(monkeypatch):
     assert client.post("/receipts/scan", json={"image": "aGk=", "mimeType": "image/jpeg"}).status_code == 401
     assert client.post("/files/upload", json={"data": "aGk=", "fileName": "a.jpg"}).status_code == 401
     assert client.get("/files/AgACAgUAAxkBAAIB").status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Chat stream encoding: "₹" must not become "â\x82¹"
+# ---------------------------------------------------------------------------
+
+def test_chat_stream_keeps_utf8_symbols(monkeypatch):
+    import requests
+    from services import chat_service as cs
+
+    chunk = 'data: {"choices":[{"delta":{"content":"₹10,000.00 raised."}}]}'
+    raw = (chunk + "\n\ndata: [DONE]\n\n").encode("utf-8")
+
+    def fake_post(*args, **kwargs):
+        r = requests.models.Response()
+        r.status_code = 200
+        r.headers["Content-Type"] = "text/event-stream"  # no charset, like Groq
+        # What requests' HTTPAdapter does: text/* without charset -> ISO-8859-1.
+        r.encoding = requests.utils.get_encoding_from_headers(r.headers)
+        r.raw = __import__("io").BytesIO(raw)
+        return r
+
+    monkeypatch.setattr(cs, "GROQ_API_KEY", "test-key")
+    monkeypatch.setattr(cs, "_build_messages", lambda *a, **k: ([], False))
+    monkeypatch.setattr(cs.requests, "post", fake_post)
+
+    out = "".join(cs.process_chat_message_stream("uid", "q", [], {}, "₹"))
+    assert "₹10,000.00" in out
+    assert "â" not in out
