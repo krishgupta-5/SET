@@ -51,6 +51,11 @@ class RxTabBar extends StatelessWidget {
   static double _bottomMargin(BuildContext context) =>
       math.max(MediaQuery.paddingOf(context).bottom, _minBottomMargin);
 
+  /// Distance from the screen's bottom edge to the top of the pill, for
+  /// controls that float just above the bar.
+  static double barTop(BuildContext context) =>
+      _bottomMargin(context) + barHeight;
+
   /// Height of the fade above the pill in [RxNavBackdrop].
   static const double fadeHeight = 28;
 

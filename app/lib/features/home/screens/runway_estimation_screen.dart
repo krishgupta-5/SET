@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
@@ -27,6 +28,10 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
 
   List<Map<String, dynamic>> monthlyProjections = [];
   List<Map<String, dynamic>> allExpenses = [];
+
+  // Raw numbers behind the cash chart (0 when there is nothing to project).
+  double _chartCash = 0;
+  double _chartBurn = 0;
 
   String _userCountryCode = '+1'; // Default to USD
 
@@ -114,6 +119,8 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
               ? (s.funding == 0 ? 'Awaiting funding' : 'Funds depleted')
               : 'Add expenses to track';
           monthlyProjections = [];
+          _chartCash = 0;
+          _chartBurn = 0;
           isLoading = false;
         });
         return;
@@ -132,6 +139,8 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
         monthlyProjections = profitable
             ? []
             : _generateMonthlyProjections(s.availableFunds, s.netBurn);
+        _chartCash = profitable ? 0 : s.availableFunds;
+        _chartBurn = profitable ? 0 : s.netBurn;
         isLoading = false;
       });
     } catch (e) {
@@ -149,6 +158,8 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
       netBurn = zeroStr;
       zeroCashDate = '--';
       monthlyProjections = [];
+      _chartCash = 0;
+      _chartBurn = 0;
       isLoading = false;
     });
   }
@@ -476,9 +487,57 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
 
   // --- CHART ---
 
-  /// Checkpoint picked by tapping or dragging on the chart. 0 = today,
-  /// k = monthlyProjections[k - 1]. UI state only.
-  int? _scrubIndex;
+  /// Chart x picked by touching or dragging (null = not touching). UI only.
+  double? _touchX;
+
+  static const _mon = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  /// "26 Oct 2026"
+  String _fullDate(DateTime d) => '${d.day} ${_mon[d.month - 1]} ${d.year}';
+
+  /// Time left as a person would say it: days, then months, then years.
+  String _timeLeft(double days) {
+    if (days < 1) return 'Under a day left';
+    if (days < 60) {
+      final d = days.round();
+      return '$d ${d == 1 ? 'day' : 'days'} left';
+    }
+    final m = days / 30.44;
+    if (m < 24) return '${m.toStringAsFixed(1)} months left';
+    return '${(m / 12).toStringAsFixed(1)} years left';
+  }
+
+  /// Short money for the value axis: ₹10K, ₹2.5L, $1.2M.
+  String _axisMoney(double v) {
+    final sym = CurrencyFormatter.getCurrencySymbol(_userCountryCode);
+    if (v <= 0) return '${sym}0';
+    String n(double x) => x >= 100
+        ? x.toStringAsFixed(0)
+        : x.toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '');
+    final inr = _userCountryCode == '+91';
+    if (inr) {
+      if (v >= 1e7) return '$sym${n(v / 1e7)}Cr';
+      if (v >= 1e5) return '$sym${n(v / 1e5)}L';
+    } else {
+      if (v >= 1e9) return '$sym${n(v / 1e9)}B';
+      if (v >= 1e6) return '$sym${n(v / 1e6)}M';
+    }
+    if (v >= 1e3) return '$sym${n(v / 1e3)}K';
+    return '$sym${v.round()}';
+  }
 
   /// "832.5" months -> "69.4 years left"; short runways stay in months.
   String _leftLabel(String monthsLeft) {
@@ -486,9 +545,6 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
     if (m >= 24) return '${(m / 12).toStringAsFixed(1)} years left';
     return '${m.toStringAsFixed(1)} months left';
   }
-
-  /// Axis-friendly money: drop a trailing ".00".
-  String _axisMoney(String s) => s.replaceAll(RegExp(r'\.00$'), '');
 
   /// The date cash hits zero, taken from the same projection the chart
   /// draws, so the headline and the chart always agree.
@@ -500,17 +556,23 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
     return zeroCashDate ?? '--';
   }
 
+  /// Cash run-down chart (fl_chart). Reads like a stock chart:
+  /// - x is real time from today to the day cash hits zero, labelled with
+  ///   evenly spaced dates that never repeat;
+  /// - y is cash left, labelled in short money (₹10K, ₹5K, ₹0);
+  /// - the line is coloured by the same thresholds as the status pill:
+  ///   green with 6+ months left, amber for 3-6, red under 3;
+  /// - touch and drag to read the cash left on any date in the header.
   Widget _buildChartCard() {
     final rx = context.rx;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (isLoading) {
       return const RxCard(
         padding: EdgeInsets.all(18),
-        child: RxSkeleton(height: 190, radius: 12),
+        child: RxSkeleton(height: 250, radius: 12),
       );
     }
-    if (monthlyProjections.isEmpty) {
+    if (monthlyProjections.isEmpty || _chartCash <= 0 || _chartBurn <= 0) {
       return const RxCard(
         child: RxEmptyState(
           icon: HugeIcons.strokeRoundedChartLineData01,
@@ -520,61 +582,220 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
       );
     }
 
-    final n = monthlyProjections.length;
-    final months = [
-      'Now',
-      for (final p in monthlyProjections) p['month'] as String,
-    ];
-    // Long horizons label the axis in years, short ones in months.
-    final firstYear = int.tryParse(months[1].split(' ').last) ?? 0;
-    final lastYear = int.tryParse(months.last.split(' ').last) ?? 0;
-    final useYears = lastYear - firstYear >= 2;
-    final xLabels = [
-      'Now',
-      for (var k = 1; k <= n; k++)
-        useYears ? months[k].split(' ').last : months[k].split(' ').first,
-    ];
+    final cash = _chartCash;
+    final totalDays = cash / _chartBurn * 30.44;
+    final totalMonths = totalDays / 30.44;
+    final now = DateTime.now();
 
-    final start = currentBalance ?? _zeroMoney;
-    // Checkpoint k sits at k/n of the runway, so the one at the halfway
-    // mark holds exactly half the cash.
-    final mid = n.isEven && n >= 2
-        ? monthlyProjections[n ~/ 2 - 1]['balance'] as String
-        : null;
-    final yLabels = [
-      _axisMoney(start),
-      if (mid != null) _axisMoney(mid),
-      _axisMoney(_zeroMoney),
-    ];
+    // x runs 0..ticks with one date label per whole step, so labels are
+    // evenly spaced in time. y is cash as a share of today's balance.
+    final ticks = totalDays >= 4 ? 4 : (totalDays >= 2 ? 2 : 1);
+    final maxX = ticks.toDouble();
+    double daysAt(double x) => x / maxX * totalDays;
+    DateTime dateAt(double x) =>
+        now.add(Duration(minutes: (daysAt(x) * 1440).round()));
+    final cashOut = dateAt(maxX);
 
-    final sel = _scrubIndex;
-    final String selValue;
-    final String selWhen;
-    final String selLeft;
-    if (sel == null || sel == 0) {
-      selValue = start;
-      selWhen = 'Today';
-      selLeft = runwayMonths != null
-          ? _leftLabel(runwayMonths!.toStringAsFixed(1))
-          : '';
-    } else {
-      final p = monthlyProjections[sel - 1];
-      selValue = p['balance'] as String;
-      selWhen = p['month'] as String;
-      selLeft = p['isCashOut'] == true
-          ? 'Cash runs out'
-          : _leftLabel(p['monthsLeft'] as String);
+    // Day labels for short runways, month labels for medium, years for
+    // long ones. Steps are wide enough that two labels never match.
+    String axisDate(DateTime d) {
+      if (totalDays <= 150) return '${d.day} ${_mon[d.month - 1]}';
+      if (totalDays <= 4 * 365) {
+        final yy = (d.year % 100).toString().padLeft(2, '0');
+        return "${_mon[d.month - 1]} '$yy";
+      }
+      return '${d.year}';
     }
-    final selIsCashOut = sel != null && sel == n;
 
-    const gutter = 58.0;
+    // Status colour for a point on the line, from the months left there.
+    Color colorAt(double x) {
+      final left = totalMonths * (1 - x / maxX);
+      if (left > 6) return rx.positive;
+      if (left > 3) return rx.warning;
+      return rx.negative;
+    }
+
+    final zoned = totalMonths > 3;
+    final f6 = (1 - 6 / totalMonths).clamp(0.0, 1.0);
+    final f3 = (1 - 3 / totalMonths).clamp(0.0, 1.0);
+    LinearGradient zones(double alpha) => LinearGradient(
+      colors: [
+        for (final c in [
+          rx.positive,
+          rx.positive,
+          rx.warning,
+          rx.warning,
+          rx.negative,
+          rx.negative,
+        ])
+          c.withValues(alpha: alpha),
+      ],
+      stops: [0, f6, f6, f3, f3, 1],
+    );
+
+    // Readout: today by default, the touched date while dragging.
+    final sel = _touchX;
+    final selCash = sel == null ? cash : cash * (1 - sel / maxX);
+    final selIsEnd = sel != null && sel >= maxX - 1e-6;
+
+    const steps = 48;
+    List<FlSpot> spotsUpTo(double p) {
+      final end = maxX * p;
+      final out = <FlSpot>[];
+      for (var i = 0; i <= steps; i++) {
+        final x = maxX * i / steps;
+        if (x > end + 1e-9) break;
+        out.add(FlSpot(x, 1 - x / maxX));
+      }
+      if (out.last.x < end - 1e-9) out.add(FlSpot(end, 1 - end / maxX));
+      return out;
+    }
+
+    FlDotPainter ringDot(Color c, {double r = 5}) => FlDotCirclePainter(
+      radius: r,
+      color: c,
+      strokeWidth: 3,
+      strokeColor: rx.surface,
+    );
+
+    LineChartData chartData(double p) {
+      final done = p >= 1;
+      return LineChartData(
+        minX: 0,
+        maxX: maxX,
+        minY: 0,
+        maxY: 1.12,
+        gridData: FlGridData(
+          drawVerticalLine: false,
+          horizontalInterval: 0.5,
+          checkToShowHorizontalLine: (v) => v > 0,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: rx.hairline,
+            strokeWidth: 1,
+            dashArray: const [4, 4],
+          ),
+        ),
+        borderData: FlBorderData(
+          show: true,
+          border: Border(bottom: BorderSide(color: rx.hairline)),
+        ),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(),
+          rightTitles: const AxisTitles(),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 46,
+              interval: 0.5,
+              maxIncluded: false,
+              getTitlesWidget: (v, meta) => SideTitleWidget(
+                meta: meta,
+                space: 8,
+                child: Text(_axisMoney(cash * v), style: RxText.micro(context)),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 28,
+              interval: 1,
+              getTitlesWidget: (v, meta) {
+                final isStart = v <= 1e-6;
+                final isEnd = (v - maxX).abs() < 1e-6;
+                final style = RxText.micro(
+                  context,
+                  color: isEnd ? rx.negative : null,
+                );
+                return SideTitleWidget(
+                  meta: meta,
+                  space: 8,
+                  fitInside: SideTitleFitInsideData.fromTitleMeta(
+                    meta,
+                    distanceFromEdge: 0,
+                  ),
+                  child: Text(
+                    isStart ? 'Today' : axisDate(dateAt(v)),
+                    style: isStart || isEnd
+                        ? style.copyWith(fontWeight: FontWeight.w600)
+                        : style,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spotsUpTo(p),
+            barWidth: 3,
+            isStrokeCapRound: true,
+            color: zoned ? null : rx.negative,
+            gradient: zoned ? zones(1) : null,
+            gradientArea: LineChartGradientArea.wholeChart,
+            belowBarData: BarAreaData(
+              show: true,
+              color: zoned ? null : rx.negative.withValues(alpha: 0.12),
+              gradient: zoned ? zones(0.12) : null,
+            ),
+            dotData: FlDotData(
+              checkToShowDot: (s, _) => s.x == 0 || (done && s.x == maxX),
+              getDotPainter: (s, _, _, _) =>
+                  ringDot(s.x == 0 ? colorAt(0) : rx.negative),
+            ),
+          ),
+        ],
+        lineTouchData: LineTouchData(
+          enabled: done,
+          touchSpotThreshold: 1000,
+          touchCallback: (event, response) {
+            final x = event.isInterestedForInteractions
+                ? response?.lineBarSpots?.firstOrNull?.x
+                : null;
+            if (x == _touchX) return;
+            if (x != null && _touchX == null) HapticFeedback.selectionClick();
+            setState(() => _touchX = x);
+          },
+          getTouchedSpotIndicator: (bar, indexes) => [
+            for (final _ in indexes)
+              TouchedSpotIndicatorData(
+                FlLine(
+                  color: rx.textTertiary,
+                  strokeWidth: 1,
+                  dashArray: const [3, 3],
+                ),
+                FlDotData(
+                  getDotPainter: (s, _, _, _) => ringDot(colorAt(s.x), r: 6),
+                ),
+              ),
+          ],
+          // The header shows the reading, so no floating tooltip.
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => Colors.transparent,
+            getTooltipItems: (spots) => [for (final _ in spots) null],
+          ),
+        ),
+      );
+    }
+
+    Widget legendDot(Color c, String label) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: RxText.micro(context, color: rx.textSecondary)),
+      ],
+    );
 
     return RxCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Readout for the picked checkpoint (today by default).
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -582,84 +803,87 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(selWhen, style: RxText.caption(context)),
-                    const SizedBox(height: 2),
                     Text(
-                      selValue,
-                      style: RxText.value(
-                        context,
-                        size: 20,
-                        color: selIsCashOut ? rx.negative : null,
+                      sel == null ? 'Cash today' : _fullDate(dateAt(sel)),
+                      style: RxText.caption(context),
+                    ),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _formatCurrency(selCash < 0 ? 0 : selCash),
+                        style: RxText.value(
+                          context,
+                          size: 20,
+                          color: selIsEnd ? rx.negative : null,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-              Text(
-                selLeft,
-                style: RxText.caption(
-                  context,
-                  color: selIsCashOut ? rx.negative : rx.textSecondary,
-                ).copyWith(fontWeight: FontWeight.w500),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    sel == null ? 'Runs out' : 'At this date',
+                    style: RxText.caption(context),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    sel == null
+                        ? _fullDate(cashOut)
+                        : selIsEnd
+                        ? 'Cash runs out'
+                        : _timeLeft(totalDays - daysAt(sel)),
+                    style: RxText.body(
+                      context,
+                      color: sel == null || selIsEnd
+                          ? rx.negative
+                          : colorAt(sel),
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              int indexAt(double dx) {
-                final plotW = width - gutter - 8;
-                final t = ((dx - gutter) / plotW).clamp(0.0, 1.0);
-                return (t * n).round().clamp(0, n);
-              }
-
-              void pick(double dx) {
-                final k = indexAt(dx);
-                if (k != _scrubIndex) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _scrubIndex = k);
-                }
-              }
-
-              return Semantics(
-                label:
-                    'Cash projection from $start today to zero in ${months.last}. Tap or drag to read a checkpoint.',
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (d) => pick(d.localPosition.dx),
-                  onHorizontalDragStart: (d) => pick(d.localPosition.dx),
-                  onHorizontalDragUpdate: (d) => pick(d.localPosition.dx),
-                  child: SizedBox(
-                    height: 190,
-                    width: width,
-                    // Line draws itself from today to cash-out on open.
-                    child: RxGrow(
-                      value: 1,
-                      duration: const Duration(milliseconds: 1000),
-                      builder: (context, progress) => CustomPaint(
-                        painter: _RunwayCurvePainter(
-                          progress: progress,
-                          line: rx.textPrimary,
-                          grid: rx.hairline,
-                          label: rx.textTertiary,
-                          labelStrong: rx.textSecondary,
-                          marker: isDark ? rx.accent : rx.inverse,
-                          markerRing: rx.surface,
-                          end: rx.negative,
-                          points: n,
-                          xLabels: xLabels,
-                          yLabels: yLabels,
-                          gutter: gutter,
-                          selected: _scrubIndex,
-                          fontFamily: RxText.family,
-                        ),
-                      ),
-                    ),
-                  ),
+          const SizedBox(height: 18),
+          Semantics(
+            label:
+                'Cash projection: ${_formatCurrency(cash)} today, running out '
+                'on ${_fullDate(cashOut)}. Touch and drag to read any date.',
+            child: SizedBox(
+              height: 210,
+              // Line draws itself from today to cash-out on open.
+              child: RxGrow(
+                value: 1,
+                duration: const Duration(milliseconds: 900),
+                builder: (context, p) =>
+                    LineChart(chartData(p), duration: Duration.zero),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: 14,
+                  runSpacing: 6,
+                  children: [
+                    if (totalMonths > 6) legendDot(rx.positive, '6+ months'),
+                    if (totalMonths > 3) legendDot(rx.warning, '3-6 months'),
+                    legendDot(rx.negative, 'Under 3 months'),
+                  ],
                 ),
-              );
-            },
+              ),
+              Text(
+                'Drag to explore',
+                style: RxText.micro(context, color: rx.textTertiary),
+              ),
+            ],
           ),
         ],
       ),
@@ -985,185 +1209,4 @@ class RunwayEstimationScreenState extends State<RunwayEstimationScreen> {
 
     return risks;
   }
-}
-
-/// Cash run-down chart: value axis on the left (start, halfway, zero),
-/// date labels under each checkpoint, a straight line from today's cash to
-/// zero (the projection assumes a flat monthly burn), and an optional
-/// highlighted checkpoint with a vertical guide.
-class _RunwayCurvePainter extends CustomPainter {
-  _RunwayCurvePainter({
-    this.progress = 1,
-    required this.line,
-    required this.grid,
-    required this.label,
-    required this.labelStrong,
-    required this.marker,
-    required this.markerRing,
-    required this.end,
-    required this.points,
-    required this.xLabels,
-    required this.yLabels,
-    required this.gutter,
-    required this.selected,
-    required this.fontFamily,
-  });
-
-  /// 0..1: how much of the line is drawn (entrance animation).
-  final double progress;
-  final Color line;
-  final Color grid;
-  final Color label;
-  final Color labelStrong;
-  final Color marker;
-  final Color markerRing;
-  final Color end;
-  final int points;
-  final List<String> xLabels; // points + 1 entries, index 0 = today
-  final List<String> yLabels; // top to bottom, evenly spaced
-  final double gutter;
-  final int? selected;
-  final String fontFamily;
-
-  static const _xAxisH = 22.0;
-  static const _topPad = 8.0;
-  static const _rightPad = 8.0;
-
-  TextPainter _text(
-    String s,
-    Color c, {
-    double maxWidth = 200,
-    bool bold = false,
-  }) {
-    return TextPainter(
-      text: TextSpan(
-        text: s,
-        style: TextStyle(
-          fontFamily: fontFamily,
-          fontSize: 11,
-          height: 1,
-          color: c,
-          fontWeight: bold ? FontWeight.w600 : FontWeight.w500,
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: maxWidth);
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final left = gutter;
-    final right = size.width - _rightPad;
-    final top = _topPad;
-    final bottom = size.height - _xAxisH;
-    final w = right - left;
-    final h = bottom - top;
-    Offset at(double t) => Offset(left + w * t, top + h * t);
-
-    // Y axis: dashed gridlines with right-aligned labels in the gutter.
-    final gridPaint = Paint()
-      ..color = grid
-      ..strokeWidth = 1;
-    for (var i = 0; i < yLabels.length; i++) {
-      final f = yLabels.length == 1 ? 0.0 : i / (yLabels.length - 1);
-      final y = top + h * f;
-      for (double x = left; x < right; x += 7) {
-        canvas.drawLine(
-          Offset(x, y),
-          Offset((x + 3.5).clamp(left, right), y),
-          gridPaint,
-        );
-      }
-      final tp = _text(yLabels[i], label, maxWidth: gutter - 10);
-      tp.paint(canvas, Offset(gutter - 10 - tp.width, y - tp.height / 2));
-    }
-
-    // Area + line, drawn up to [progress].
-    final pr = progress.clamp(0.0, 1.0);
-    final area = Path()
-      ..moveTo(at(0).dx, at(0).dy)
-      ..lineTo(at(pr).dx, at(pr).dy)
-      ..lineTo(at(pr).dx, at(1).dy)
-      ..lineTo(at(0).dx, at(1).dy)
-      ..close();
-    canvas.drawPath(
-      area,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [line.withValues(alpha: 0.12), line.withValues(alpha: 0)],
-        ).createShader(Rect.fromLTRB(left, top, right, bottom)),
-    );
-    canvas.drawLine(
-      at(0),
-      at(pr),
-      Paint()
-        ..color = line
-        ..strokeWidth = 2.5
-        ..strokeCap = StrokeCap.round,
-    );
-
-    // Selection guide behind the dots.
-    if (selected != null) {
-      final p = at(selected! / points);
-      canvas.drawLine(
-        Offset(p.dx, top),
-        Offset(p.dx, bottom),
-        Paint()
-          ..color = labelStrong.withValues(alpha: 0.5)
-          ..strokeWidth = 1,
-      );
-    }
-
-    // Checkpoints pop in as the line reaches them.
-    double pop(double t) => ((pr - t) / 0.08 + 1).clamp(0.0, 1.0);
-    final ring = Paint()..color = markerRing;
-    for (var k = 1; k < points; k++) {
-      final s = pop(k / points);
-      if (s <= 0) continue;
-      final p = at(k / points);
-      final isSel = selected == k;
-      canvas.drawCircle(p, (isSel ? 7 : 4.5) * s, ring);
-      canvas.drawCircle(p, (isSel ? 5 : 3) * s, Paint()..color = line);
-    }
-    final isEndSel = selected == points;
-    final se = pop(1);
-    if (se > 0) {
-      canvas.drawCircle(at(1), (isEndSel ? 8 : 6.5) * se, ring);
-      canvas.drawCircle(at(1), (isEndSel ? 6 : 5) * se, Paint()..color = end);
-    }
-    final isTodaySel = selected == 0;
-    canvas.drawCircle(at(0), isTodaySel ? 8.5 : 7, ring);
-    canvas.drawCircle(at(0), isTodaySel ? 7 : 5.5, Paint()..color = marker);
-
-    // X axis labels under each checkpoint; edges stay inside the chart.
-    final slot = w / points;
-    for (var k = 0; k <= points && k < xLabels.length; k++) {
-      final isSel = selected == k;
-      final color = k == points ? end : (isSel ? labelStrong : label);
-      final tp = _text(xLabels[k], color, maxWidth: slot + 6, bold: isSel);
-      final cx = left + w * (k / points);
-      final dx = (cx - tp.width / 2).clamp(left - 4, size.width - tp.width);
-      tp.paint(canvas, Offset(dx, bottom + 8));
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RunwayCurvePainter old) =>
-      old.progress != progress ||
-      old.line != line ||
-      old.grid != grid ||
-      old.label != label ||
-      old.marker != marker ||
-      old.markerRing != markerRing ||
-      old.end != end ||
-      old.points != points ||
-      old.selected != selected ||
-      old.gutter != gutter ||
-      old.xLabels.join() != xLabels.join() ||
-      old.yLabels.join() != yLabels.join();
 }

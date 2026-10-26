@@ -887,6 +887,191 @@ class AiBullet extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// Ask entry point
+// ---------------------------------------------------------------------------
+
+/// Small "Ask AI CFO" capsule that floats at the right edge, just above the
+/// tab bar, on the Home and AI CFO tabs. Kept compact so it never covers the
+/// content in the middle of the screen.
+///
+/// The robot blinks and glances in a lime porthole next to a short label, a
+/// lime light runs round the rim, and a lime sparkle on the corner twinkles.
+/// Reduced motion: still.
+class AiAskButton extends StatefulWidget {
+  const AiAskButton({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  static const double height = 44;
+
+  /// Space between the button and the top of the tab bar.
+  static const double gap = 10;
+
+  /// Distance from the screen's right edge (matches the page padding).
+  static const double sideInset = 20;
+
+  /// Extra bottom padding a tab page needs on top of
+  /// `RxTabBar.reservedHeight`, so its last item scrolls clear of the button.
+  static const double clearance = 26;
+
+  @override
+  State<AiAskButton> createState() => _AiAskButtonState();
+}
+
+class _AiAskButtonState extends State<AiAskButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 3600),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_reduce(context)) {
+      _c.stop();
+      _c.value = 0.3;
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rx = context.rx;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // Ink capsule in both modes so it reads against cards and the page.
+    final bg = dark ? const Color(0xFF1B1C1F) : rx.inverse;
+    final fg = dark ? rx.textPrimary : rx.onInverse;
+    final rim = Colors.white.withValues(alpha: dark ? 0.12 : 0.08);
+    const h = AiAskButton.height;
+    const disc = h - 10;
+
+    final content = Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(h / 2),
+      ),
+      padding: const EdgeInsets.fromLTRB(4, 0, 14, 0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The robot in a soft lime porthole.
+          Container(
+            width: disc,
+            height: disc,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  rx.accent.withValues(alpha: 0.32),
+                  rx.accent.withValues(alpha: 0.05),
+                ],
+              ),
+            ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.only(top: 2),
+            child: const AiBotAvatar(size: 22),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'Ask AI CFO',
+            maxLines: 1,
+            style: RxText.label(context, color: fg).copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.1,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return RxPressable(
+      onTap: widget.onTap,
+      semanticLabel: 'Ask your AI CFO',
+      scale: 0.94,
+      child: ExcludeSemantics(
+        child: AnimatedBuilder(
+          animation: _c,
+          child: content,
+          builder: (context, child) {
+            final t = _c.value;
+            final pulse = 0.5 + 0.5 * math.sin(t * 2 * math.pi);
+            // Sparkle twinkles twice per loop.
+            final twinkle = 0.5 + 0.5 * math.sin(t * 4 * math.pi);
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  height: h,
+                  // The 1.5px ring is the gradient showing round the capsule.
+                  padding: const EdgeInsets.all(1.5),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(h / 2),
+                    gradient: SweepGradient(
+                      colors: [rim, rim, rx.accent, rim],
+                      stops: const [0, 0.55, 0.8, 1],
+                      transform: GradientRotation(t * 2 * math.pi),
+                    ),
+                    boxShadow: [
+                      ...rx.navShadow,
+                      BoxShadow(
+                        color: rx.accent.withValues(
+                          alpha: (dark ? 0.16 : 0.26) * pulse,
+                        ),
+                        blurRadius: 16,
+                        spreadRadius: -4,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: child,
+                ),
+                // Lime sparkle badge on the top-right corner.
+                Positioned(
+                  right: -4,
+                  top: -5,
+                  child: Transform.scale(
+                    scale: 0.85 + 0.15 * twinkle,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: rx.accent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: rx.background, width: 2),
+                      ),
+                      alignment: Alignment.center,
+                      child: Transform.rotate(
+                        angle: t * math.pi * 0.5,
+                        child: HugeIcon(
+                          icon: HugeIcons.strokeRoundedSparkles,
+                          color: const Color(0xFF0D0E0F),
+                          size: 10,
+                          strokeWidth: 2.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Avatar
 // ---------------------------------------------------------------------------
 

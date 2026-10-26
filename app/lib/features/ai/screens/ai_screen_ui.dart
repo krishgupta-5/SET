@@ -8,7 +8,6 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 import 'package:startup_expense_tracker/widgets/rx_ui.dart';
 import 'package:startup_expense_tracker/features/ai/widgets/ai_widgets.dart';
-import 'package:startup_expense_tracker/features/home/screens/chatbot_screen.dart';
 import 'package:startup_expense_tracker/widgets/rx_motion.dart';
 import 'package:startup_expense_tracker/widgets/custom_bottom_nav.dart'
     show RxTabBar;
@@ -223,7 +222,11 @@ class _AiScreenState extends State<AiScreen>
         // All expenses (not the latest 50): totals, recurring expansion and
         // runway are wrong on a slice. The backend re-reads Firestore anyway;
         // this is the fallback snapshot.
-        db.collection('expenses').where('uid', isEqualTo: uid).limit(1000).get(),
+        db
+            .collection('expenses')
+            .where('uid', isEqualTo: uid)
+            .limit(1000)
+            .get(),
         db.collection('companies').where('uid', isEqualTo: uid).limit(1).get(),
         db.collection('teams').where('uid', isEqualTo: uid).get(),
         db.collection('members').where('uid', isEqualTo: uid).get(),
@@ -231,7 +234,10 @@ class _AiScreenState extends State<AiScreen>
             .collection('revenue')
             .where('uid', isEqualTo: uid)
             .get()
-            .then<QuerySnapshot<Map<String, dynamic>>?>((s) => s, onError: (_) => null),
+            .then<QuerySnapshot<Map<String, dynamic>>?>(
+              (s) => s,
+              onError: (_) => null,
+            ),
       ]);
       final expensesSnapshot = results[0]!;
       final companySnapshot = results[1]!;
@@ -312,85 +318,93 @@ class _AiScreenState extends State<AiScreen>
 
     // Sections are independent; request them in parallel instead of one
     // after another (7 sequential LLM calls took up to ~2 minutes).
-    await Future.wait(sectionsToProcess.map((sectionKey) async {
-      try {
-        final requestBody = {
-          "sectionName": sectionKey,
-          "sectionData": _cachedPayload,
-          "currencySymbol": currencySymbol,
-        };
+    await Future.wait(
+      sectionsToProcess.map((sectionKey) async {
+        try {
+          final requestBody = {
+            "sectionName": sectionKey,
+            "sectionData": _cachedPayload,
+            "currencySymbol": currencySymbol,
+          };
 
-        final res = await _postWithRetry("$baseUrl/generate-ai-section", {
-          "Content-Type": "application/json",
-          if (token != null) "Authorization": "Bearer $token",
-        }, requestBody);
+          final res = await _postWithRetry("$baseUrl/generate-ai-section", {
+            "Content-Type": "application/json",
+            if (token != null) "Authorization": "Bearer $token",
+          }, requestBody);
 
-        if (!mounted || gen != _generation) return; // newer refresh started
+          if (!mounted || gen != _generation) return; // newer refresh started
 
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          final insight = data["insight"];
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            final insight = data["insight"];
 
-          if (!mounted || gen != _generation) return;
+            if (!mounted || gen != _generation) return;
 
-          // Backend may return HTTP 200 with an error payload inside "insight".
-          if (insight is Map<String, dynamic> && insight.containsKey('error')) {
-            debugPrint(
-              "Backend error for section $sectionKey: "
-              "${insight['code'] ?? insight['error']}",
-            );
+            // Backend may return HTTP 200 with an error payload inside "insight".
+            if (insight is Map<String, dynamic> &&
+                insight.containsKey('error')) {
+              debugPrint(
+                "Backend error for section $sectionKey: "
+                "${insight['code'] ?? insight['error']}",
+              );
+              _applySectionError(
+                sectionKey,
+                "We couldn't load this section right now. Please try again in a moment.",
+              );
+              return;
+            }
+
+            setState(() {
+              if (sectionKey == "main") {
+                _mainData = insight;
+              } else if (sectionKey == "keyPoints") {
+                _keyPointsData = insight;
+              } else if (sectionKey == "runway") {
+                _runwayData = insight;
+              } else if (sectionKey == "burn") {
+                _burnData = insight;
+              } else if (sectionKey == "staffing") {
+                _staffingData = insight;
+              } else if (sectionKey == "expense") {
+                _expenseData = insight;
+              } else if (sectionKey == "subscription") {
+                _subscriptionData = insight;
+              }
+            });
+          } else {
+            // Server error: show the friendly fallback, not an endless loader.
+            debugPrint("AI section $sectionKey failed: HTTP ${res.statusCode}");
             _applySectionError(
               sectionKey,
-              "We couldn't load this section right now. Please try again in a moment.",
+              res.statusCode == 429
+                  ? "Too many requests. Please wait a minute and pull to refresh."
+                  : "We couldn't load this section right now. Please try again in a moment.",
             );
-            return;
           }
-
-          setState(() {
-            if (sectionKey == "main") {
-              _mainData = insight;
-            } else if (sectionKey == "keyPoints") {
-              _keyPointsData = insight;
-            } else if (sectionKey == "runway") {
-              _runwayData = insight;
-            } else if (sectionKey == "burn") {
-              _burnData = insight;
-            } else if (sectionKey == "staffing") {
-              _staffingData = insight;
-            } else if (sectionKey == "expense") {
-              _expenseData = insight;
-            } else if (sectionKey == "subscription") {
-              _subscriptionData = insight;
-            }
-          });
-        } else {
-          // Server error: show the friendly fallback, not an endless loader.
-          debugPrint("AI section $sectionKey failed: HTTP ${res.statusCode}");
-          _applySectionError(
-            sectionKey,
-            res.statusCode == 429
-                ? "Too many requests. Please wait a minute and pull to refresh."
-                : "We couldn't load this section right now. Please try again in a moment.",
-          );
+        } catch (e) {
+          debugPrint("Failed to load AI section $sectionKey: $e");
+          if (mounted && gen == _generation) {
+            // Don't surface raw exception text to users.
+            _applySectionError(
+              sectionKey,
+              "Couldn't reach the AI service. Pull down to retry.",
+            );
+          }
         }
-      } catch (e) {
-        debugPrint("Failed to load AI section $sectionKey: $e");
-        if (mounted && gen == _generation) {
-          // Don't surface raw exception text to users.
-          _applySectionError(
-            sectionKey,
-            "Couldn't reach the AI service. Pull down to retry.",
-          );
-        }
-      }
-    }));
+      }),
+    );
 
     if (mounted) {
       // Only cache valid, current results; never persist errors.
       final allLoaded = _sectionLoadStates.values.every((v) => v);
       final hasError = [
-        _mainData, _keyPointsData, _runwayData, _burnData,
-        _staffingData, _expenseData, _subscriptionData,
+        _mainData,
+        _keyPointsData,
+        _runwayData,
+        _burnData,
+        _staffingData,
+        _expenseData,
+        _subscriptionData,
       ].any(_sectionHasError);
       if (allLoaded && !hasError && gen == _generation) {
         final uiState = {
@@ -607,7 +621,8 @@ class _AiScreenState extends State<AiScreen>
                 20,
                 8,
                 20,
-                RxTabBar.reservedHeight(context),
+                // Also clears the small Ask button above the bar.
+                RxTabBar.reservedHeight(context) + AiAskButton.clearance,
               ),
               children: [
                 RxReveal.index(0, child: _buildHeader(busy)),
@@ -648,11 +663,6 @@ class _AiScreenState extends State<AiScreen>
                     'subscription',
                     _subscriptionData,
                     _buildSubscriptionInsightsSection,
-                  ),
-                  const SizedBox(height: 24),
-                  RxReveal(
-                    delay: const Duration(milliseconds: 200),
-                    child: _buildAskCard(),
                   ),
                 ],
               ],
@@ -712,6 +722,7 @@ class _AiScreenState extends State<AiScreen>
         mq.size.height -
         mq.padding.top -
         RxTabBar.reservedHeight(context) -
+        AiAskButton.clearance -
         110; // header + spacing
     return RxReveal(
       key: ValueKey(child.runtimeType),
@@ -750,8 +761,10 @@ class _AiScreenState extends State<AiScreen>
                 'Once you add expenses or team members, you get a daily '
                 'briefing on runway, burn, payroll and subscriptions, with '
                 'specific ways to save.',
-                style: RxText.body(context, color: rx.textSecondary)
-                    .copyWith(fontWeight: FontWeight.w400, height: 1.5),
+                style: RxText.body(
+                  context,
+                  color: rx.textSecondary,
+                ).copyWith(fontWeight: FontWeight.w400, height: 1.5),
               ),
             ],
           ),
@@ -779,63 +792,7 @@ class _AiScreenState extends State<AiScreen>
           title: 'Come back for insights',
           subtitle: 'They appear here automatically',
         ),
-        const SizedBox(height: 24),
-        _buildAskCard(),
       ],
-    );
-  }
-
-  Widget _buildAskCard() {
-    final rx = context.rx;
-    return RxPressable(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const ChatbotScreen()),
-      ),
-      semanticLabel: 'Ask your AI CFO a question',
-      scale: 0.98,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
-        decoration: BoxDecoration(
-          color: rx.inverse,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: rx.raisedShadow,
-        ),
-        child: Row(
-          children: [
-            const RxAiBadge(size: 44),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Have a question?',
-                    style: RxText.body(
-                      context,
-                      color: rx.onInverse,
-                    ).copyWith(fontWeight: FontWeight.w600, fontSize: 16),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Ask about runway, hiring or any expense',
-                    style: RxText.caption(
-                      context,
-                      color: rx.onInverse.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            HugeIcon(
-              icon: HugeIcons.strokeRoundedArrowRight01,
-              color: rx.onInverse,
-              size: 20,
-              strokeWidth: 2,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1035,8 +992,10 @@ class _StepCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: RxText.body(context, color: rx.textPrimary)
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: RxText.body(
+                    context,
+                    color: rx.textPrimary,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
                 Text(

@@ -8,6 +8,9 @@ import 'package:startup_expense_tracker/features/expenses/screens/expenses_scree
 import 'package:startup_expense_tracker/features/expenses/screens/add_expense_screen.dart';
 import 'package:startup_expense_tracker/features/expenses/screens/scan_expense_screen.dart';
 import 'package:startup_expense_tracker/features/ai/screens/ai_screen_ui.dart';
+import 'package:startup_expense_tracker/features/ai/widgets/ai_widgets.dart'
+    show AiAskButton;
+import 'package:startup_expense_tracker/features/home/screens/chatbot_screen.dart';
 import 'package:startup_expense_tracker/features/settings/screens/settings_screen.dart';
 import 'package:startup_expense_tracker/theme/app_theme.dart';
 
@@ -69,9 +72,19 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
     if (mounted) setState(() => _dataEpoch++);
   }
 
+  void _openChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ChatbotScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rx = context.rx;
+    // The Ask pill floats above the bar on Home and AI CFO only.
+    final showAsk = _page == _home || _page == _ai;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     return PopScope(
       // System back from any tab other than Home returns to Home first.
@@ -108,8 +121,7 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
                       onOpenTeam: () => _openPage(_team),
                       // Re-check an empty AI screen after adding data or
                       // reopening the tab (e.g. after adding a team member).
-                      refreshToken:
-                          _page == _ai ? '$_dataEpoch-$_visit' : null,
+                      refreshToken: _page == _ai ? '$_dataEpoch-$_visit' : null,
                     ),
                     const SettingsScreen(),
                   ],
@@ -134,6 +146,39 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
                       : _tabPages.indexOf(_page),
                   onTabSelected: (i) => _openPage(_tabPages[i]),
                   onAddPressed: _onAddPressed,
+                ),
+              ),
+              // Small round Ask button at the right edge, just above the
+              // bar. Pops in on Home / AI CFO, shrinks away on other tabs.
+              Positioned(
+                right: AiAskButton.sideInset,
+                bottom: RxTabBar.barTop(context) + AiAskButton.gap,
+                child: IgnorePointer(
+                  ignoring: !showAsk,
+                  child: ExcludeSemantics(
+                    excluding: !showAsk,
+                    child: AnimatedSlide(
+                      offset: showAsk || reduceMotion
+                          ? Offset.zero
+                          : const Offset(0, 0.3),
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedScale(
+                        scale: showAsk || reduceMotion ? 1 : 0.6,
+                        duration: const Duration(milliseconds: 320),
+                        curve: showAsk ? Curves.easeOutBack : Curves.easeIn,
+                        child: AnimatedOpacity(
+                          opacity: showAsk ? 1 : 0,
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOut,
+                          child: TickerMode(
+                            enabled: showAsk,
+                            child: AiAskButton(onTap: _openChat),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],

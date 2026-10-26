@@ -9,7 +9,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'runway_estimation_screen.dart';
 import 'funds_overview_screen.dart';
 import 'monthly_burn_screen.dart';
-import 'chatbot_screen.dart';
+import '../../ai/widgets/ai_widgets.dart' show AiAskButton;
 import '../../../services/ai_context_manager.dart';
 import '../../../services/financial_data_service.dart';
 import '../../../services/financial_calculator.dart';
@@ -310,18 +310,15 @@ class _HomeScreenState extends State<HomeScreen> {
         .collection('revenue')
         .where('uid', isEqualTo: user.uid)
         .snapshots()
-        .listen(
-          (snapshot) {
-            if (mounted) {
-              _reportCollectionChange('revenue', snapshot);
-              setState(() {
-                _rawRevenue = FinancialCalculator.docsToMaps(snapshot.docs);
-                _updateRunwayValue();
-              });
-            }
-          },
-          onError: (e) => log("Revenue listener error: $e"),
-        );
+        .listen((snapshot) {
+          if (mounted) {
+            _reportCollectionChange('revenue', snapshot);
+            setState(() {
+              _rawRevenue = FinancialCalculator.docsToMaps(snapshot.docs);
+              _updateRunwayValue();
+            });
+          }
+        }, onError: (e) => log("Revenue listener error: $e"));
 
     // 5. Teams (budgets, names) only feed the AI context.
     _teamsSubscription = FirebaseFirestore.instance
@@ -565,7 +562,8 @@ class _HomeScreenState extends State<HomeScreen> {
               20,
               8,
               20,
-              RxTabBar.reservedHeight(context),
+              // Also clears the small Ask button above the bar.
+              RxTabBar.reservedHeight(context) + AiAskButton.clearance,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,8 +574,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 RxReveal.index(1, child: _buildRunwayHero()),
                 const SizedBox(height: 24),
                 RxReveal.index(2, child: _buildStatsCard()),
-                const SizedBox(height: 10),
-                RxReveal.index(3, child: _buildAskAiCard()),
                 const SizedBox(height: 28),
                 RxReveal.index(
                   4,
@@ -818,47 +814,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // --- ASK AI ---
-
-  Widget _buildAskAiCard() {
-    final rx = context.rx;
-    return RxCard(
-      onTap: () => _push(const ChatbotScreen()),
-      semanticLabel: 'Ask your AI CFO',
-      padding: const EdgeInsets.fromLTRB(11, 8, 8, 8),
-      radius: 100,
-      child: Row(
-        children: [
-          const RxAiBadge(size: 32),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Ask about your numbers…',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: RxText.body(context, color: rx.textTertiary),
-            ),
-          ),
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: rx.inverse,
-              shape: BoxShape.circle,
-            ),
-            alignment: Alignment.center,
-            child: HugeIcon(
-              icon: HugeIcons.strokeRoundedArrowUp02,
-              color: rx.onInverse,
-              size: 18,
-              strokeWidth: 2.2,
-            ),
-          ),
-        ],
       ),
     );
   }
