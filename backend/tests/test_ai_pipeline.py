@@ -123,7 +123,11 @@ def test_summary_contains_date_and_excludes_funding():
     }, "₹")
     assert "Today:" in text
     assert "Total spent to date: ₹0.00" in text
-    assert "Funding: Seed" not in text
+    # Funding is listed only as a funding round, never as an expense.
+    expense_part, funding_part = text.split("Funding rounds recorded", 1)
+    assert "Funding: Seed" not in expense_part
+    assert "Funding: Seed: ₹999.00" in funding_part.split("Loan EMIs")[0]
+    assert "Funding: Seed" not in funding_part.split("Loan EMIs")[1]
 
 
 def test_user_text_is_sanitised():

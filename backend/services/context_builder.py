@@ -37,9 +37,10 @@ def build_business_summary(data: dict, currency_symbol: str = "$", snapshot: dic
         f"- Total funding raised: {m(s['funding_total'])}",
         f"- Total spent to date: {m(s['total_spent'])}",
         f"- Cash available now: {m(s['available_funds'])}",
-        f"- Monthly burn ({s['current_month']}): {m(s['monthly_burn'])}"
+        f"- Spent so far this month (already paid, up to today): {m(s['current_month_spent_to_date'])}",
+        f"- Monthly burn ({s['current_month']}, full month incl. charges still due): {m(s['monthly_burn'])}"
         + (" (estimate: average of recent months, no spend recorded this month)" if s['burn_is_estimate'] else ""),
-        f"  - of which expenses recorded this month: {m(s['current_month_expenses'])}",
+        f"  - of which expenses for the whole month (incl. recurring charges due later this month): {m(s['current_month_expenses'])}",
         f"  - of which payroll not yet paid this month: {m(s['unpaid_payroll_this_month'])}",
         f"- Revenue this month: {m(s['monthly_revenue'])} (all time: {m(s['total_revenue'])})",
         f"- Net burn this month (burn - revenue): {m(s['net_burn'])}",
@@ -49,21 +50,43 @@ def build_business_summary(data: dict, currency_symbol: str = "$", snapshot: dic
         f"- Team: {s['active_members']} active of {s['total_members']} members, {s['team_count']} teams"
         + (f" ({', '.join(clean_text(t, 30) for t in s['team_names'])})" if s['team_names'] else ""),
         "",
-        f"Spending by category ({s['current_month']}):",
+        f"Burn by category ({s['current_month']}, full month incl. upcoming charges and unpaid payroll):",
     ]
     lines += _kv_lines(s["categories_this_month"], m, empty="- Nothing recorded this month.")
 
     lines.append("\nSpending by category (all time, top 8):")
     lines += _kv_lines(dict(list(s["categories_all_time"].items())[:8]), m, empty="- No expenses recorded yet.")
 
-    lines.append("\nMonth-by-month spend (last 12 months, recurring charges expanded):")
+    lines.append("\nMonth-by-month spend (actually paid, last 12 months, recurring charges expanded):")
     months = list(s["monthly_totals"].items())[-12:]
+    by_cat = s.get("monthly_by_category") or {}
     if months:
         for key, amt in reversed(months):
             label = datetime.strptime(key, "%Y-%m").strftime("%B %Y")
-            lines.append(f"- {label}: {m(amt)}")
+            cats = by_cat.get(key) or {}
+            detail = ", ".join(f"{clean_text(c, 20)} {m(v)}" for c, v in list(cats.items())[:8])
+            lines.append(f"- {label}: {m(amt)}" + (f" ({detail})" if detail else ""))
     else:
         lines.append("- No dated expenses yet.")
+
+    lines.append("\nFunding rounds recorded (newest first; funding entered at company setup has no row):")
+    if s.get("funding_rounds"):
+        for r in s["funding_rounds"][:15]:
+            lines.append(f"- {clean_text(r['title'])}: {m(r['amount'])}" + (f" ({r['date']})" if r["date"] else ""))
+    else:
+        lines.append("- None recorded.")
+
+    lines.append("\nLoan EMIs:")
+    if s.get("emis"):
+        for e in s["emis"][:10]:
+            extra = []
+            if e.get("tenure"):
+                extra.append(f"tenure {e['tenure']} months")
+            if e.get("paid") is not None:
+                extra.append(f"{e['paid']} paid so far")
+            lines.append(f"- {clean_text(e['title'])}: {m(e['amount'])}/month" + (f" ({', '.join(extra)})" if extra else ""))
+    else:
+        lines.append("- None recorded.")
 
     if s["team_spend_this_month"]:
         lines.append(f"\nSpend by team ({s['current_month']}):")

@@ -12,7 +12,7 @@ load_dotenv()
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional
 import requests
 import os
@@ -22,7 +22,8 @@ import time
 from services.auth_service import verify_token
 from services.chat_service import process_chat_message, process_chat_message_stream
 from services.cache_service import clear_cache
-from services.chat_service import _load_data
+from services.chat_service import _load_data, _has_data
+from services.metrics_service import localize
 from services.insights_service import generate_section
 from services.files_service import upload_file, fetch_file, scan_receipt
 from fastapi.exceptions import RequestValidationError
@@ -179,22 +180,52 @@ def generate_ai_section(data: dict, uid: str = Depends(rate_limited_user)):
     # Prefer the backend's own read (full history, all collections); fall back
     # to the snapshot the app sent if Firestore isn't reachable from here.
     full_data, _ = _load_data(uid, data.get("sectionData") or {})
-    return generate_section(section_name, full_data, currency_symbol, call_llm)
+    try:
+        tz_offset = max(-720, min(840, int(data.get("tzOffsetMinutes") or 0)))
+    except (TypeError, ValueError):
+        tz_offset = 0
+    return generate_section(section_name, localize(full_data, tz_offset), currency_symbol, call_llm)
 
 
 # ---------------------------
 # CHAT ENDPOINT (REFACTORED)
 # ---------------------------
+_MAX_HISTORY = 40  # prompt_builder only uses the last 20
+
+
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
     sessionId: Optional[str] = None
-    history: List[Dict[str, Any]] = Field(default_factory=list, max_length=60)
+    # Long chats used to fail with 400 once history passed 60 messages.
+    # Keep the most recent ones instead of rejecting the request.
+    history: List[Dict[str, Any]] = Field(default_factory=list)
     sectionData: Optional[Dict[str, Any]] = None
     currencySymbol: str = Field("$", max_length=4)
+    # Device UTC offset in minutes (IST = 330) so dates and "this month"
+    # match the app instead of UTC.
+    tzOffsetMinutes: int = Field(0, ge=-720, le=840)
+
+    @field_validator("history", mode="before")
+    @classmethod
+    def _keep_recent_history(cls, v):
+        return v[-_MAX_HISTORY:] if isinstance(v, list) else v
+
+
+def _chat_context(uid: str, request: ChatRequest):
+    """Loads data once. If the backend has nothing and the app didn't attach
+    its snapshot, ask the app to resend with it (409) instead of answering
+    blind. This lets the app skip uploading its data on every message."""
+    loaded = _load_data(uid, request.sectionData)
+    if not _has_data(loaded[0]) and request.sectionData is None:
+        raise HTTPException(status_code=409, detail="need_client_context")
+    return loaded
+
 
 @app.post("/chat")
 def chat_endpoint(request: ChatRequest, uid: str = Depends(rate_limited_user)):
-    answer = process_chat_message(uid, request.question, request.history, request.sectionData, request.currencySymbol)
+    loaded = _chat_context(uid, request)
+    answer = process_chat_message(uid, request.question, request.history, request.sectionData,
+                                  request.currencySymbol, request.tzOffsetMinutes, preloaded=loaded)
     return {
         "status": "success",
         "response": answer
@@ -202,8 +233,10 @@ def chat_endpoint(request: ChatRequest, uid: str = Depends(rate_limited_user)):
 
 @app.post("/chat/stream")
 def chat_endpoint_stream(request: ChatRequest, uid: str = Depends(rate_limited_user)):
+    loaded = _chat_context(uid, request)
     return StreamingResponse(
-        process_chat_message_stream(uid, request.question, request.history, request.sectionData, request.currencySymbol),
+        process_chat_message_stream(uid, request.question, request.history, request.sectionData,
+                                    request.currencySymbol, request.tzOffsetMinutes, preloaded=loaded),
         media_type="text/event-stream; charset=utf-8"
     )
 

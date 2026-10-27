@@ -45,6 +45,15 @@ class AiContextManager {
     EventDispatcher().dispatch(FinancialDataChangedEvent(source));
   }
 
+  /// If a data change is still waiting on the debounce, invalidates now.
+  /// Call before a chat request so a just-added expense is never missed.
+  Future<void> flushPending() async {
+    final pending = _debounce?.isActive ?? false;
+    if (!pending) return;
+    _debounce?.cancel();
+    await _markDataChanged();
+  }
+
   /// Clears tracked fingerprints (call on sign-out / account switch).
   void reset() {
     _fingerprints.clear();

@@ -1,54 +1,41 @@
 import re
 
-def classify_intent(question: str) -> str:
-    """
-    Lightweight rule-based intent classifier.
-    Returns the classified intent based on keywords.
-    """
-    q = question.lower()
-
-    # Topic keywords are checked first. Date words ("monthly", "this month")
-    # only matter when no topic matched — previously they ran first and sent
-    # "what's my monthly burn?" to Expense Optimization.
-    if re.search(r'\b(burn|burn rate|spending speed|spending rate|losing money|spend rate|burning)\b', q):
-        return 'Burn Rate'
-    elif re.search(r'\b(runway|months left|survival|how long|survive|run out of money)\b', q):
-        return 'Runway'
-    elif re.search(r'\b(reduce|cut|optimize|save|expensive|too much|cheaper|lower|decrease|trim)\b', q):
-        return 'Expense Optimization'
+# Ordered (intent, pattern) rules; the first match wins.
+# Topic keywords come before date words ("monthly", "this month") so
+# "what's my monthly burn?" is Burn Rate, not Expense Optimization.
+# Common typos and Hinglish terms are included because users type them.
+_RULES = [
+    ('Burn Rate', r'\b(burn|burn ?rate|brun|bunr|spending speed|spending rate|losing money|spend rate|burning)\b'),
+    ('Runway', r'\b(runway|run way|runaway|runwy|months left|survival|how long|survive|run out of money|kab tak|kitne mahine)\b'),
+    ('Expense Optimization', r'\b(reduce|cut|optimi[sz]e|save|saving|expensive|too much|cheaper|lower|decrease|trim|bachat|kam kar\w*)\b'),
     # Payroll BEFORE Team so "team salaries" matches salary first
-    elif re.search(r'\b(payroll|salar\w+|compensation|wages|paying|benefits|bonus)\b', q):
-        return 'Payroll'
-    elif re.search(r'\b(hire|hiring|recruit|headcount|new employee|bring on)\b', q):
-        return 'Hiring'
-    elif re.search(r'\b(teams?|employees?|members?|staff|personnel|workforce|how many people)\b', q):
-        return 'Team'
-    elif re.search(r'\b(marketing|ads|campaign|facebook|google ads|seo|promotion|advertising|acquisition)\b', q):
-        return 'Marketing'
-    elif re.search(r'\b(aws|cloud|server|infrastructure|hosting|database|compute|gcp|azure)\b', q):
-        return 'Infrastructure'
-    elif re.search(r'\b(subscriptions?|saas|recurring|software|tool|app|license|monthly fee|github|slack|notion)\b', q):
-        return 'Subscriptions'
-    elif re.search(r'\b(revenue|sales|income|mrr|arr|earning|make money|profit|top line|selling)\b', q):
-        return 'Revenue'
-    elif re.search(r'\b(cash|cash flow|balance|funding|money left|bank account|capital|funds|left)\b', q):
-        return 'Cash Flow'
-    elif re.search(r'\b(invest|investor|raise|round|vc|seed|angel|pitch|valuation)\b', q):
-        return 'Investment'
-    elif re.search(r'\b(health|status|summary|overview|doing|performance|metrics|startup doing|how are we|how am i)\b', q):
-        return 'Financial Health'
-    # Company info queries
-    elif re.search(r'\b(company name|company info|about my company|founded|founder|who am i|my startup|my company)\b', q):
-        return 'Financial Health'
-    elif re.search(r'\b(transactions?|all expenses|all spending|expense list|expense history)\b', q):
-        return 'Expense Optimization'
-    elif re.search(r'\b(forecast|predict|projection|next quarter|next month|future)\b', q):
-        return 'Financial Health'
-    elif re.search(r'\b(expenses?|spending|spent|costs?|bills?|payments?)\b', q):
-        return 'Expense Optimization'
-    elif re.search(r'\b(january|february|march|april|may|june|july|august|september|october|november|december|this month|last month|monthly|month wise|month-wise|week|weekly|today|yesterday|this year|last year)\b', q):
-        return 'Expense Optimization'
-    elif re.search(r'\b(advice|tips?|strategy|grow|growth|recommendation|should i|what if|plan)\b', q):
-        return 'General Startup Advice'
-    
+    ('Payroll', r'\b(payroll|salar\w*|sallary|compensation|wages|paying|benefits|bonus|tankh?(wa|ah?|wah)\w*|pagaar)\b'),
+    ('Hiring', r'\b(hire|hiring|recruit\w*|headcount|new employee|bring on|bharti)\b'),
+    ('Team', r'\b(teams?|employees?|members?|staff|personnel|workforce|how many people)\b'),
+    ('Marketing', r'\b(marketing|ads|campaigns?|facebook|google ads|seo|promotion|advertising|acquisition)\b'),
+    ('Infrastructure', r'\b(aws|cloud|servers?|infrastructure|hosting|database|compute|gcp|azure)\b'),
+    # "app" alone is not a subscription signal: "how is my app doing" is health.
+    ('Subscriptions', r'\b(subscriptions?|subs|saas|recurring|software|tools?|licen[cs]e|monthly fee|github|slack|notion|figma)\b'),
+    ('Revenue', r'\b(revenue|sales|income|mrr|arr|earning|make money|profit|loss|top line|selling|kamai)\b'),
+    ('Cash Flow', r'\b(emis?|loans?|repayment|debt|interest|lender)\b'),
+    ('Investment', r'\b(invest\w*|raised?|round|rounds|vc|seed|angel|pitch|valuation|funding rounds?)\b'),
+    ('Cash Flow', r'\b(cash|cash flow|balance|funding|funds?|money left|bank account|capital|left|paisa|paise|bacha|bache)\b'),
+    ('Financial Health', r'\b(health|status|summary|overview|doing|performance|metrics|startup doing|how are we|how am i|business|kaisa|kaise)\b'),
+    ('Financial Health', r'\b(company name|company info|about my company|founded|founder|who am i|my startup|my company)\b'),
+    ('Expense Optimization', r'\b(transactions?|all expenses|all spending|expense list|expense history|where.*money (go|going|went))\b'),
+    ('Financial Health', r'\b(forecast|predict|projection|next quarter|next month|future)\b'),
+    ('Expense Optimization', r'\b(expenses?|expence\w*|spending|spent|spend|costs?|bills?|payments?|kharch\w*|kharcha)\b'),
+    ('Expense Optimization', r'\b(january|february|march|april|may|june|july|august|september|october|november|december|this month|last month|monthly|month wise|month-wise|week|weekly|today|yesterday|this year|last year|mahine|mahina)\b'),
+    ('General Startup Advice', r'\b(advice|tips?|strategy|grow|growth|recommendation|should i|what if|plan|tax|gst)\b'),
+]
+_COMPILED = [(intent, re.compile(p)) for intent, p in _RULES]
+
+
+def classify_intent(question: str) -> str:
+    """Lightweight rule-based intent classifier. Returns 'Unknown' when no
+    rule matches; the retriever still sends full expense history then."""
+    q = (question or "").lower()
+    for intent, pattern in _COMPILED:
+        if pattern.search(q):
+            return intent
     return 'Unknown'

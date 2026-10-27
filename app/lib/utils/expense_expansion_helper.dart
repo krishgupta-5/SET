@@ -1,6 +1,43 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ExpenseExpansionHelper {
+  /// A single salary payment recorded from a member's screen
+  /// ([ExpenseService.recordSalaryPayment]). Legacy rows carry
+  /// Type='recurring' but no recurrenceFrequency; each one is a real one-off
+  /// payment, so expanding it monthly counted the same salary again every
+  /// month. Must match `is_salary_payment` in backend/services/metrics_service.py.
+  static bool isSalaryPayment(Map<String, dynamic> e) {
+    final category = (e['Category'] ?? e['category'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    if (category != 'salary' && category != 'salaries') return false;
+    final freq = e['recurrenceFrequency'];
+    if (freq != null && freq.toString().isNotEmpty) return false;
+    final memberId = e['memberId'];
+    return e['ExpenseType'] == 'member' ||
+        (memberId != null && memberId.toString().isNotEmpty);
+  }
+
+  /// Adds [months] to [d], clamping the day to the target month's length
+  /// (31 Jan + 1 month = 28/29 Feb, not 3 Mar). Matches the backend.
+  static DateTime _addMonths(DateTime d, int months) {
+    final total = d.month - 1 + months;
+    final year = d.year + (total ~/ 12);
+    final month = total % 12 + 1;
+    final lastDay = DateTime(year, month + 1, 0).day;
+    return DateTime(
+      year,
+      month,
+      d.day > lastDay ? lastDay : d.day,
+      d.hour,
+      d.minute,
+      d.second,
+      d.millisecond,
+      d.microsecond,
+    );
+  }
+
   /// Expands a list of raw expenses (which may contain recurring/subscription templates)
   /// into virtual individual occurrences up to [maxDate].
   ///
@@ -22,7 +59,9 @@ class ExpenseExpansionHelper {
       final typeVal = (expense['Type'] ?? expense['type'] ?? 'one_time')
           .toString()
           .toLowerCase();
-      final isRecurring = typeVal == 'recurring' || typeVal == 'subscription';
+      final isRecurring =
+          (typeVal == 'recurring' || typeVal == 'subscription') &&
+          !isSalaryPayment(expense);
 
       if (!isRecurring) {
         // One-time expense is returned as-is
@@ -61,16 +100,7 @@ class ExpenseExpansionHelper {
 
       DateTime? endDate;
       if (tenureMonths != null) {
-        endDate = DateTime(
-          startDate.year,
-          startDate.month + tenureMonths,
-          startDate.day,
-          startDate.hour,
-          startDate.minute,
-          startDate.second,
-          startDate.millisecond,
-          startDate.microsecond,
-        );
+        endDate = _addMonths(startDate, tenureMonths);
       }
 
       // An explicit stop date (set when a series is stopped) also caps it.
@@ -117,40 +147,12 @@ class ExpenseExpansionHelper {
             startDate.millisecond,
             startDate.microsecond,
           );
-        } else if (frequency == 'monthly') {
-          occurrenceDate = DateTime(
-            startDate.year,
-            startDate.month + index,
-            startDate.day,
-            startDate.hour,
-            startDate.minute,
-            startDate.second,
-            startDate.millisecond,
-            startDate.microsecond,
-          );
         } else if (frequency == 'yearly') {
-          occurrenceDate = DateTime(
-            startDate.year + index,
-            startDate.month,
-            startDate.day,
-            startDate.hour,
-            startDate.minute,
-            startDate.second,
-            startDate.millisecond,
-            startDate.microsecond,
-          );
+          occurrenceDate = _addMonths(startDate, 12 * index);
         } else {
-          // Fallback to monthly if frequency unknown
-          occurrenceDate = DateTime(
-            startDate.year,
-            startDate.month + index,
-            startDate.day,
-            startDate.hour,
-            startDate.minute,
-            startDate.second,
-            startDate.millisecond,
-            startDate.microsecond,
-          );
+          // Monthly (and unknown frequencies). Always computed from the start
+          // date so a 31st-of-month series doesn't drift or skip months.
+          occurrenceDate = _addMonths(startDate, index);
         }
 
         // Stop if the occurrence date exceeds our upperLimit

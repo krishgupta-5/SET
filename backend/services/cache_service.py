@@ -3,7 +3,9 @@ from .logger import log_cache_event
 from .firestore_service import get_firestore_client
 
 _cache = {}
-CACHE_TTL = 3600 # 1 hour, relying mostly on event-driven invalidation now
+# Event-driven invalidation is primary; this TTL is the safety net when an
+# invalidate call is lost (offline, app killed) or data changes elsewhere.
+CACHE_TTL = 15 * 60
 
 def get_cached_context(uid: str):
     db = get_firestore_client()

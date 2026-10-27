@@ -10,6 +10,7 @@ from .retriever_service import retrieve_relevant_data
 from .intent_classifier import classify_intent
 from .prompt_builder import build_prompt
 from .logger import log_chat_request
+from .metrics_service import localize
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -42,9 +43,15 @@ def _load_data(uid: str, client_data: dict):
     return full_data, False
 
 
-def _build_messages(uid, question, history, client_data, currency_symbol):
+def _build_messages(uid, question, history, client_data, currency_symbol, tz_offset=0, preloaded=None):
     intent = classify_intent(question)
-    full_data, cache_hit = _load_data(uid, client_data)
+    if preloaded is not None:
+        full_data, cache_hit = preloaded
+    else:
+        full_data, cache_hit = _load_data(uid, client_data)
+    # Dates are shifted to the user's local time per request (the cache keeps
+    # raw data), so "this month" and every date match what the app shows.
+    full_data = localize(full_data, tz_offset)
     summary = build_business_summary(full_data, currency_symbol)
     retrieved = retrieve_relevant_data(intent, summary, full_data, currency_symbol)
     messages = build_prompt(question, summary, retrieved, history, currency_symbol)
@@ -89,12 +96,14 @@ def call_groq_llm(messages: list, max_tokens: int = 1024):
         raise HTTPException(status_code=503, detail="AI service is temporarily unavailable. Please try again later.")
 
 
-def process_chat_message(uid: str, question: str, history: list, client_data: dict = None, currency_symbol: str = "$"):
+def process_chat_message(uid: str, question: str, history: list, client_data: dict = None,
+                         currency_symbol: str = "$", tz_offset: int = 0, preloaded=None):
     start_time = time.time()
     cache_hit = False
     groq_latency = 0.0
     try:
-        messages, cache_hit = _build_messages(uid, question, history, client_data, currency_symbol)
+        messages, cache_hit = _build_messages(uid, question, history, client_data, currency_symbol,
+                                              tz_offset=tz_offset, preloaded=preloaded)
         build_time = time.time() - start_time
         answer, groq_latency = call_groq_llm(messages, max_tokens=2048)
         log_chat_request(uid, cache_hit, build_time, build_time, groq_latency, time.time() - start_time, True)
@@ -109,14 +118,16 @@ def _sse_error(message: str) -> str:
     return f"data: {json.dumps({'error': message})}\n\n"
 
 
-def process_chat_message_stream(uid: str, question: str, history: list, client_data: dict = None, currency_symbol: str = "$"):
+def process_chat_message_stream(uid: str, question: str, history: list, client_data: dict = None,
+                                currency_symbol: str = "$", tz_offset: int = 0, preloaded=None):
     start_time = time.time()
     try:
         if not GROQ_API_KEY:
             yield _sse_error("AI service is not configured. Please try again later.")
             return
 
-        messages, cache_hit = _build_messages(uid, question, history, client_data, currency_symbol)
+        messages, cache_hit = _build_messages(uid, question, history, client_data, currency_symbol,
+                                              tz_offset=tz_offset, preloaded=preloaded)
 
         with requests.post(
             GROQ_URL, headers=_headers(), json=_payload(messages, stream=True),

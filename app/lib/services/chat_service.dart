@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:startup_expense_tracker/services/ai_context_manager.dart';
 import 'package:startup_expense_tracker/services/app_config.dart';
 import 'package:startup_expense_tracker/services/currency_preference_service.dart';
 
@@ -55,8 +56,11 @@ class ChatService {
   }
 
   /// Converts Firestore types (Timestamp, GeoPoint, refs) into JSON-encodable values.
+  /// Dates are sent as UTC ("...Z") so the backend can shift them to the
+  /// user's timezone; local strings without an offset were read as UTC.
   static dynamic _jsonSafe(dynamic v) {
-    if (v is Timestamp) return v.toDate().toIso8601String();
+    if (v is Timestamp) return v.toDate().toUtc().toIso8601String();
+    if (v is DateTime) return v.toUtc().toIso8601String();
     if (v is Map) {
       return v.map((k, val) => MapEntry(k.toString(), _jsonSafe(val)));
     }
@@ -66,36 +70,73 @@ class ChatService {
     return v;
   }
 
-  /// Fetches the user's financial data from Firestore and sends it
-  /// alongside the chat message so the backend always has context.
+  /// The backend only uses the last 20 turns; sending more just grows the
+  /// request (and older builds of the backend rejected > 60 with a 400).
+  static const int _maxHistory = 20;
+
+  /// HTTP status the backend returns when it has no data for this user and
+  /// wants the on-device snapshot attached.
+  static const int _needClientContext = 409;
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> trimHistory(
+    List<Map<String, dynamic>> history,
+  ) {
+    final clean = history
+        .where((m) => m['role'] != 'error')
+        .map((m) => {'role': m['role'], 'text': (m['text'] ?? '').toString()})
+        .where((m) => (m['text'] as String).trim().isNotEmpty)
+        .toList();
+    return clean.length > _maxHistory
+        ? clean.sublist(clean.length - _maxHistory)
+        : clean;
+  }
+
+  /// Auth token + request body. The device snapshot is only attached when
+  /// [withSnapshot] is true (the backend reads Firestore itself and asks for
+  /// it with a 409 only when it has nothing).
+  static Future<(String, Map<String, dynamic>)> _prepare(
+    String question,
+    List<Map<String, dynamic>> history, {
+    required bool withSnapshot,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw const ChatException('Please sign in again to use the AI CFO.');
+    }
+    final token = await user.getIdToken();
+    if (token == null) {
+      throw const ChatException('Your session expired. Please sign in again.');
+    }
+    final currencyCode =
+        await CurrencyPreferenceService.getCurrencyPreference();
+    return (
+      token,
+      {
+        "question": question,
+        "history": trimHistory(history),
+        "currencySymbol": CurrencyPreferenceService.getCurrencySymbol(
+          currencyCode,
+        ),
+        "tzOffsetMinutes": DateTime.now().timeZoneOffset.inMinutes,
+        if (withSnapshot) "sectionData": await _buildSectionData(user.uid),
+      },
+    );
+  }
+
+  /// Sends a chat message and returns the full answer.
   static Future<String> sendMessage(
     String question,
     List<Map<String, dynamic>> history,
   ) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated. Please log in.');
-    }
-
-    final token = await user.getIdToken();
-    if (token == null) {
-      throw Exception('Failed to get auth token.');
-    }
-
-    // Send on-device data as a fallback in case the backend can't read Firestore.
-    final currencyCode =
-        await CurrencyPreferenceService.getCurrencyPreference();
-    final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(
-      currencyCode,
+    // A just-saved expense may still be waiting on the invalidate debounce.
+    await AiContextManager().flushPending();
+    var withSnapshot = false;
+    var (token, requestBody) = await _prepare(
+      question,
+      history,
+      withSnapshot: withSnapshot,
     );
-    final sectionData = await _buildSectionData(user.uid);
-
-    final requestBody = {
-      "question": question,
-      "history": history,
-      "sectionData": sectionData,
-      "currencySymbol": currencySymbol,
-    };
 
     const maxAttempts = 2;
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -114,6 +155,19 @@ class ChatService {
             .timeout(const Duration(seconds: 60));
       } catch (e) {
         networkError = e;
+      }
+
+      if (networkError == null &&
+          res!.statusCode == _needClientContext &&
+          !withSnapshot) {
+        withSnapshot = true;
+        (token, requestBody) = await _prepare(
+          question,
+          history,
+          withSnapshot: true,
+        );
+        attempt--; // not a failure; resend right away with the snapshot
+        continue;
       }
 
       if (networkError != null) {
@@ -146,36 +200,15 @@ class ChatService {
     String question,
     List<Map<String, dynamic>> history,
   ) async* {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw Exception('User not authenticated. Please log in.');
-    }
-
-    final token = await user.getIdToken();
-    if (token == null) {
-      throw Exception('Failed to get auth token.');
-    }
-
-    final currencyCode =
-        await CurrencyPreferenceService.getCurrencyPreference();
-    final currencySymbol = CurrencyPreferenceService.getCurrencySymbol(
-      currencyCode,
+    // A just-saved expense may still be waiting on the invalidate debounce.
+    await AiContextManager().flushPending();
+    var withSnapshot = false;
+    var (token, requestBody) = await _prepare(
+      question,
+      history,
+      withSnapshot: withSnapshot,
     );
-    final sectionData = await _buildSectionData(user.uid);
-
-    final requestBody = {
-      "question": question,
-      "history": history,
-      "sectionData": sectionData,
-      "currencySymbol": currencySymbol,
-    };
-
-    final request = http.Request('POST', Uri.parse("$baseUrl/chat/stream"));
-    request.headers.addAll({
-      "Content-Type": "application/json",
-      "Authorization": "Bearer $token",
-    });
-    request.body = jsonEncode(requestBody);
+    final url = Uri.parse("$baseUrl/chat/stream");
 
     final client = http.Client();
     try {
@@ -183,11 +216,27 @@ class ChatService {
       // Retry once on connection failure / 5xx (Render free-tier cold start).
       for (var attempt = 1; attempt <= 2; attempt++) {
         try {
-          final req = http.Request('POST', request.url)
-            ..headers.addAll(request.headers)
-            ..body = request.body;
+          final req = http.Request('POST', url)
+            ..headers.addAll({
+              "Content-Type": "application/json",
+              "Authorization": "Bearer $token",
+            })
+            ..body = jsonEncode(requestBody);
           response = await client.send(req).timeout(const Duration(seconds: 60));
+          if (response.statusCode == _needClientContext && !withSnapshot) {
+            await response.stream.drain<void>();
+            withSnapshot = true;
+            (token, requestBody) = await _prepare(
+              question,
+              history,
+              withSnapshot: true,
+            );
+            attempt--; // not a failure; resend right away with the snapshot
+            continue;
+          }
           if (response.statusCode < 500 || attempt == 2) break;
+        } on ChatException {
+          rethrow;
         } on Exception {
           if (attempt == 2) rethrow;
         }

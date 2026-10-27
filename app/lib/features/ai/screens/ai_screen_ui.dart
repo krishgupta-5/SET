@@ -325,6 +325,8 @@ class _AiScreenState extends State<AiScreen>
             "sectionName": sectionKey,
             "sectionData": _cachedPayload,
             "currencySymbol": currencySymbol,
+            // Lets the backend bucket dates by the user's month, not UTC.
+            "tzOffsetMinutes": DateTime.now().timeZoneOffset.inMinutes,
           };
 
           final res = await _postWithRetry("$baseUrl/generate-ai-section", {

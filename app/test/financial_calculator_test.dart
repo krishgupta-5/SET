@@ -190,5 +190,65 @@ void main() {
       );
       expect(out.length, 2);
     });
+
+    test('monthly series on the 31st clamps instead of skipping months', () {
+      final out = ExpenseExpansionHelper.expandExpenses(
+        [
+          {
+            'id': 'r31',
+            'Amount': 1,
+            'Date': _ts(2026, 1, 31),
+            'Type': 'recurring',
+            'recurrenceFrequency': 'monthly',
+          },
+        ],
+        maxDate: DateTime(2026, 5, 1),
+        now: DateTime(2026, 5, 1),
+      );
+      final dates = out.map((e) => (e['Date'] as Timestamp).toDate()).toList();
+      expect(dates, [
+        DateTime(2026, 1, 31),
+        DateTime(2026, 2, 28),
+        DateTime(2026, 3, 31),
+        DateTime(2026, 4, 30),
+      ]);
+    });
+  });
+
+  group('salary payments', () {
+    // Exactly what ExpenseService.recordSalaryPayment writes.
+    Map<String, dynamic> payment(String id, int month) => {
+      'id': id,
+      'Amount': 50000,
+      'Category': 'salary',
+      'Type': 'recurring',
+      'ExpenseType': 'member',
+      'memberId': 'm1',
+      'Date': _ts(2026, month, 5),
+    };
+
+    test('each payment counts once, not every month after', () {
+      final s = FinancialCalculator.compute(
+        now: now,
+        funding: 1000000,
+        rawExpenses: [payment('p8', 8), payment('p9', 9), payment('p10', 10)],
+        members: [
+          {'id': 'm1', 'monthlyCost': 50000, 'status': 'Active'},
+        ],
+      );
+      expect(s.totalSpent, 150000);
+      expect(s.monthlyBurn, 50000);
+      expect(s.unpaidPayroll, 0);
+    });
+
+    test('a salary schedule with a frequency still repeats', () {
+      final out = ExpenseExpansionHelper.expandExpenses(
+        [
+          {...payment('s', 8), 'recurrenceFrequency': 'monthly'},
+        ],
+        now: now,
+      );
+      expect(out.length, 3);
+    });
   });
 }

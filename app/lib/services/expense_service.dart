@@ -273,8 +273,9 @@ class ExpenseService {
       'ExpenseType': 'member',
       'Date': DateTime.now(),
       'Category': 'salary',
-      // Kept as 'recurring': member detail expands salary rows to count paid
-      // months and schedule the next due date.
+      // Legacy value kept for compatibility. Each payment is one-off:
+      // ExpenseExpansionHelper.isSalaryPayment (and the backend) never expand
+      // it, so one row = one paid month.
       'Type': 'recurring',
       'BankAccount': bankAccount,
       'bankAccount': bankAccount,

@@ -94,13 +94,62 @@ def _category(e: dict) -> str:
     return str(e.get("Category") or e.get("category") or "others").strip().lower()
 
 
-def is_recurring(e: dict) -> bool:
-    t = str(e.get("Type") or e.get("type") or "one_time").lower()
-    return t in ("recurring", "subscription")
-
-
 def is_salary(e: dict) -> bool:
     return _category(e) in ("salary", "salaries")
+
+
+def is_salary_payment(e: dict) -> bool:
+    """A single salary payment recorded from a member's screen.
+
+    The app stores these with Type='recurring' (legacy) but no
+    recurrenceFrequency. Each one is a real, one-off payment; expanding it
+    monthly counted the same salary again every month.
+    """
+    return (
+        is_salary(e)
+        and not e.get("recurrenceFrequency")
+        and (e.get("ExpenseType") == "member" or bool(e.get("memberId")))
+    )
+
+
+def is_recurring(e: dict) -> bool:
+    t = str(e.get("Type") or e.get("type") or "one_time").lower()
+    return t in ("recurring", "subscription") and not is_salary_payment(e)
+
+
+# ---------------------------------------------------------------------------
+# Timezone: the app stores dates as the user's local time. Firestore returns
+# them in UTC, so "1 Oct 00:00 IST" became "30 Sep" and landed in the wrong
+# month. Shift every date into the user's local wall-clock time once.
+# ---------------------------------------------------------------------------
+
+_DATE_KEYS = ("Date", "date", "joiningDate", "recurringEndDate")
+_TZ_KEY = "_tz_offset_minutes"
+
+
+def localize(data: dict, tz_offset_minutes: int = 0) -> dict:
+    """Returns a copy of `data` with date fields as naive local datetimes."""
+    shift = timedelta(minutes=tz_offset_minutes or 0)
+
+    def fix(row: dict) -> dict:
+        row = dict(row)
+        for k in _DATE_KEYS:
+            if k in row:
+                dt = to_datetime(row[k])
+                if dt is not None:
+                    row[k] = dt + shift
+        return row
+
+    out = dict(data or {})
+    for coll in ("expenses", "revenue", "members"):
+        out[coll] = [fix(r) for r in (out.get(coll) or []) if isinstance(r, dict)]
+    out[_TZ_KEY] = tz_offset_minutes or 0
+    return out
+
+
+def local_now(data: Optional[dict] = None) -> datetime:
+    offset = (data or {}).get(_TZ_KEY, 0) or 0
+    return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=offset)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +219,7 @@ def _days(n: int) -> timedelta:
 
 def compute_snapshot(data: dict, now: Optional[datetime] = None) -> dict:
     """Returns verified metrics + compact derived lists for the prompt."""
-    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    now = now or local_now(data)
     month_end = _month_end(now)
 
     company = data.get("company") or {}
@@ -185,6 +234,7 @@ def compute_snapshot(data: dict, now: Optional[datetime] = None) -> dict:
     total_spent = 0.0
     current_month_expenses = 0.0
     monthly: dict[str, float] = {}
+    monthly_by_category: dict[str, dict[str, float]] = {}
     categories_all: dict[str, float] = {}
     categories_month: dict[str, float] = {}
     paid_members: set[str] = set()
@@ -198,6 +248,8 @@ def compute_snapshot(data: dict, now: Optional[datetime] = None) -> dict:
             key = d.strftime("%Y-%m")
             monthly[key] = monthly.get(key, 0.0) + amt
             categories_all[cat] = categories_all.get(cat, 0.0) + amt
+            per_cat = monthly_by_category.setdefault(key, {})
+            per_cat[cat] = per_cat.get(cat, 0.0) + amt
         if _same_month(d, now):
             current_month_expenses += amt
             categories_month[cat] = categories_month.get(cat, 0.0) + amt
@@ -264,6 +316,32 @@ def compute_snapshot(data: dict, now: Optional[datetime] = None) -> dict:
             "category": _category(e),
         })
 
+    # Funding rounds and loan EMIs, so "list my funding rounds" / "what are my
+    # EMIs" can be answered from data instead of guessed.
+    funding_rounds = []
+    emis = []
+    for e in raw_expenses:
+        if e.get("isFunding") is True:
+            fd = to_datetime(e.get("Date", e.get("date")))
+            funding_rounds.append({
+                "title": e.get("fundingSource") or e.get("Title") or "Funding",
+                "amount": to_float(e.get("Amount")),
+                "date": fd.strftime("%d %b %Y") if fd else "",
+                "_sort": fd or datetime.min,
+            })
+        elif e.get("isEmiRepayment"):
+            paid = sum(
+                1 for o in occurrences
+                if o.get("id") == e.get("id") and o["_date"] is not None and o["_date"] <= now
+            ) if e.get("id") else None
+            emis.append({
+                "title": e.get("Title") or "Loan EMI",
+                "amount": to_float(e.get("Amount")),
+                "tenure": e.get("recurringTenureMonths", e.get("loanTenureMonths")),
+                "paid": paid,
+            })
+    funding_rounds.sort(key=lambda r: r.pop("_sort"), reverse=True)
+
     dated = [o for o in occurrences if o["_date"] is not None and o["_date"] <= now]
     recent_expenses = sorted(dated, key=lambda o: o["_date"], reverse=True)[:15]
     largest_expenses = sorted(dated, key=lambda o: o["_amount"], reverse=True)[:5]
@@ -287,6 +365,15 @@ def compute_snapshot(data: dict, now: Optional[datetime] = None) -> dict:
         "monthly_burn": monthly_burn,
         "burn_is_estimate": burn_estimated,
         "current_month_expenses": current_month_expenses,
+        # Already paid this month (dated <= now). current_month_expenses also
+        # includes recurring charges still due later this month.
+        "current_month_spent_to_date": monthly.get(now.strftime("%Y-%m"), 0.0),
+        "monthly_by_category": {
+            k: dict(sorted(v.items(), key=lambda x: -x[1]))
+            for k, v in sorted(monthly_by_category.items())
+        },
+        "funding_rounds": funding_rounds,
+        "emis": emis,
         "unpaid_payroll_this_month": unpaid_payroll,
         "monthly_revenue": monthly_revenue,
         "total_revenue": total_revenue,

@@ -51,4 +51,18 @@ void main() {
       expect(tokens.join(), 'Runway is 8 months');
     });
   });
+
+  group('ChatService.trimHistory', () {
+    test('keeps only the last 20 real turns, without errors or blanks', () {
+      final history = [
+        for (var i = 0; i < 70; i++) {'role': i.isEven ? 'user' : 'ai', 'text': 'm$i'},
+        {'role': 'error', 'text': 'boom', 'originalText': 'x'},
+        {'role': 'ai', 'text': '   '},
+      ];
+      final out = ChatService.trimHistory(history);
+      expect(out.length, 20);
+      expect(out.last['text'], 'm69');
+      expect(out.every((m) => m.keys.toSet().containsAll({'role', 'text'}) && m.length == 2), isTrue);
+    });
+  });
 }
