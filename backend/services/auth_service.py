@@ -78,12 +78,48 @@ def initialize_firebase():
         print("✅ Firebase Admin initialized successfully.")
     except Exception as e:
         _firebase_available = False
-        print(f"⚠️  Firebase Admin not available (dev mode will use token decoding): {e}")
+        print(f"⚠️  Firebase Admin not available (tokens verified with Google public keys): {e}")
+
+PROJECT_ID = 'startup-expense-tracker-3df6b'
+# Small tolerance for server/Google clock drift; a fresh token otherwise
+# fails as "used too early" on hosts whose clock is a second behind.
+_CLOCK_SKEW_S = 10
+
+
+def _verify_with_public_keys(token: str) -> str:
+    """Verifies a Firebase ID token with Google's public signing keys.
+
+    Needs no service account, so login stays secure even when Firebase Admin
+    has no credentials (it then fails with DefaultCredentialsError). Checks
+    signature, expiry, audience and issuer, like auth.verify_id_token.
+    """
+    import google.auth.transport.requests
+    from google.oauth2 import id_token
+
+    claims = id_token.verify_firebase_token(
+        token,
+        google.auth.transport.requests.Request(),
+        audience=PROJECT_ID,
+        clock_skew_in_seconds=_CLOCK_SKEW_S,
+    )
+    if claims.get('iss') != f'https://securetoken.google.com/{PROJECT_ID}':
+        raise ValueError('wrong issuer')
+    uid = claims.get('sub')
+    if not uid or not isinstance(uid, str) or len(uid) > 128:
+        raise ValueError('missing uid')
+    return uid
+
 
 def _verify_with_firebase(token: str):
     """Run Firebase token verification (may do network I/O for certs)."""
-    decoded_token = auth.verify_id_token(token)
-    return decoded_token['uid']
+    from google.auth.exceptions import DefaultCredentialsError
+    if not _firebase_available:
+        return _verify_with_public_keys(token)
+    try:
+        return auth.verify_id_token(token, clock_skew_seconds=_CLOCK_SKEW_S)['uid']
+    except DefaultCredentialsError:
+        # Admin SDK has no service account (e.g. env var not set on Render).
+        return _verify_with_public_keys(token)
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Security(security), authorization: str = Header(None)):
     print(f"\n🔑 [AUTH] verify_token called")
@@ -105,26 +141,26 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security),
     # print(f"🔑 [AUTH] Token received (first 20 chars): {token[:20]}...") # Removed for security
     print(f"🔑 [AUTH] Firebase available: {_firebase_available}")
 
-    # Try Firebase Admin verification first (production mode)
-    # Use a thread with timeout to prevent hanging on cert download
-    if _firebase_available:
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        try:
-            print(f"🔑 [AUTH] Attempting Firebase token verification (10s timeout)...")
-            future = executor.submit(_verify_with_firebase, token)
-            uid = future.result(timeout=10)  # 10 second timeout
-            print(f"🔑 [AUTH] Firebase verified UID: {uid}")
-            return uid
-        except concurrent.futures.TimeoutError:
-            print("🔑 [AUTH] Firebase verification timed out")
-            if not _dev_mode():
-                raise HTTPException(status_code=503, detail="Authentication service unavailable. Please retry.")
-        except Exception as e:
-            print(f"🔑 [AUTH] Firebase verification failed: {type(e).__name__}")
-            if not _dev_mode():
-                raise HTTPException(status_code=401, detail="Invalid or expired authentication token.")
-        finally:
-            executor.shutdown(wait=False)
+    # Verify the token (Firebase Admin, or Google public keys when Admin has
+    # no credentials). A thread with timeout prevents hanging on cert download.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        print(f"🔑 [AUTH] Attempting Firebase token verification (10s timeout)...")
+        future = executor.submit(_verify_with_firebase, token)
+        uid = future.result(timeout=10)  # 10 second timeout
+        print(f"🔑 [AUTH] Firebase verified UID: {uid}")
+        return uid
+    except concurrent.futures.TimeoutError:
+        print("🔑 [AUTH] Firebase verification timed out")
+        if not _dev_mode():
+            raise HTTPException(status_code=503, detail="Authentication service unavailable. Please retry.")
+    except Exception as e:
+        # The reason (expired, wrong audience, ...) never contains the token.
+        print(f"🔑 [AUTH] Firebase verification failed: {type(e).__name__}: {str(e)[:200]}")
+        if not _dev_mode():
+            raise HTTPException(status_code=401, detail="Invalid or expired authentication token.")
+    finally:
+        executor.shutdown(wait=False)
 
     # Unverified decoding — local development only (DEBUG_MODE=true).
     if _dev_mode():

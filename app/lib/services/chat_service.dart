@@ -99,12 +99,13 @@ class ChatService {
     String question,
     List<Map<String, dynamic>> history, {
     required bool withSnapshot,
+    bool refreshToken = false,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw const ChatException('Please sign in again to use the AI CFO.');
     }
-    final token = await user.getIdToken();
+    final token = await user.getIdToken(refreshToken);
     if (token == null) {
       throw const ChatException('Your session expired. Please sign in again.');
     }
@@ -132,6 +133,7 @@ class ChatService {
     // A just-saved expense may still be waiting on the invalidate debounce.
     await AiContextManager().flushPending();
     var withSnapshot = false;
+    var refreshed = false;
     var (token, requestBody) = await _prepare(
       question,
       history,
@@ -170,6 +172,20 @@ class ChatService {
         continue;
       }
 
+      // A rejected token may just be stale; retry once with a fresh one
+      // before telling the user their session expired.
+      if (networkError == null && res!.statusCode == 401 && !refreshed) {
+        refreshed = true;
+        (token, requestBody) = await _prepare(
+          question,
+          history,
+          withSnapshot: withSnapshot,
+          refreshToken: true,
+        );
+        attempt--;
+        continue;
+      }
+
       if (networkError != null) {
         if (attempt == maxAttempts) {
           debugPrint('ChatService.sendMessage network error: $networkError');
@@ -203,6 +219,7 @@ class ChatService {
     // A just-saved expense may still be waiting on the invalidate debounce.
     await AiContextManager().flushPending();
     var withSnapshot = false;
+    var refreshed = false;
     var (token, requestBody) = await _prepare(
       question,
       history,
@@ -232,6 +249,19 @@ class ChatService {
               withSnapshot: true,
             );
             attempt--; // not a failure; resend right away with the snapshot
+            continue;
+          }
+          // A rejected token may just be stale; retry once with a fresh one.
+          if (response.statusCode == 401 && !refreshed) {
+            await response.stream.drain<void>();
+            refreshed = true;
+            (token, requestBody) = await _prepare(
+              question,
+              history,
+              withSnapshot: withSnapshot,
+              refreshToken: true,
+            );
+            attempt--;
             continue;
           }
           if (response.statusCode < 500 || attempt == 2) break;

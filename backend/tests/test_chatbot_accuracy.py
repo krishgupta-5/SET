@@ -187,3 +187,51 @@ def test_backend_without_data_asks_app_for_snapshot(client, monkeypatch):
 def test_bad_tz_offset_rejected(client):
     c, _, _ = client
     assert c.post("/chat/stream", json={"question": "hi", "tzOffsetMinutes": 5000}).status_code == 400
+
+
+# --- Auth without a service account ----------------------------------------
+
+def _claims(**over):
+    c = {"iss": "https://securetoken.google.com/startup-expense-tracker-3df6b",
+         "aud": "startup-expense-tracker-3df6b", "sub": "user-123"}
+    c.update(over)
+    return c
+
+
+def test_admin_without_credentials_falls_back_to_public_keys(monkeypatch):
+    from google.auth.exceptions import DefaultCredentialsError
+    from google.oauth2 import id_token
+    from services import auth_service as a
+
+    def no_creds(*_, **__):
+        raise DefaultCredentialsError("no creds")
+
+    monkeypatch.setattr(a, "_firebase_available", True)
+    monkeypatch.setattr(a.auth, "verify_id_token", no_creds)
+    monkeypatch.setattr(id_token, "verify_firebase_token", lambda *a_, **k: _claims())
+    assert a._verify_with_firebase("tok") == "user-123"
+
+
+def test_public_key_path_rejects_wrong_issuer(monkeypatch):
+    from google.oauth2 import id_token
+    from services import auth_service as a
+    monkeypatch.setattr(id_token, "verify_firebase_token",
+                        lambda *a_, **k: _claims(iss="https://securetoken.google.com/other"))
+    with pytest.raises(ValueError):
+        a._verify_with_public_keys("tok")
+
+
+def test_bad_token_is_401_without_debug_mode(monkeypatch):
+    from fastapi import HTTPException
+    from services import auth_service as a
+    monkeypatch.delenv("DEBUG_MODE", raising=False)
+    monkeypatch.setattr(a, "initialize_firebase", lambda: None)
+    monkeypatch.setattr(a, "_firebase_available", False)
+
+    def reject(_):
+        raise ValueError("Token expired")
+
+    monkeypatch.setattr(a, "_verify_with_public_keys", reject)
+    with pytest.raises(HTTPException) as e:
+        a.verify_token(credentials=None, authorization="Bearer x.y.z")
+    assert e.value.status_code == 401
